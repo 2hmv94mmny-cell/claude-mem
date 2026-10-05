@@ -2,9 +2,9 @@ import rawProducts from "../data/products.json";
 import type { CartLine, CategoryId, Product } from "./types";
 
 export const categories: { id: CategoryId; name: string; intro: string }[] = [
-  { id: "kleidung", name: "Kleidung", intro: "Strick, Blusen, Röcke und Mäntel in den Grössen XS bis XL." },
-  { id: "taschen", name: "Taschen", intro: "Shopper, Crossbody-Bags und Clutches mit Massangaben in cm." },
-  { id: "schuhe", name: "Schuhe", intro: "Loafer, Stiefeletten, Ballerinas und Sneaker in EU 36 bis 41." },
+  { id: "ready-to-wear", name: "Ready-to-Wear", intro: "Knitwear, shirts, tailoring and outerwear in sizes XS to XL." },
+  { id: "bags", name: "Bags", intro: "Totes, shoulder bags, crossbodies and evening clutches." },
+  { id: "shoes", name: "Shoes", intro: "Loafers, boots, flats and sneakers in EU sizes 36 to 41." },
 ];
 
 const allProducts = rawProducts as Product[];
@@ -55,17 +55,17 @@ export function priceCart(
   products: Product[] = getProducts(),
   options: { allowExamples?: boolean } = {},
 ): PricedLine[] {
-  if (!Array.isArray(lines) || lines.length === 0) throw new CartError("Der Warenkorb ist leer.");
+  if (!Array.isArray(lines) || lines.length === 0) throw new CartError("Your bag is empty.");
   return lines.map((line) => {
     const product = products.find((p) => p.id === line.productId);
     const variant = product?.variants.find((v) => v.id === line.variantId);
-    if (!product || !variant) throw new CartError("Ein Artikel im Warenkorb ist nicht mehr verfügbar.");
+    if (!product || !variant) throw new CartError("An item in your bag is no longer available.");
     if (product.example && !options.allowExamples) {
-      throw new CartError("Dies ist ein Demo-Shop. Beispielprodukte können noch nicht bestellt werden.");
+      throw new CartError("This is a preview. Sample products cannot be ordered yet.");
     }
     const quantity = line.quantity;
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY_PER_LINE) {
-      throw new CartError(`Bitte wähle eine Menge zwischen 1 und ${MAX_QUANTITY_PER_LINE}.`);
+      throw new CartError(`Please choose a quantity between 1 and ${MAX_QUANTITY_PER_LINE}.`);
     }
     return { product, variant, quantity, lineTotalCents: product.priceCents * quantity };
   });

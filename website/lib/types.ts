@@ -1,9 +1,14 @@
-export type CategoryId = "kleidung" | "taschen" | "schuhe";
+export type CategoryId = "ready-to-wear" | "bags" | "shoes";
+
+export type Silhouette =
+  | "sweater" | "coat" | "skirt" | "shirt" | "trousers"
+  | "tote" | "crossbody" | "shoulder" | "clutch"
+  | "loafer" | "boot" | "flat" | "sneaker";
 
 export interface Variant {
   /** Stable id used in the cart and in Stripe metadata. */
   id: string;
-  /** What the customer picks, e.g. "38" or "Schwarz / M". */
+  /** What the customer picks, e.g. "38" or "Black". */
   label: string;
   /** CJ variant id. Without it the order cannot be sent to the supplier and is held. */
   supplierVid: string | null;
@@ -17,11 +22,15 @@ export interface Product {
   slug: string;
   name: string;
   category: CategoryId;
+  /** Outline drawn on the placeholder image until real photos exist. */
+  silhouette: Silhouette;
+  colour: string;
   /** Final selling price in Rappen (1/100 CHF). */
   priceCents: number;
   compareAtCents?: number;
   description: string;
   details: string[];
+  care: string[];
   /** Image URLs. Empty means the shop shows a colour placeholder. */
   images: string[];
   /** Placeholder colour for products without images. */

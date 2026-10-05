@@ -34,14 +34,14 @@ export async function POST(request: Request) {
 
   if (result.outcome === "held") {
     await notifyOwner(
-      `Bestellung ${order.orderNumber} wartet auf Prüfung`,
-      `Grund: ${result.reason}\n\nIm Stripe-Dashboard unter Zahlungen → ${order.orderNumber} findest du alle Details.`,
+      `Order ${order.orderNumber} is waiting for review`,
+      `Reason: ${result.reason}\n\nFind all details in the Stripe dashboard under Payments → ${order.orderNumber}.`,
     );
   }
   if (result.outcome === "failed") {
     await notifyOwner(
-      `Bestellung ${order.orderNumber} konnte nicht an den Lieferanten gesendet werden`,
-      `Fehler: ${result.error}\n\nStripe versucht es automatisch erneut.`,
+      `Order ${order.orderNumber} could not be sent to the supplier`,
+      `Error: ${result.error}\n\nStripe will retry automatically.`,
     );
     // A non-2xx response makes Stripe retry the webhook later.
     return new Response("supplier order failed", { status: 500 });

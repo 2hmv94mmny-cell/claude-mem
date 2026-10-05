@@ -1,6 +1,6 @@
 // Imports products from CJdropshipping into data/products.json.
 //
-//   CJ_API_KEY=... npm run cj:import -- --keyword "women loafers" --category schuhe --limit 5
+//   CJ_API_KEY=... npm run cj:import -- --keyword "women loafers" --category shoes --limit 5
 //
 // Options: --markup 2.5 (price = CJ cost × markup), --usd-chf 0.80, --country DE (only items
 // stocked in that country's warehouse). Imported products are saved with "published": false.
@@ -22,7 +22,7 @@ const { values } = parseArgs({
   },
 });
 
-const categoryIds: CategoryId[] = ["kleidung", "taschen", "schuhe"];
+const categoryIds: CategoryId[] = ["ready-to-wear", "bags", "shoes"];
 if (!values.keyword || !categoryIds.includes(values.category as CategoryId)) {
   console.error(`Usage: npm run cj:import -- --keyword "<search>" --category ${categoryIds.join("|")} [--limit 5]`);
   process.exit(1);
@@ -82,12 +82,15 @@ async function main() {
       slug,
       name: detail.productNameEn,
       category: values.category as CategoryId,
+      silhouette: values.category === "bags" ? "tote" : values.category === "shoes" ? "loafer" : "shirt",
+      colour: "",
       priceCents: shopPriceCents(maxCost),
       description: "",
       details: [],
+      care: [],
       images: (detail.productImageSet?.length ? detail.productImageSet : [detail.bigImage]).filter(Boolean),
       swatch: "#d9d4dc",
-      variantLabel: "Variante",
+      variantLabel: "Option",
       variants: detail.variants.map((v) => ({
         id: v.vid,
         label: v.variantKey || v.variantSku,
@@ -95,7 +98,7 @@ async function main() {
         supplierSku: v.variantSku,
         costUsd: v.variantSellPrice,
       })),
-      deliveryDays: values.country && values.country !== "CN" ? "5–10 Werktage" : "8–15 Werktage",
+      deliveryDays: values.country && values.country !== "CN" ? "5–10 business days" : "8–15 business days",
       supplier: "cj",
       published: false,
     });

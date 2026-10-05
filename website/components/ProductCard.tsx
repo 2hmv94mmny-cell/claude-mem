@@ -5,14 +5,18 @@ import { ProductImage } from "./ProductImage";
 
 export function ProductCard({ product }: { product: Product }) {
   return (
-    <Link className="product-card" href={`/produkt/${product.slug}`}>
-      <ProductImage product={product} />
-      <div className="product-card-body">
-        <h3>{product.name}</h3>
-        <p className="price-line">
-          <span>{formatChf(product.priceCents)}</span>
-          {product.compareAtCents && <s className="muted">{formatChf(product.compareAtCents)}</s>}
-        </p>
+    <Link className="product-card" href={`/product/${product.slug}`} aria-label={`${product.name}, ${formatChf(product.priceCents)}`}>
+      <div className="frame">
+        <ProductImage product={product} view={0} />
+        <ProductImage product={product} view={1} className="alt" />
+      </div>
+      <div className="product-card-info">
+        <span className="name">{product.name}</span>
+        <span className="price">
+          {formatChf(product.priceCents)}
+          {product.compareAtCents && <s>{formatChf(product.compareAtCents)}</s>}
+        </span>
+        {product.colour && <span className="colour">{product.colour}</span>}
       </div>
     </Link>
   );

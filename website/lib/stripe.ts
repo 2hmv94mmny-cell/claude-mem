@@ -27,7 +27,7 @@ export async function createCheckoutSession(stripe: Stripe, cart: CartLine[], or
 
   return stripe.checkout.sessions.create({
     mode: "payment",
-    locale: "de",
+    locale: "en",
     submit_type: "pay",
     line_items: priced.map((l) => ({
       quantity: l.quantity,
@@ -35,7 +35,7 @@ export async function createCheckoutSession(stripe: Stripe, cart: CartLine[], or
         currency: "chf",
         unit_amount: l.product.priceCents,
         product_data: {
-          name: `${l.product.name} (${l.product.variantLabel}: ${l.variant.label})`,
+          name: `${l.product.name} – ${l.product.variantLabel} ${l.variant.label}`,
           images: l.product.images.filter((src) => src.startsWith("https://")).slice(0, 1),
           metadata: {
             productId: l.product.id,
@@ -50,15 +50,15 @@ export async function createCheckoutSession(stripe: Stripe, cart: CartLine[], or
       {
         shipping_rate_data: {
           type: "fixed_amount",
-          display_name: shipping === 0 ? "Kostenloser Versand" : "Standardversand",
+          display_name: shipping === 0 ? "Complimentary delivery" : "Standard delivery",
           fixed_amount: { amount: shipping, currency: "chf" },
         },
       },
     ],
     phone_number_collection: { enabled: true },
     payment_intent_data: { metadata: { shop_order: "1" } },
-    success_url: `${origin}/checkout/erfolg?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/warenkorb`,
+    success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/bag`,
   });
 }
 
@@ -85,7 +85,7 @@ export async function paidOrderFromSession(stripe: Stripe, sessionId: string): P
       variantId: meta.variantId ?? "",
       supplierVid: meta.supplierVid || null,
       quantity: item.quantity ?? 1,
-      name: item.description ?? product?.name ?? "Artikel",
+      name: item.description ?? product?.name ?? "Item",
     });
   }
 

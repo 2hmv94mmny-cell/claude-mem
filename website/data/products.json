@@ -1,542 +1,812 @@
 [
   {
-    "id": "strickpullover-alma",
-    "slug": "strickpullover-alma",
-    "name": "Strickpullover Alma",
-    "category": "kleidung",
-    "priceCents": 5990,
-    "description": "Lockerer Rundhalspullover aus weichem Grobstrick, leicht verlängert geschnitten.",
+    "id": "alma-oversized-knit",
+    "slug": "alma-oversized-knit",
+    "name": "Alma Oversized Knit",
+    "category": "ready-to-wear",
+    "silhouette": "sweater",
+    "priceCents": 12900,
+    "colour": "Camel",
+    "description": "A generous crew-neck sweater in a dense rib, cut with dropped shoulders and a slightly longer body.",
     "details": [
-      "Material: 60 % Baumwolle, 40 % Acryl",
-      "Länge in Grösse M: 66 cm",
-      "Waschen bei 30 °C"
+      "60% cotton, 40% wool blend",
+      "Length in size M: 66 cm",
+      "Relaxed fit, true to size"
+    ],
+    "care": [
+      "Dry clean or hand wash cold",
+      "Dry flat"
     ],
     "images": [],
-    "swatch": "#c9b8a8",
-    "variantLabel": "Grösse",
+    "swatch": "#b59a7a",
+    "variantLabel": "Size",
     "variants": [
       {
-        "id": "strickpullover-alma-xs",
+        "id": "alma-oversized-knit-xs",
         "label": "XS",
         "supplierVid": null
       },
       {
-        "id": "strickpullover-alma-s",
+        "id": "alma-oversized-knit-s",
         "label": "S",
         "supplierVid": null
       },
       {
-        "id": "strickpullover-alma-m",
+        "id": "alma-oversized-knit-m",
         "label": "M",
         "supplierVid": null
       },
       {
-        "id": "strickpullover-alma-l",
+        "id": "alma-oversized-knit-l",
         "label": "L",
         "supplierVid": null
       },
       {
-        "id": "strickpullover-alma-xl",
+        "id": "alma-oversized-knit-xl",
         "label": "XL",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
-    "supplier": "cj",
-    "example": true,
-    "published": true,
-    "compareAtCents": 7990
-  },
-  {
-    "id": "satinrock-mila",
-    "slug": "satinrock-mila",
-    "name": "Satin-Midirock Mila",
-    "category": "kleidung",
-    "priceCents": 4990,
-    "description": "Fliessender Midirock aus Satin mit elastischem Bund.",
-    "details": [
-      "Material: 100 % Polyester",
-      "Länge: 78 cm",
-      "Elastischer Bund"
-    ],
-    "images": [],
-    "swatch": "#6b4a5e",
-    "variantLabel": "Grösse",
-    "variants": [
-      {
-        "id": "satinrock-mila-xs",
-        "label": "XS",
-        "supplierVid": null
-      },
-      {
-        "id": "satinrock-mila-s",
-        "label": "S",
-        "supplierVid": null
-      },
-      {
-        "id": "satinrock-mila-m",
-        "label": "M",
-        "supplierVid": null
-      },
-      {
-        "id": "satinrock-mila-l",
-        "label": "L",
-        "supplierVid": null
-      },
-      {
-        "id": "satinrock-mila-xl",
-        "label": "XL",
-        "supplierVid": null
-      }
-    ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true
   },
   {
-    "id": "leinenbluse-noor",
-    "slug": "leinenbluse-noor",
-    "name": "Leinenbluse Noor",
-    "category": "kleidung",
-    "priceCents": 5490,
-    "description": "Luftige Bluse in Leinenoptik mit Knopfleiste und Brusttasche.",
+    "id": "ines-double-breasted-trench",
+    "slug": "ines-double-breasted-trench",
+    "name": "Ines Double-Breasted Trench",
+    "category": "ready-to-wear",
+    "silhouette": "coat",
+    "priceCents": 21900,
+    "colour": "Stone",
+    "description": "A classic trench in a crisp cotton blend with storm flaps, epaulettes and a removable belt.",
     "details": [
-      "Material: 55 % Leinen, 45 % Viskose",
-      "Länge in Grösse M: 70 cm",
-      "Waschen bei 30 °C"
+      "65% polyester, 35% cotton",
+      "Length in size M: 102 cm",
+      "Removable tie belt"
+    ],
+    "care": [
+      "Machine wash at 30 °C",
+      "Do not tumble dry"
     ],
     "images": [],
-    "swatch": "#e6e1d6",
-    "variantLabel": "Grösse",
+    "swatch": "#a79d8e",
+    "variantLabel": "Size",
     "variants": [
       {
-        "id": "leinenbluse-noor-xs",
+        "id": "ines-double-breasted-trench-xs",
         "label": "XS",
         "supplierVid": null
       },
       {
-        "id": "leinenbluse-noor-s",
+        "id": "ines-double-breasted-trench-s",
         "label": "S",
         "supplierVid": null
       },
       {
-        "id": "leinenbluse-noor-m",
+        "id": "ines-double-breasted-trench-m",
         "label": "M",
         "supplierVid": null
       },
       {
-        "id": "leinenbluse-noor-l",
+        "id": "ines-double-breasted-trench-l",
         "label": "L",
         "supplierVid": null
       },
       {
-        "id": "leinenbluse-noor-xl",
+        "id": "ines-double-breasted-trench-xl",
         "label": "XL",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
+    "supplier": "cj",
+    "example": true,
+    "published": true,
+    "compareAtCents": 26900
+  },
+  {
+    "id": "mila-satin-midi-skirt",
+    "slug": "mila-satin-midi-skirt",
+    "name": "Mila Satin Midi Skirt",
+    "category": "ready-to-wear",
+    "silhouette": "skirt",
+    "priceCents": 9800,
+    "colour": "Bordeaux",
+    "description": "A bias-cut midi skirt in fluid satin that moves with every step. Concealed elastic waistband.",
+    "details": [
+      "100% polyester satin",
+      "Length: 78 cm",
+      "Elastic waistband"
+    ],
+    "care": [
+      "Hand wash cold",
+      "Iron on low heat"
+    ],
+    "images": [],
+    "swatch": "#5b2a33",
+    "variantLabel": "Size",
+    "variants": [
+      {
+        "id": "mila-satin-midi-skirt-xs",
+        "label": "XS",
+        "supplierVid": null
+      },
+      {
+        "id": "mila-satin-midi-skirt-s",
+        "label": "S",
+        "supplierVid": null
+      },
+      {
+        "id": "mila-satin-midi-skirt-m",
+        "label": "M",
+        "supplierVid": null
+      },
+      {
+        "id": "mila-satin-midi-skirt-l",
+        "label": "L",
+        "supplierVid": null
+      },
+      {
+        "id": "mila-satin-midi-skirt-xl",
+        "label": "XL",
+        "supplierVid": null
+      }
+    ],
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true
   },
   {
-    "id": "trenchcoat-ines",
-    "slug": "trenchcoat-ines",
-    "name": "Trenchcoat Ines",
-    "category": "kleidung",
-    "priceCents": 10900,
-    "description": "Zweireihiger Trenchcoat mit Bindegürtel und Schulterpatten.",
+    "id": "noor-linen-shirt",
+    "slug": "noor-linen-shirt",
+    "name": "Noor Linen Shirt",
+    "category": "ready-to-wear",
+    "silhouette": "shirt",
+    "priceCents": 11000,
+    "colour": "Ivory",
+    "description": "An airy, slightly oversized shirt in a linen blend with a single chest pocket.",
     "details": [
-      "Material: 65 % Polyester, 35 % Baumwolle",
-      "Länge in Grösse M: 102 cm",
-      "Abnehmbarer Gürtel"
+      "55% linen, 45% viscose",
+      "Length in size M: 70 cm",
+      "Mother-of-pearl effect buttons"
+    ],
+    "care": [
+      "Machine wash at 30 °C",
+      "Do not tumble dry"
     ],
     "images": [],
-    "swatch": "#b39b7a",
-    "variantLabel": "Grösse",
+    "swatch": "#e7e2d8",
+    "variantLabel": "Size",
     "variants": [
       {
-        "id": "trenchcoat-ines-xs",
+        "id": "noor-linen-shirt-xs",
         "label": "XS",
         "supplierVid": null
       },
       {
-        "id": "trenchcoat-ines-s",
+        "id": "noor-linen-shirt-s",
         "label": "S",
         "supplierVid": null
       },
       {
-        "id": "trenchcoat-ines-m",
+        "id": "noor-linen-shirt-m",
         "label": "M",
         "supplierVid": null
       },
       {
-        "id": "trenchcoat-ines-l",
+        "id": "noor-linen-shirt-l",
         "label": "L",
         "supplierVid": null
       },
       {
-        "id": "trenchcoat-ines-xl",
+        "id": "noor-linen-shirt-xl",
         "label": "XL",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
-    "published": true,
-    "compareAtCents": 13900
+    "published": true
   },
   {
-    "id": "shopper-lea",
-    "slug": "shopper-lea",
-    "name": "Shopper Lea",
-    "category": "taschen",
-    "priceCents": 6490,
-    "description": "Geräumiger Shopper aus Lederimitat mit Innenfach mit Reissverschluss.",
+    "id": "vera-wide-leg-trousers",
+    "slug": "vera-wide-leg-trousers",
+    "name": "Vera Wide-Leg Trousers",
+    "category": "ready-to-wear",
+    "silhouette": "trousers",
+    "priceCents": 13900,
+    "colour": "Charcoal",
+    "description": "High-rise trousers with a pressed crease and a full, floor-grazing leg.",
     "details": [
-      "Material: PU-Lederimitat",
-      "Masse: 38 × 30 × 14 cm",
-      "Passt für 13-Zoll-Laptops"
+      "68% polyester, 28% viscose, 4% elastane",
+      "Inside leg in size M: 80 cm",
+      "Side pockets, zip fly"
+    ],
+    "care": [
+      "Machine wash at 30 °C",
+      "Do not tumble dry"
     ],
     "images": [],
-    "swatch": "#7a5236",
-    "variantLabel": "Farbe",
+    "swatch": "#3b3936",
+    "variantLabel": "Size",
     "variants": [
       {
-        "id": "shopper-lea-cognac",
+        "id": "vera-wide-leg-trousers-xs",
+        "label": "XS",
+        "supplierVid": null
+      },
+      {
+        "id": "vera-wide-leg-trousers-s",
+        "label": "S",
+        "supplierVid": null
+      },
+      {
+        "id": "vera-wide-leg-trousers-m",
+        "label": "M",
+        "supplierVid": null
+      },
+      {
+        "id": "vera-wide-leg-trousers-l",
+        "label": "L",
+        "supplierVid": null
+      },
+      {
+        "id": "vera-wide-leg-trousers-xl",
+        "label": "XL",
+        "supplierVid": null
+      }
+    ],
+    "deliveryDays": "8–15 business days",
+    "supplier": "cj",
+    "example": true,
+    "published": true
+  },
+  {
+    "id": "sena-cashmere-blend-cardigan",
+    "slug": "sena-cashmere-blend-cardigan",
+    "name": "Sena Cashmere-Blend Cardigan",
+    "category": "ready-to-wear",
+    "silhouette": "sweater",
+    "priceCents": 14900,
+    "colour": "Oat",
+    "description": "A soft V-neck cardigan with horn-effect buttons, designed to be worn alone or layered.",
+    "details": [
+      "30% cashmere, 70% wool blend",
+      "Length in size M: 58 cm",
+      "Regular fit"
+    ],
+    "care": [
+      "Dry clean or hand wash cold",
+      "Dry flat"
+    ],
+    "images": [],
+    "swatch": "#d6ccbd",
+    "variantLabel": "Size",
+    "variants": [
+      {
+        "id": "sena-cashmere-blend-cardigan-xs",
+        "label": "XS",
+        "supplierVid": null
+      },
+      {
+        "id": "sena-cashmere-blend-cardigan-s",
+        "label": "S",
+        "supplierVid": null
+      },
+      {
+        "id": "sena-cashmere-blend-cardigan-m",
+        "label": "M",
+        "supplierVid": null
+      },
+      {
+        "id": "sena-cashmere-blend-cardigan-l",
+        "label": "L",
+        "supplierVid": null
+      },
+      {
+        "id": "sena-cashmere-blend-cardigan-xl",
+        "label": "XL",
+        "supplierVid": null
+      }
+    ],
+    "deliveryDays": "8–15 business days",
+    "supplier": "cj",
+    "example": true,
+    "published": true
+  },
+  {
+    "id": "lea-structured-tote",
+    "slug": "lea-structured-tote",
+    "name": "Lea Structured Tote",
+    "category": "bags",
+    "silhouette": "tote",
+    "priceCents": 16900,
+    "colour": "Cognac",
+    "description": "A roomy tote with clean lines, an inner zip pocket and space for a 13-inch laptop.",
+    "details": [
+      "Faux leather",
+      "38 × 30 × 14 cm",
+      "Inner zip pocket"
+    ],
+    "care": [
+      "Wipe clean with a soft, dry cloth",
+      "Store in the dust bag provided"
+    ],
+    "images": [],
+    "swatch": "#7a4f33",
+    "variantLabel": "Colour",
+    "variants": [
+      {
+        "id": "lea-structured-tote-cognac",
         "label": "Cognac",
         "supplierVid": null
       },
       {
-        "id": "shopper-lea-schwarz",
-        "label": "Schwarz",
+        "id": "lea-structured-tote-black",
+        "label": "Black",
         "supplierVid": null
       },
       {
-        "id": "shopper-lea-taupe",
+        "id": "lea-structured-tote-taupe",
         "label": "Taupe",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true
   },
   {
-    "id": "crossbody-juna",
-    "slug": "crossbody-juna",
-    "name": "Mini-Crossbody Juna",
-    "category": "taschen",
-    "priceCents": 3990,
-    "description": "Kleine Umhängetasche mit verstellbarem Kettenriemen.",
+    "id": "juna-mini-crossbody",
+    "slug": "juna-mini-crossbody",
+    "name": "Juna Mini Crossbody",
+    "category": "bags",
+    "silhouette": "crossbody",
+    "priceCents": 11900,
+    "colour": "Black",
+    "description": "A compact crossbody with an adjustable chain strap and a gold-tone turn-lock.",
     "details": [
-      "Material: PU-Lederimitat",
-      "Masse: 19 × 12 × 6 cm",
-      "Riemenlänge bis 120 cm"
+      "Faux leather",
+      "19 × 12 × 6 cm",
+      "Strap drop up to 60 cm"
+    ],
+    "care": [
+      "Wipe clean with a soft, dry cloth",
+      "Store in the dust bag provided"
     ],
     "images": [],
-    "swatch": "#2b2730",
-    "variantLabel": "Farbe",
+    "swatch": "#1d1c1b",
+    "variantLabel": "Colour",
     "variants": [
       {
-        "id": "crossbody-juna-schwarz",
-        "label": "Schwarz",
+        "id": "juna-mini-crossbody-black",
+        "label": "Black",
         "supplierVid": null
       },
       {
-        "id": "crossbody-juna-creme",
-        "label": "Creme",
+        "id": "juna-mini-crossbody-cream",
+        "label": "Cream",
         "supplierVid": null
       },
       {
-        "id": "crossbody-juna-bordeaux",
+        "id": "juna-mini-crossbody-bordeaux",
         "label": "Bordeaux",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true
   },
   {
-    "id": "schultertasche-ava",
-    "slug": "schultertasche-ava",
-    "name": "Gesteppte Schultertasche Ava",
-    "category": "taschen",
-    "priceCents": 5490,
-    "description": "Weiche Schultertasche mit Steppmuster und Magnetverschluss.",
+    "id": "ava-quilted-shoulder-bag",
+    "slug": "ava-quilted-shoulder-bag",
+    "name": "Ava Quilted Shoulder Bag",
+    "category": "bags",
+    "silhouette": "shoulder",
+    "priceCents": 14900,
+    "colour": "Sage",
+    "description": "A soft, quilted shoulder bag with a magnetic closure and a padded strap.",
     "details": [
-      "Material: Nylon, gesteppt",
-      "Masse: 32 × 20 × 8 cm",
-      "Magnetverschluss"
+      "Quilted nylon",
+      "32 × 20 × 8 cm",
+      "Magnetic closure"
+    ],
+    "care": [
+      "Spot clean only"
     ],
     "images": [],
-    "swatch": "#9aa3ad",
-    "variantLabel": "Farbe",
+    "swatch": "#97a08f",
+    "variantLabel": "Colour",
     "variants": [
       {
-        "id": "schultertasche-ava-salbei",
-        "label": "Salbei",
+        "id": "ava-quilted-shoulder-bag-sage",
+        "label": "Sage",
         "supplierVid": null
       },
       {
-        "id": "schultertasche-ava-schwarz",
-        "label": "Schwarz",
+        "id": "ava-quilted-shoulder-bag-black",
+        "label": "Black",
         "supplierVid": null
       },
       {
-        "id": "schultertasche-ava-silbergrau",
-        "label": "Silbergrau",
+        "id": "ava-quilted-shoulder-bag-silver-grey",
+        "label": "Silver Grey",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true
   },
   {
-    "id": "clutch-elin",
-    "slug": "clutch-elin",
-    "name": "Clutch Elin",
-    "category": "taschen",
-    "priceCents": 3490,
-    "description": "Schmale Abendclutch in Satinoptik mit Kettenriemen zum Einklappen.",
+    "id": "mara-bucket-bag",
+    "slug": "mara-bucket-bag",
+    "name": "Mara Bucket Bag",
+    "category": "bags",
+    "silhouette": "shoulder",
+    "priceCents": 13900,
+    "colour": "Chocolate",
+    "description": "A drawstring bucket bag with a detachable pouch and a wide shoulder strap.",
     "details": [
-      "Material: Satin, Polyester",
-      "Masse: 24 × 13 × 4 cm",
-      "Abnehmbare Kette"
+      "Faux suede",
+      "24 × 26 × 16 cm",
+      "Detachable inner pouch"
+    ],
+    "care": [
+      "Wipe clean with a soft, dry cloth",
+      "Store in the dust bag provided"
     ],
     "images": [],
-    "swatch": "#d8c3a5",
-    "variantLabel": "Farbe",
+    "swatch": "#4a372b",
+    "variantLabel": "Colour",
     "variants": [
       {
-        "id": "clutch-elin-champagner",
-        "label": "Champagner",
+        "id": "mara-bucket-bag-chocolate",
+        "label": "Chocolate",
         "supplierVid": null
       },
       {
-        "id": "clutch-elin-schwarz",
-        "label": "Schwarz",
+        "id": "mara-bucket-bag-black",
+        "label": "Black",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true
   },
   {
-    "id": "loafer-romy",
-    "slug": "loafer-romy",
-    "name": "Loafer Romy",
-    "category": "schuhe",
-    "priceCents": 6990,
-    "description": "Klassische Loafer mit Kettendetail und leicht erhöhtem Absatz.",
+    "id": "elin-satin-clutch",
+    "slug": "elin-satin-clutch",
+    "name": "Elin Satin Clutch",
+    "category": "bags",
+    "silhouette": "clutch",
+    "priceCents": 8900,
+    "colour": "Champagne",
+    "description": "A slim evening clutch in satin with a fold-away chain.",
     "details": [
-      "Obermaterial: PU-Lederimitat",
-      "Absatzhöhe: 3 cm",
-      "Fällt normal aus"
+      "Satin, polyester lining",
+      "24 × 13 × 4 cm",
+      "Detachable chain"
+    ],
+    "care": [
+      "Spot clean only"
     ],
     "images": [],
-    "swatch": "#1f1b22",
-    "variantLabel": "EU-Grösse",
+    "swatch": "#d4c1a1",
+    "variantLabel": "Colour",
     "variants": [
       {
-        "id": "loafer-romy-36",
+        "id": "elin-satin-clutch-champagne",
+        "label": "Champagne",
+        "supplierVid": null
+      },
+      {
+        "id": "elin-satin-clutch-black",
+        "label": "Black",
+        "supplierVid": null
+      }
+    ],
+    "deliveryDays": "8–15 business days",
+    "supplier": "cj",
+    "example": true,
+    "published": true
+  },
+  {
+    "id": "romy-chain-loafer",
+    "slug": "romy-chain-loafer",
+    "name": "Romy Chain Loafer",
+    "category": "shoes",
+    "silhouette": "loafer",
+    "priceCents": 15900,
+    "colour": "Black",
+    "description": "A polished loafer with a gold-tone chain and a 3 cm stacked heel.",
+    "details": [
+      "Upper: faux leather",
+      "Heel height: 3 cm",
+      "True to size"
+    ],
+    "care": [
+      "Wipe clean with a soft, dry cloth",
+      "Store in the dust bag provided"
+    ],
+    "images": [],
+    "swatch": "#1f1d1c",
+    "variantLabel": "EU size",
+    "variants": [
+      {
+        "id": "romy-chain-loafer-36",
         "label": "36",
         "supplierVid": null
       },
       {
-        "id": "loafer-romy-37",
+        "id": "romy-chain-loafer-37",
         "label": "37",
         "supplierVid": null
       },
       {
-        "id": "loafer-romy-38",
+        "id": "romy-chain-loafer-38",
         "label": "38",
         "supplierVid": null
       },
       {
-        "id": "loafer-romy-39",
+        "id": "romy-chain-loafer-39",
         "label": "39",
         "supplierVid": null
       },
       {
-        "id": "loafer-romy-40",
+        "id": "romy-chain-loafer-40",
         "label": "40",
         "supplierVid": null
       },
       {
-        "id": "loafer-romy-41",
+        "id": "romy-chain-loafer-41",
         "label": "41",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true
   },
   {
-    "id": "ankleboots-lina",
-    "slug": "ankleboots-lina",
-    "name": "Ankle Boots Lina",
-    "category": "schuhe",
-    "priceCents": 8490,
-    "description": "Stiefeletten mit Blockabsatz und seitlichem Reissverschluss.",
+    "id": "lina-suede-ankle-boot",
+    "slug": "lina-suede-ankle-boot",
+    "name": "Lina Suede Ankle Boot",
+    "category": "shoes",
+    "silhouette": "boot",
+    "priceCents": 18900,
+    "colour": "Espresso",
+    "description": "An ankle boot with a sculpted block heel and an inside zip.",
     "details": [
-      "Obermaterial: Veloursleder-Optik",
-      "Absatzhöhe: 6 cm",
-      "Schafthöhe: 14 cm"
+      "Upper: suede-effect",
+      "Heel height: 6 cm",
+      "Shaft height: 14 cm"
+    ],
+    "care": [
+      "Wipe clean with a soft, dry cloth",
+      "Store in the dust bag provided"
     ],
     "images": [],
-    "swatch": "#5a4535",
-    "variantLabel": "EU-Grösse",
+    "swatch": "#4f3d30",
+    "variantLabel": "EU size",
     "variants": [
       {
-        "id": "ankleboots-lina-36",
+        "id": "lina-suede-ankle-boot-36",
         "label": "36",
         "supplierVid": null
       },
       {
-        "id": "ankleboots-lina-37",
+        "id": "lina-suede-ankle-boot-37",
         "label": "37",
         "supplierVid": null
       },
       {
-        "id": "ankleboots-lina-38",
+        "id": "lina-suede-ankle-boot-38",
         "label": "38",
         "supplierVid": null
       },
       {
-        "id": "ankleboots-lina-39",
+        "id": "lina-suede-ankle-boot-39",
         "label": "39",
         "supplierVid": null
       },
       {
-        "id": "ankleboots-lina-40",
+        "id": "lina-suede-ankle-boot-40",
         "label": "40",
         "supplierVid": null
       },
       {
-        "id": "ankleboots-lina-41",
+        "id": "lina-suede-ankle-boot-41",
         "label": "41",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true,
-    "compareAtCents": 10900
+    "compareAtCents": 22900
   },
   {
-    "id": "ballerinas-zoe",
-    "slug": "ballerinas-zoe",
-    "name": "Ballerinas Zoé",
-    "category": "schuhe",
-    "priceCents": 4990,
-    "description": "Spitze Ballerinas mit Slingback-Riemen.",
+    "id": "zoe-slingback-flat",
+    "slug": "zoe-slingback-flat",
+    "name": "Zoé Slingback Flat",
+    "category": "shoes",
+    "silhouette": "flat",
+    "priceCents": 11900,
+    "colour": "Cherry",
+    "description": "A pointed slingback flat in a glossy finish with an adjustable strap.",
     "details": [
-      "Obermaterial: Lack-Optik",
-      "Absatzhöhe: 1 cm",
-      "Verstellbarer Riemen"
+      "Upper: patent-effect",
+      "Heel height: 1 cm",
+      "Adjustable strap"
+    ],
+    "care": [
+      "Wipe clean with a soft, dry cloth",
+      "Store in the dust bag provided"
     ],
     "images": [],
-    "swatch": "#a4344a",
-    "variantLabel": "EU-Grösse",
+    "swatch": "#7d2632",
+    "variantLabel": "EU size",
     "variants": [
       {
-        "id": "ballerinas-zoe-36",
+        "id": "zoe-slingback-flat-36",
         "label": "36",
         "supplierVid": null
       },
       {
-        "id": "ballerinas-zoe-37",
+        "id": "zoe-slingback-flat-37",
         "label": "37",
         "supplierVid": null
       },
       {
-        "id": "ballerinas-zoe-38",
+        "id": "zoe-slingback-flat-38",
         "label": "38",
         "supplierVid": null
       },
       {
-        "id": "ballerinas-zoe-39",
+        "id": "zoe-slingback-flat-39",
         "label": "39",
         "supplierVid": null
       },
       {
-        "id": "ballerinas-zoe-40",
+        "id": "zoe-slingback-flat-40",
         "label": "40",
         "supplierVid": null
       },
       {
-        "id": "ballerinas-zoe-41",
+        "id": "zoe-slingback-flat-41",
         "label": "41",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true
   },
   {
-    "id": "sneaker-kaya",
-    "slug": "sneaker-kaya",
-    "name": "Plateau-Sneaker Kaya",
-    "category": "schuhe",
-    "priceCents": 6490,
-    "description": "Weisse Plateau-Sneaker mit gepolsterter Zunge.",
+    "id": "iris-kitten-heel-pump",
+    "slug": "iris-kitten-heel-pump",
+    "name": "Iris Kitten-Heel Pump",
+    "category": "shoes",
+    "silhouette": "flat",
+    "priceCents": 12900,
+    "colour": "Ivory",
+    "description": "A pointed pump on a 4 cm kitten heel, for the office and evenings alike.",
     "details": [
-      "Obermaterial: PU",
-      "Sohlenhöhe: 4 cm",
-      "Fällt eine halbe Nummer gross aus"
+      "Upper: faux leather",
+      "Heel height: 4 cm",
+      "True to size"
+    ],
+    "care": [
+      "Wipe clean with a soft, dry cloth",
+      "Store in the dust bag provided"
     ],
     "images": [],
-    "swatch": "#ecebea",
-    "variantLabel": "EU-Grösse",
+    "swatch": "#e4ddd1",
+    "variantLabel": "EU size",
     "variants": [
       {
-        "id": "sneaker-kaya-36",
+        "id": "iris-kitten-heel-pump-36",
         "label": "36",
         "supplierVid": null
       },
       {
-        "id": "sneaker-kaya-37",
+        "id": "iris-kitten-heel-pump-37",
         "label": "37",
         "supplierVid": null
       },
       {
-        "id": "sneaker-kaya-38",
+        "id": "iris-kitten-heel-pump-38",
         "label": "38",
         "supplierVid": null
       },
       {
-        "id": "sneaker-kaya-39",
+        "id": "iris-kitten-heel-pump-39",
         "label": "39",
         "supplierVid": null
       },
       {
-        "id": "sneaker-kaya-40",
+        "id": "iris-kitten-heel-pump-40",
         "label": "40",
         "supplierVid": null
       },
       {
-        "id": "sneaker-kaya-41",
+        "id": "iris-kitten-heel-pump-41",
         "label": "41",
         "supplierVid": null
       }
     ],
-    "deliveryDays": "8–15 Werktage",
+    "deliveryDays": "8–15 business days",
+    "supplier": "cj",
+    "example": true,
+    "published": true
+  },
+  {
+    "id": "kaya-platform-sneaker",
+    "slug": "kaya-platform-sneaker",
+    "name": "Kaya Platform Sneaker",
+    "category": "shoes",
+    "silhouette": "sneaker",
+    "priceCents": 13900,
+    "colour": "White",
+    "description": "A clean low-top sneaker on a 4 cm platform sole with a padded tongue.",
+    "details": [
+      "Upper: faux leather",
+      "Sole height: 4 cm",
+      "Runs half a size large"
+    ],
+    "care": [
+      "Wipe clean with a damp cloth"
+    ],
+    "images": [],
+    "swatch": "#eceae6",
+    "variantLabel": "EU size",
+    "variants": [
+      {
+        "id": "kaya-platform-sneaker-36",
+        "label": "36",
+        "supplierVid": null
+      },
+      {
+        "id": "kaya-platform-sneaker-37",
+        "label": "37",
+        "supplierVid": null
+      },
+      {
+        "id": "kaya-platform-sneaker-38",
+        "label": "38",
+        "supplierVid": null
+      },
+      {
+        "id": "kaya-platform-sneaker-39",
+        "label": "39",
+        "supplierVid": null
+      },
+      {
+        "id": "kaya-platform-sneaker-40",
+        "label": "40",
+        "supplierVid": null
+      },
+      {
+        "id": "kaya-platform-sneaker-41",
+        "label": "41",
+        "supplierVid": null
+      }
+    ],
+    "deliveryDays": "8–15 business days",
     "supplier": "cj",
     "example": true,
     "published": true

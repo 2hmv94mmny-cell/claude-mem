@@ -1,6 +1,6 @@
 # Maison Elva – fashion dropshipping shop
 
-Next.js shop for women's clothing, bags and shoes, run by a company in Switzerland. Prices are in CHF;
+Next.js luxury storefront (in English) for women's clothing, bags and shoes, run by a company in Switzerland. Prices are in CHF;
 delivery to Switzerland and Liechtenstein. Customers pay with Stripe; paid orders are
 sent to CJdropshipping automatically, and customers get their tracking number by email.
 
@@ -32,10 +32,10 @@ npm test                     # unit tests
 
 ### Importing products
 ```bash
-CJ_API_KEY=... npm run cj:import -- --keyword "women loafers" --category schuhe --limit 5
+CJ_API_KEY=... npm run cj:import -- --keyword "women loafers" --category shoes --limit 5
 ```
-Imported products are saved with `"published": false`. Translate the name, write a German description,
-fill in `details` (material, sizes, measurements), rename the variant labels, then set `"published": true`.
+Imported products are saved with `"published": false`. Rewrite the name in the house style, write a description,
+fill in `details`, `care`, `colour` and `silhouette`, rename the variant labels, then set `"published": true`.
 Remove the example products (`"example": true`) before going live.
 
 ### Stripe

@@ -5,7 +5,7 @@ import type { CartLine } from "@/lib/types";
 export async function POST(request: Request) {
   if (!stripeConfigured()) {
     return Response.json(
-      { error: "Die Kasse ist noch nicht eingerichtet. Bitte versuche es später noch einmal." },
+      { error: "Checkout is not available yet. Please try again later." },
       { status: 503 },
     );
   }
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { lines?: CartLine[] };
     lines = body.lines ?? [];
   } catch {
-    return Response.json({ error: "Ungültige Anfrage." }, { status: 400 });
+    return Response.json({ error: "Invalid request." }, { status: 400 });
   }
 
   try {
@@ -25,6 +25,6 @@ export async function POST(request: Request) {
   } catch (err) {
     if (err instanceof CartError) return Response.json({ error: err.message }, { status: 400 });
     console.error("checkout failed", err);
-    return Response.json({ error: "Die Kasse konnte nicht geöffnet werden." }, { status: 502 });
+    return Response.json({ error: "Checkout could not be opened. Please try again." }, { status: 502 });
   }
 }

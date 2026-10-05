@@ -2,11 +2,12 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <section className="wrap section narrow">
-      <h1 className="page-title">Seite nicht gefunden</h1>
-      <p>Diese Seite gibt es nicht oder der Artikel ist nicht mehr verfügbar.</p>
-      <Link className="button button-primary" href="/">
-        Zur Startseite
+    <section className="wrap success">
+      <span className="label muted">404</span>
+      <h1>Page not found</h1>
+      <p className="muted">This page does not exist, or the piece is no longer available.</p>
+      <Link className="button" href="/">
+        Return home
       </Link>
     </section>
   );

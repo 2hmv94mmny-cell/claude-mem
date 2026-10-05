@@ -10,9 +10,11 @@ import { ProductImage } from "./ProductImage";
 export function CartView({
   products,
   shipping,
+  priceNote,
 }: {
   products: Product[];
   shipping: { flatCents: number; freeFromCents: number };
+  priceNote: string;
 }) {
   const cart = useCart();
   const [error, setError] = useState<string | null>(null);
@@ -26,17 +28,18 @@ export function CartView({
 
   if (lines.length === 0) {
     return (
-      <div className="empty-cart">
-        <p>Dein Warenkorb ist leer.</p>
-        <Link className="button button-primary" href="/">
-          Weiter einkaufen
+      <div className="empty">
+        <p className="muted">Your shopping bag is empty.</p>
+        <Link className="button" href="/shop/ready-to-wear">
+          Continue shopping
         </Link>
       </div>
     );
   }
 
   const subtotal = lines.reduce((sum, l) => sum + l.product.priceCents * l.quantity, 0);
-  const shippingCost = subtotal >= shipping.freeFromCents ? 0 : shipping.flatCents;
+  const delivery = subtotal >= shipping.freeFromCents ? 0 : shipping.flatCents;
+  const progress = Math.min(1, subtotal / shipping.freeFromCents);
 
   async function checkout() {
     setLoading(true);
@@ -50,75 +53,99 @@ export function CartView({
         }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) throw new Error(data.error ?? "Die Kasse konnte nicht geöffnet werden.");
+      if (!res.ok || !data.url) throw new Error(data.error ?? "Checkout could not be opened. Please try again.");
       window.location.href = data.url;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Die Kasse konnte nicht geöffnet werden.");
+      setError(err instanceof Error ? err.message : "Checkout could not be opened. Please try again.");
       setLoading(false);
     }
   }
 
   return (
-    <div className="cart-layout">
-      <ul className="cart-lines">
+    <div className="bag">
+      <ul className="bag-lines">
         {lines.map((l) => (
-          <li key={`${l.productId}-${l.variantId}`} className="cart-line">
-            <ProductImage product={l.product} />
-            <div className="cart-line-info">
-              <Link href={`/produkt/${l.product.slug}`}>{l.product.name}</Link>
-              <span className="muted">
-                {l.product.variantLabel}: {l.variant.label}
+          <li key={`${l.productId}-${l.variantId}`} className="bag-line">
+            <Link href={`/product/${l.product.slug}`} className="frame" aria-label={l.product.name}>
+              <ProductImage product={l.product} />
+            </Link>
+            <div className="bag-line-info">
+              <Link className="name" href={`/product/${l.product.slug}`}>
+                {l.product.name}
+              </Link>
+              <span className="muted small">
+                {l.product.colour && `${l.product.colour} · `}
+                {l.product.variantLabel} {l.variant.label}
               </span>
-              <label className="qty">
-                Menge
-                <select
-                  id={`qty-${l.productId}-${l.variantId}`}
-                  value={l.quantity}
-                  onChange={(e) => setQuantity(l.productId, l.variantId, Number(e.target.value))}
-                >
-                  {Array.from({ length: 11 }, (_, n) => (
-                    <option key={n} value={n}>
-                      {n === 0 ? "Entfernen" : n}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <span className="muted small">Delivery in {l.product.deliveryDays}</span>
+              <div className="bag-line-actions">
+                <span className="qty" aria-label="Quantity">
+                  <button
+                    type="button"
+                    aria-label="Decrease quantity"
+                    onClick={() => setQuantity(l.productId, l.variantId, l.quantity - 1)}
+                  >
+                    −
+                  </button>
+                  <span>{l.quantity}</span>
+                  <button
+                    type="button"
+                    aria-label="Increase quantity"
+                    disabled={l.quantity >= 10}
+                    onClick={() => setQuantity(l.productId, l.variantId, l.quantity + 1)}
+                  >
+                    +
+                  </button>
+                </span>
+                <button type="button" className="remove" onClick={() => setQuantity(l.productId, l.variantId, 0)}>
+                  Remove
+                </button>
+              </div>
             </div>
-            <span className="cart-line-price">{formatChf(l.product.priceCents * l.quantity)}</span>
+            <span className="price">{formatChf(l.product.priceCents * l.quantity)}</span>
           </li>
         ))}
       </ul>
 
-      <aside className="summary">
+      <aside className="summary" aria-label="Order summary">
+        <span className="label">Order summary</span>
+        <div className="progress">
+          <span>
+            {delivery === 0
+              ? "You qualify for complimentary delivery."
+              : `${formatChf(shipping.freeFromCents - subtotal)} away from complimentary delivery.`}
+          </span>
+          <div className="progress-track">
+            <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
+          </div>
+        </div>
         <dl>
           <div>
-            <dt>Zwischensumme</dt>
+            <dt>Subtotal</dt>
             <dd>{formatChf(subtotal)}</dd>
           </div>
           <div>
-            <dt>Versand</dt>
-            <dd>{shippingCost === 0 ? "kostenlos" : formatChf(shippingCost)}</dd>
+            <dt>Delivery</dt>
+            <dd>{delivery === 0 ? "Complimentary" : formatChf(delivery)}</dd>
           </div>
-          <div className="summary-total">
-            <dt>Gesamt</dt>
-            <dd>{formatChf(subtotal + shippingCost)}</dd>
+          <div className="total">
+            <dt>Total</dt>
+            <dd>{formatChf(subtotal + delivery)}</dd>
           </div>
         </dl>
-        <p className="muted small">
-          Endpreise in CHF. Lieferadresse und Zahlung gibst du im nächsten Schritt an.{" "}
-          <Link href="/info/versand">Hinweis zu Zoll und Einfuhrabgaben</Link>
-        </p>
-        {shippingCost > 0 && (
-          <p className="small">Noch {formatChf(shipping.freeFromCents - subtotal)} bis zum kostenlosen Versand.</p>
-        )}
-        <button className="button button-primary wide" type="button" onClick={checkout} disabled={loading}>
-          {loading ? "Kasse wird geöffnet …" : "Zur Kasse"}
+        <p className="fine">{priceNote}. You enter your delivery address and payment details on the next step.</p>
+        <button className="button block" type="button" onClick={checkout} disabled={loading}>
+          {loading ? "Opening secure checkout…" : "Proceed to checkout"}
         </button>
         {error && (
           <p className="error" role="alert">
             {error}
           </p>
         )}
+        <p className="fine">
+          Secure payment by Stripe: card, TWINT, Apple Pay, Google Pay. Shipped from abroad, see{" "}
+          <Link href="/pages/shipping">customs and import charges</Link>.
+        </p>
       </aside>
     </div>
   );

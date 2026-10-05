@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductCard } from "@/components/ProductCard";
 import { categories, getCategory, getProductsByCategory } from "@/lib/catalog";
@@ -11,7 +12,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const category = getCategory((await params).category);
-  return { title: category?.name ?? "Shop" };
+  return { title: category?.name ?? "Shop", description: category?.intro };
 }
 
 export default async function CategoryPage({ params }: Props) {
@@ -20,20 +21,35 @@ export default async function CategoryPage({ params }: Props) {
   const products = getProductsByCategory(category.id);
 
   return (
-    <section className="wrap section">
-      <div className="section-head stacked">
-        <h1 className="page-title">{category.name}</h1>
-        <p className="muted">{category.intro}</p>
-      </div>
-      {products.length ? (
-        <div className="product-grid">
-          {products.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
+    <>
+      <header className="wrap collection-head">
+        <span className="label muted">Collection</span>
+        <h1>{category.name}</h1>
+        <p>{category.intro}</p>
+      </header>
+      <section className="wrap" style={{ paddingBottom: "clamp(64px, 8vw, 120px)" }}>
+        <div className="collection-bar label">
+          <nav className="collection-tabs" aria-label="Collections">
+            {categories.map((c) => (
+              <Link key={c.id} href={`/shop/${c.id}`} aria-current={c.id === category.id ? "page" : undefined}>
+                {c.name}
+              </Link>
+            ))}
+          </nav>
+          <span className="muted">
+            {products.length} {products.length === 1 ? "piece" : "pieces"}
+          </span>
         </div>
-      ) : (
-        <p>In dieser Kategorie gibt es gerade keine Artikel.</p>
-      )}
-    </section>
+        {products.length ? (
+          <div className="grid">
+            {products.map((p) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
+          </div>
+        ) : (
+          <p className="muted">New pieces are arriving soon.</p>
+        )}
+      </section>
+    </>
   );
 }
