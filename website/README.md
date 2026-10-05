@@ -34,6 +34,9 @@ npm test                     # unit tests
 ```bash
 CJ_API_KEY=... npm run cj:import -- --keyword "women loafers" --category shoes --limit 5
 ```
+To fetch CJ candidates for every product in the current collection (each has a `sourcing.keyword`
+chosen from AW26 trend data), run `npm run cj:import -- --plan --limit 3`.
+
 Imported products are saved with `"published": false`. Rewrite the name in the house style, write a description,
 fill in `details`, `care`, `colour` and `silhouette`, rename the variant labels, then set `"published": true`.
 Remove the example products (`"example": true`) before going live.

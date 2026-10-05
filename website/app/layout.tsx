@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Bodoni_Moda, Jost } from "next/font/google";
 import Link from "next/link";
 import { CartCount } from "@/components/CartCount";
-import { categories, hasExampleProducts } from "@/lib/catalog";
+import { MenuController } from "@/components/MenuController";
+import { categories, getProductsByCategory, hasExampleProducts } from "@/lib/catalog";
 import { announcements, brand, company, footerLinks } from "@/content";
 import "./globals.css";
 
@@ -43,20 +44,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
               ))}
             </nav>
-            <details className="menu label">
-              <summary>Menu</summary>
-              <nav className="menu-panel" aria-label="Menu">
-                {categories.map((c) => (
-                  <Link key={c.id} href={`/shop/${c.id}`}>
-                    {c.name}
-                  </Link>
-                ))}
-                <Link href="/pages/about">About</Link>
-                <Link className="label" href="/pages/contact">
-                  Client care
-                </Link>
-              </nav>
-            </details>
+            <button
+              type="button"
+              className="menu-toggle label"
+              data-menu-open
+              aria-controls="site-menu"
+              aria-expanded="false"
+            >
+              <span className="menu-icon" aria-hidden="true" />
+              Menu
+            </button>
 
             <Link className="wordmark" href="/" aria-label={`${brand.name}, home`}>
               {brand.name}
@@ -72,6 +69,42 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </header>
+
+        <div id="site-menu" className="menu-overlay" role="dialog" aria-modal="true" aria-label="Menu" hidden>
+          <div className="wrap menu-top">
+            <button type="button" className="label menu-close" data-menu-close>
+              Close
+            </button>
+            <Link className="wordmark" href="/">
+              {brand.name}
+            </Link>
+            <Link className="label menu-bag" href="/bag">
+              Bag <CartCount />
+            </Link>
+          </div>
+          <nav className="wrap menu-links" aria-label="Collections">
+            {categories.map((c) => (
+              <Link key={c.id} href={`/shop/${c.id}`}>
+                <span className="menu-link-name">{c.name}</span>
+                <span className="menu-link-meta label">{getProductsByCategory(c.id).length} pieces</span>
+              </Link>
+            ))}
+            <Link href="/pages/about">
+              <span className="menu-link-name">The House</span>
+              <span className="menu-link-meta label">About</span>
+            </Link>
+          </nav>
+          <div className="wrap menu-foot">
+            <div className="menu-service">
+              <Link href="/pages/contact">Client care</Link>
+              <Link href="/pages/shipping">Shipping</Link>
+              <Link href="/pages/returns">Returns</Link>
+              <Link href="/pages/size-guide">Size guide</Link>
+            </div>
+            <p className="label muted">Switzerland · CHF</p>
+          </div>
+        </div>
+        <MenuController />
 
         <main>{children}</main>
 

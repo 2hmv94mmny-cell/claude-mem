@@ -39,6 +39,8 @@ export interface Product {
   variants: Variant[];
   deliveryDays: string;
   supplier: "cj" | "none";
+  /** CJ search term and the reason this product is in the collection. */
+  sourcing?: { keyword: string; why: string };
   /** Example products are shown with a notice and are never sent to a supplier. */
   example?: boolean;
   /** Imported products stay hidden until someone has reviewed them. */

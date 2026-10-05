@@ -1,6 +1,10 @@
 // Imports products from CJdropshipping into data/products.json.
 //
 //   CJ_API_KEY=... npm run cj:import -- --keyword "women loafers" --category shoes --limit 5
+//   CJ_API_KEY=... npm run cj:import -- --plan --limit 3
+//
+// --plan searches CJ for every product that has a "sourcing.keyword" but no CJ variant yet,
+// and imports the top results as unpublished candidates to compare and choose from.
 //
 // Options: --markup 2.5 (price = CJ cost × markup), --usd-chf 0.80, --country DE (only items
 // stocked in that country's warehouse). Imported products are saved with "published": false.
@@ -19,11 +23,12 @@ const { values } = parseArgs({
     markup: { type: "string", default: "2.5" },
     "usd-chf": { type: "string", default: "0.80" },
     country: { type: "string" },
+    plan: { type: "boolean", default: false },
   },
 });
 
 const categoryIds: CategoryId[] = ["ready-to-wear", "bags", "shoes"];
-if (!values.keyword || !categoryIds.includes(values.category as CategoryId)) {
+if (!values.plan && (!values.keyword || !categoryIds.includes(values.category as CategoryId))) {
   console.error(`Usage: npm run cj:import -- --keyword "<search>" --category ${categoryIds.join("|")} [--limit 5]`);
   process.exit(1);
 }
@@ -59,12 +64,28 @@ async function main() {
   const file = join(import.meta.dirname, "..", "data", "products.json");
   const products = JSON.parse(readFileSync(file, "utf8")) as Product[];
 
+  const searches = values.plan
+    ? products
+        .filter((p) => p.sourcing && p.variants.every((v) => !v.supplierVid))
+        .map((p) => ({ keyword: p.sourcing!.keyword, category: p.category }))
+    : [{ keyword: values.keyword!, category: values.category as CategoryId }];
+
+  for (const search of searches) {
+    await sleep(1100);
+    await importSearch(products, search.keyword, search.category);
+  }
+
+  writeFileSync(file, JSON.stringify(products, null, 2) + "\n");
+  console.log(`Saved to ${file}. New products are unpublished until you review them.`);
+}
+
+async function importSearch(products: Product[], keyword: string, category: CategoryId) {
   const found = await cj.searchProducts({
-    keyWord: values.keyword!,
+    keyWord: keyword,
     size: Number(values.limit),
     countryCode: values.country,
   });
-  console.log(`Found ${found.length} products for "${values.keyword}".`);
+  console.log(`Found ${found.length} products for "${keyword}".`);
 
   for (const hit of found) {
     if (products.some((p) => p.id === `cj-${hit.id}`)) {
@@ -81,8 +102,8 @@ async function main() {
       id: `cj-${hit.id}`,
       slug,
       name: detail.productNameEn,
-      category: values.category as CategoryId,
-      silhouette: values.category === "bags" ? "tote" : values.category === "shoes" ? "loafer" : "shirt",
+      category,
+      silhouette: category === "bags" ? "tote" : category === "shoes" ? "loafer" : "shirt",
       colour: "",
       priceCents: shopPriceCents(maxCost),
       description: "",
@@ -104,9 +125,6 @@ async function main() {
     });
     console.log(`+ ${detail.productNameEn}: cost up to $${maxCost}, price CHF ${(shopPriceCents(maxCost) / 100).toFixed(2)}`);
   }
-
-  writeFileSync(file, JSON.stringify(products, null, 2) + "\n");
-  console.log(`Saved to ${file}. New products are unpublished until you review them.`);
 }
 
 main().catch((err) => {

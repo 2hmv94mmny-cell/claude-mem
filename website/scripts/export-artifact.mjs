@@ -146,11 +146,19 @@ const script = `
       </div>\`;
   }
 
+  function setMenu(open) {
+    const menu = document.getElementById("site-menu");
+    if (!menu) return;
+    menu.hidden = !open;
+    document.body.classList.toggle("menu-open", open);
+    document.querySelector("[data-menu-open]")?.setAttribute("aria-expanded", String(open));
+  }
+
   function route() {
     const id = current();
     const tpl = document.getElementById("r-" + id) || document.getElementById("r-home");
     view.innerHTML = tpl.innerHTML;
-    document.querySelectorAll("details.menu[open]").forEach((d) => d.removeAttribute("open"));
+    setMenu(false);
     if (id === "bag") renderBag();
     updateCount();
     window.scrollTo(0, 0);
@@ -202,8 +210,8 @@ const script = `
       if (note) note.hidden = false;
       return;
     }
-    // Close the mobile menu after choosing a link.
-    if (t.closest(".menu-panel a")) t.closest("details")?.removeAttribute("open");
+    if (t.closest("[data-menu-open]")) { setMenu(true); return; }
+    if (t.closest("[data-menu-close]") || t.closest("#site-menu a")) setMenu(false);
   });
 
   document.addEventListener("submit", (e) => {
@@ -215,6 +223,7 @@ const script = `
     form.outerHTML = '<p role="status">Thank you. You are now on our list.</p>';
   });
 
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
   window.addEventListener("hashchange", route);
   route();
 })();
