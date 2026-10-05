@@ -102,6 +102,30 @@ describe('parseAgentXml — summaries', () => {
     }
   });
 
+  it('keeps observations that precede a trailing <skip_summary/> sentinel', () => {
+    // A batch reply that records one event and skips the rest must not lose
+    // the recorded observation to the sentinel.
+    const text = `<observation><type>discovery</type><title>Kept finding</title></observation>
+<skip_summary reason="noise" />`;
+    const result = parseAgentXml(text);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.summary).toBeNull();
+      expect(result.observations).toHaveLength(1);
+      expect(result.observations[0].title).toBe('Kept finding');
+    }
+  });
+
+  it('still treats a leading <skip_summary/> as the result', () => {
+    const result = parseAgentXml(`<skip_summary reason="noise" />
+<observation><type>discovery</type><title>ignored</title></observation>`);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.summary?.skipped).toBe(true);
+      expect(result.observations).toHaveLength(0);
+    }
+  });
+
   it('returns invalid for empty input', () => {
     expect(parseAgentXml('').valid).toBe(false);
     expect(parseAgentXml('   \n  ').valid).toBe(false);
