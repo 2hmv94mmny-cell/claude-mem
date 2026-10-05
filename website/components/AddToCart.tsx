@@ -21,7 +21,7 @@ export function AddToCart({ product }: { product: Product }) {
   return (
     <div className="buy">
       <div className="option-head">
-        <span className="label">Select {product.variantLabel.toLowerCase()}</span>
+        <span className="label">Select {product.variantLabel}</span>
         {isSize && <Link href="/pages/size-guide">Size guide</Link>}
       </div>
       <fieldset className="options">
@@ -43,7 +43,7 @@ export function AddToCart({ product }: { product: Product }) {
         ))}
       </fieldset>
       <button className="button block" type="button" onClick={add} disabled={!variantId}>
-        {variantId ? "Add to bag" : `Select a ${product.variantLabel.toLowerCase()}`}
+        {variantId ? "Add to bag" : `Select ${product.variantLabel}`}
       </button>
       {added && (
         <div className="added" role="status">
