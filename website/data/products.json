@@ -52,7 +52,15 @@
     "supplier": "cj",
     "sourcing": {
       "keyword": "women funnel neck wool blend long coat",
-      "why": "Funnel-neck coats are one of the most confirmed AW26 outerwear details; chocolate replaces beige as the key neutral."
+      "why": "Funnel-neck coats are one of the most confirmed AW26 outerwear details; chocolate replaces beige as the key neutral.",
+      "cjCandidates": [
+        {
+          "title": "Women's Stand Collar Mid-length Trench Coat",
+          "pid": "2507180443141610200",
+          "options": "khaki, dark gray, black · M, L only",
+          "url": "https://cjdropshipping.com/product/womens-stand-collar-mid-length-trench-coat-p-2507180443141610200.html"
+        }
+      ]
     },
     "example": true,
     "published": true,
@@ -110,7 +118,15 @@
     "supplier": "cj",
     "sourcing": {
       "keyword": "women oversized chunky rib knit sweater",
-      "why": "Knitwear is the most invested AW26 category; burgundy is the colour of the season."
+      "why": "Knitwear is the most invested AW26 category; burgundy is the colour of the season.",
+      "cjCandidates": [
+        {
+          "title": "Women's Thick Knitted Pullover Sweater Loose Fit Round Neck Casual All-Match Top For Autumn Winter",
+          "pid": "2510310557511655500",
+          "options": "light gray, dark green, brown, pink · S–XL",
+          "url": "https://cjdropshipping.com/product/womens-thick-knitted-pullover-sweater-loose-fit-round-neck-casual-all-match-top-for-autumn-winter-p-2510310557511655500.html"
+        }
+      ]
     },
     "example": true,
     "published": true
@@ -167,7 +183,15 @@
     "supplier": "cj",
     "sourcing": {
       "keyword": "women double breasted belted trench coat",
-      "why": "Retail reports name the trench the most dependable statement-outerwear seller across seasons."
+      "why": "Retail reports name the trench the most dependable statement-outerwear seller across seasons.",
+      "cjCandidates": [
+        {
+          "title": "Fall Winter Fashion Solid Color Mid-length Trench Coat",
+          "pid": "1730104669608878080",
+          "options": "brown, black, light khaki · S–XL",
+          "url": "https://cjdropshipping.com/product/fall-winter-fashion-solid-color-mid-length-trench-coat-p-1730104669608878080.html"
+        }
+      ]
     },
     "example": true,
     "published": true
@@ -281,7 +305,15 @@
     "supplier": "cj",
     "sourcing": {
       "keyword": "women high waist pleated wide leg trousers",
-      "why": "Wider silhouettes define AW26 tailoring; grey is overtaking brown as the base neutral."
+      "why": "Wider silhouettes define AW26 tailoring; grey is overtaking brown as the base neutral.",
+      "cjCandidates": [
+        {
+          "title": "Women's New High Waist Loose Drape Suit Wide Leg Pants",
+          "pid": "1526813151885537280",
+          "options": "white, khaki, black",
+          "url": "https://cjdropshipping.com/product/womens-new-high-waist-loose-drape-suit-wide-leg-pants-p-1526813151885537280.html"
+        }
+      ]
     },
     "example": true,
     "published": true
@@ -338,7 +370,15 @@
     "supplier": "cj",
     "sourcing": {
       "keyword": "women satin midi slip skirt",
-      "why": "Satin has become an everyday basic, worn against chunky knits and suede."
+      "why": "Satin has become an everyday basic, worn against chunky knits and suede.",
+      "cjCandidates": [
+        {
+          "title": "Women's Slim Fit Satin Skirt Fashion Chic Solid Long Skirt",
+          "pid": "2504300512351610900",
+          "options": "",
+          "url": "https://cjdropshipping.com/product/womens-slim-fit-satin-skirt-fashion-chic-solid-long-skirt-p-2504300512351610900.html"
+        }
+      ]
     },
     "example": true,
     "published": true
@@ -385,7 +425,15 @@
     "supplier": "cj",
     "sourcing": {
       "keyword": "women suede slouchy shoulder bag",
-      "why": "Suede is AW26's sleek texture for structured and slouchy bags; chestnut is the fastest-growing brown."
+      "why": "Suede is AW26's sleek texture for structured and slouchy bags; chestnut is the fastest-growing brown.",
+      "cjCandidates": [
+        {
+          "title": "Women's Shoulder Bag With Ethnic Style Wide Shoulder Strap Ins Large Capacity Bucket Crossbody Bags Fashion Handbag",
+          "pid": "1741387707609260032",
+          "options": "creamy white and more · PU",
+          "url": "https://cjdropshipping.com/product/womens-shoulder-bag-with-ethnic-style-wide-shoulder-strap-ins-large-capacity-bucket-crossbody-bags-fashion-handbag-p-1741387707609260032.html"
+        }
+      ]
     },
     "example": true,
     "published": true
@@ -573,7 +621,21 @@
     "supplier": "cj",
     "sourcing": {
       "keyword": "women structured tote bag laptop faux leather",
-      "why": "Work totes are the everyday anchor bag; large and versatile, with low return rates."
+      "why": "Work totes are the everyday anchor bag; large and versatile, with low return rates.",
+      "cjCandidates": [
+        {
+          "title": "Soft Leather Shoulder Bag Large Capacity Commuter Totes Shopping Travel Bags For Women",
+          "pid": "2506290532511611100",
+          "options": "black, milky white, brown, light brown · PU",
+          "url": "https://cjdropshipping.com/product/soft-leather-shoulder-bag-large-capacity-commuter-totes-shopping-travel-bags-for-women-p-2506290532511611100.html"
+        },
+        {
+          "title": "Women's Shoulder Bag Fashion Simple High Capacity Waterproof Totes Handbags Designer",
+          "pid": "2503220643241604901",
+          "options": "milky white, black, dark khaki, blue · cowhide leather",
+          "url": "https://cjdropshipping.com/product/womens-shoulder-bag-fashion-simple-high-capacity-waterproof-totes-handbags-designer-p-2503220643241604901.html"
+        }
+      ]
     },
     "example": true,
     "published": true

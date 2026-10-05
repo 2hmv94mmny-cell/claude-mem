@@ -39,8 +39,12 @@ export interface Product {
   variants: Variant[];
   deliveryDays: string;
   supplier: "cj" | "none";
-  /** CJ search term and the reason this product is in the collection. */
-  sourcing?: { keyword: string; why: string };
+  /** CJ search term, the reason this product is in the collection, and CJ listings found for it. */
+  sourcing?: {
+    keyword: string;
+    why: string;
+    cjCandidates?: { title: string; pid: string; url: string; options: string }[];
+  };
   /** Example products are shown with a notice and are never sent to a supplier. */
   example?: boolean;
   /** Imported products stay hidden until someone has reviewed them. */

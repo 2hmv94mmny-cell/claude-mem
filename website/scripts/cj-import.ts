@@ -3,8 +3,9 @@
 //   CJ_API_KEY=... npm run cj:import -- --keyword "women loafers" --category shoes --limit 5
 //   CJ_API_KEY=... npm run cj:import -- --plan --limit 3
 //
-// --plan searches CJ for every product that has a "sourcing.keyword" but no CJ variant yet,
-// and imports the top results as unpublished candidates to compare and choose from.
+// --plan handles every product that has no CJ variant yet: listings already chosen in
+// "sourcing.cjCandidates" are imported by their CJ product id, the rest are searched by
+// "sourcing.keyword". Everything lands as unpublished candidates to compare and choose from.
 //
 // Options: --markup 2.5 (price = CJ cost × markup), --usd-chf 0.80, --country DE (only items
 // stocked in that country's warehouse). Imported products are saved with "published": false.
@@ -64,15 +65,22 @@ async function main() {
   const file = join(import.meta.dirname, "..", "data", "products.json");
   const products = JSON.parse(readFileSync(file, "utf8")) as Product[];
 
-  const searches = values.plan
-    ? products
-        .filter((p) => p.sourcing && p.variants.every((v) => !v.supplierVid))
-        .map((p) => ({ keyword: p.sourcing!.keyword, category: p.category }))
-    : [{ keyword: values.keyword!, category: values.category as CategoryId }];
+  const todo = values.plan
+    ? products.filter((p) => p.sourcing && p.variants.every((v) => !v.supplierVid))
+    : [];
 
-  for (const search of searches) {
-    await sleep(1100);
-    await importSearch(products, search.keyword, search.category);
+  for (const item of todo) {
+    const candidates = item.sourcing!.cjCandidates ?? [];
+    for (const candidate of candidates) {
+      await importPid(products, candidate.pid, item.category);
+    }
+    if (!candidates.length) {
+      await sleep(1100);
+      await importSearch(products, item.sourcing!.keyword, item.category);
+    }
+  }
+  if (!values.plan) {
+    await importSearch(products, values.keyword!, values.category as CategoryId);
   }
 
   writeFileSync(file, JSON.stringify(products, null, 2) + "\n");
@@ -88,43 +96,46 @@ async function importSearch(products: Product[], keyword: string, category: Cate
   console.log(`Found ${found.length} products for "${keyword}".`);
 
   for (const hit of found) {
-    if (products.some((p) => p.id === `cj-${hit.id}`)) {
-      console.log(`- skipped (already imported): ${hit.nameEn}`);
-      continue;
-    }
-    await sleep(1100); // CJ allows one request per second.
-    const detail = await cj.getProduct(hit.id);
-    if (!detail.variants?.length) continue;
-
-    const maxCost = Math.max(...detail.variants.map((v) => v.variantSellPrice));
-    const slug = `${slugify(detail.productNameEn)}-${hit.id.slice(0, 6).toLowerCase()}`;
-    products.push({
-      id: `cj-${hit.id}`,
-      slug,
-      name: detail.productNameEn,
-      category,
-      silhouette: category === "bags" ? "tote" : category === "shoes" ? "loafer" : "shirt",
-      colour: "",
-      priceCents: shopPriceCents(maxCost),
-      description: "",
-      details: [],
-      care: [],
-      images: (detail.productImageSet?.length ? detail.productImageSet : [detail.bigImage]).filter(Boolean),
-      swatch: "#d9d4dc",
-      variantLabel: "Option",
-      variants: detail.variants.map((v) => ({
-        id: v.vid,
-        label: v.variantKey || v.variantSku,
-        supplierVid: v.vid,
-        supplierSku: v.variantSku,
-        costUsd: v.variantSellPrice,
-      })),
-      deliveryDays: values.country && values.country !== "CN" ? "5–10 business days" : "8–15 business days",
-      supplier: "cj",
-      published: false,
-    });
-    console.log(`+ ${detail.productNameEn}: cost up to $${maxCost}, price CHF ${(shopPriceCents(maxCost) / 100).toFixed(2)}`);
+    await importPid(products, hit.id, category);
   }
+}
+
+async function importPid(products: Product[], pid: string, category: CategoryId) {
+  if (products.some((p) => p.id === `cj-${pid}`)) {
+    console.log(`- skipped (already imported): ${pid}`);
+    return;
+  }
+  await sleep(1100); // CJ allows one request per second.
+  const detail = await cj.getProduct(pid);
+  if (!detail.variants?.length) return;
+
+  const maxCost = Math.max(...detail.variants.map((v) => v.variantSellPrice));
+  products.push({
+    id: `cj-${pid}`,
+    slug: `${slugify(detail.productNameEn)}-${pid.slice(-6).toLowerCase()}`,
+    name: detail.productNameEn,
+    category,
+    silhouette: category === "bags" ? "tote" : category === "shoes" ? "loafer" : "shirt",
+    colour: "",
+    priceCents: shopPriceCents(maxCost),
+    description: "",
+    details: [],
+    care: [],
+    images: (detail.productImageSet?.length ? detail.productImageSet : [detail.bigImage]).filter(Boolean),
+    swatch: "#d9d4dc",
+    variantLabel: "Option",
+    variants: detail.variants.map((v) => ({
+      id: v.vid,
+      label: v.variantKey || v.variantSku,
+      supplierVid: v.vid,
+      supplierSku: v.variantSku,
+      costUsd: v.variantSellPrice,
+    })),
+    deliveryDays: values.country && values.country !== "CN" ? "5–10 business days" : "8–15 business days",
+    supplier: "cj",
+    published: false,
+  });
+  console.log(`+ ${detail.productNameEn}: cost up to $${maxCost}, price CHF ${(shopPriceCents(maxCost) / 100).toFixed(2)}`);
 }
 
 main().catch((err) => {
