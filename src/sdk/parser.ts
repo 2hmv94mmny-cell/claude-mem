@@ -67,26 +67,26 @@ export function parseAgentXml(raw: string, correlationId?: string | number): Par
   raw = stripCodeFences(raw);
 
   const skipMatch = /<skip_summary(?:\s+reason="([^"]*)")?\s*\/>/i.exec(raw);
-  if (skipMatch) {
-    return {
-      valid: true,
-      observations: [],
-      summary: {
-        request: null,
-        investigated: null,
-        learned: null,
-        completed: null,
-        next_steps: null,
-        notes: null,
-        skipped: true,
-        skip_reason: skipMatch[1] === undefined ? null : decodeXmlReferences(skipMatch[1]),
-      },
-    };
-  }
+  const skipResult = (): ParseResult => skipMatch ? {
+    valid: true,
+    observations: [],
+    summary: {
+      request: null,
+      investigated: null,
+      learned: null,
+      completed: null,
+      next_steps: null,
+      notes: null,
+      skipped: true,
+      skip_reason: skipMatch[1] === undefined ? null : decodeXmlReferences(skipMatch[1]),
+    },
+  } : { valid: false };
 
+  // The first root decides, as between <observation> and <summary>: a sentinel
+  // trailing real observations must not discard them.
   const firstRoot = /<(observation|summary)\b/i.exec(raw);
-  if (!firstRoot) {
-    return { valid: false };
+  if (!firstRoot || (skipMatch && skipMatch.index < firstRoot.index)) {
+    return skipResult();
   }
 
   const rootName = firstRoot[1].toLowerCase();
@@ -94,7 +94,7 @@ export function parseAgentXml(raw: string, correlationId?: string | number): Par
     const schemaDrift = new Set<string>();
     const observations = parseObservationBlocks(raw, correlationId, schemaDrift);
     if (observations.length === 0) {
-      return { valid: false };
+      return skipResult();
     }
     return {
       valid: true,
@@ -106,7 +106,7 @@ export function parseAgentXml(raw: string, correlationId?: string | number): Par
 
   const summary = parseSummaryBlock(raw, correlationId);
   if (!summary) {
-    return { valid: false };
+    return skipResult();
   }
   return { valid: true, observations: [], summary };
 }
@@ -118,7 +118,9 @@ function parseObservationBlocks(
 ): ParsedObservation[] {
   const observations: ParsedObservation[] = [];
 
-  const observationRegex = /<observation>([\s\S]*?)<\/observation>/gi;
+  // Attributes are tolerated (`<observation id="1">`), matching root detection
+  // in parseAgentXml; a self-closing tag is not an opening one.
+  const observationRegex = /<observation(?:\s[^>]*?)?(?<!\/)>([\s\S]*?)<\/observation>/gi;
 
   let match;
   while ((match = observationRegex.exec(text)) !== null) {
@@ -207,7 +209,7 @@ function parseObservationBlocks(
 }
 
 function parseSummaryBlock(text: string, correlationId?: string | number): ParsedSummary | null {
-  const summaryRegex = /<summary>([\s\S]*?)<\/summary>/i;
+  const summaryRegex = /<summary(?:\s[^>]*?)?(?<!\/)>([\s\S]*?)<\/summary>/i;
   const summaryMatch = summaryRegex.exec(text);
   if (!summaryMatch) return null;
 

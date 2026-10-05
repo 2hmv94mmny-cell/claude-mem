@@ -101,6 +101,26 @@ describe('buildObservationPrompt oversized field truncation (#2468)', () => {
     expect(prompt.length).toBeLessThan(40_000);
   });
 
+  it('never splits a surrogate pair at the head or tail cut', () => {
+    // fieldMaxChars 100 → head 60, tail 30 UTF-16 units of the JSON string
+    // '"' + content + '"'. The head cut lands between the halves of the first
+    // emoji, and the tail cut (29 emoji units + closing quote) does too.
+    // A lone surrogate makes the request body invalid JSON for the provider.
+    const content = 'a'.repeat(58) + '😀'.repeat(40) + 'x' + '😀'.repeat(20);
+    const prompt = buildObservationPrompt({
+      id: 3,
+      tool_name: 'Read',
+      tool_input: JSON.stringify({ file: 'emoji.txt' }),
+      tool_output: JSON.stringify(content),
+      created_at_epoch: Date.now(),
+      cwd: '/repo',
+    }, 100);
+
+    expect(prompt).toContain('reason="oversize"');
+    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    expect(loneSurrogate.test(prompt)).toBe(false);
+  });
+
   it('leaves a small field untouched (no elided marker)', () => {
     const prompt = buildObservationPrompt({
       id: 2,
