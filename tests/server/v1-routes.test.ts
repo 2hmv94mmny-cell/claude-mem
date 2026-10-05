@@ -392,6 +392,31 @@ describe('server REST API v1 routes', () => {
     expect(stored.project_id).toBe(projectA.id);
   });
 
+  it('answers 404 (not a 500 FOREIGN KEY error) when the body names an unknown projectId', async () => {
+    const event = {
+      projectId: 'missing-project',
+      sourceType: 'api',
+      eventType: 'observation.created',
+      payload: {},
+      occurredAtEpoch: Date.now(),
+    };
+    const requests: Array<[string, unknown]> = [
+      ['/v1/sessions/start', { projectId: 'missing-project' }],
+      ['/v1/events', event],
+      ['/v1/events/batch', [event]],
+      ['/v1/memories', { projectId: 'missing-project', kind: 'manual', type: 'note', title: 'orphan' }],
+      ['/v1/search', { projectId: 'missing-project', query: 'anything' }],
+      ['/v1/context', { projectId: 'missing-project' }],
+    ];
+
+    for (const [path, body] of requests) {
+      const response = await post(path, body);
+      expect({ path, status: response.status }).toEqual({ path, status: 404 });
+      const json = await response.json();
+      expect(json.error).toBe('NotFound');
+    }
+  });
+
   async function post(path: string, body: unknown): Promise<Response> {
     return fetch(`http://127.0.0.1:${port}${path}`, {
       method: 'POST',

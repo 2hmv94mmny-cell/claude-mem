@@ -304,7 +304,10 @@ export class ServerJobQueue<TPayload extends object = object> {
       });
       w.on('stalled', (jobId: string) => this.notifyStalled(jobId, 'worker'));
     }
-    worker.run();
+    // Worker.run() is async and resolves only when the worker stops; it
+    // rejects on e.g. a connection closed before it became ready. Route that
+    // through the error path so it never becomes an unhandled rejection.
+    Promise.resolve(worker.run()).catch((error: unknown) => this.notifyQueueError(error, 'worker'));
     this.worker = worker;
 
     // QueueEvents subscribes to Redis pub/sub for cross-process events

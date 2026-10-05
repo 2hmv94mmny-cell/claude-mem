@@ -243,11 +243,19 @@ export class ServerService {
         }
         this.server = null;
       }
-      await Promise.all([
+      // A failed queue close (e.g. Redis gone at shutdown) must not skip
+      // ending the Postgres pool; surface the first failure afterwards.
+      const boundaryResults = await Promise.allSettled([
         this.graph.queueManager.close(),
         this.graph.generationWorkerManager.close(),
       ]);
       await this.graph.postgres.pool.end();
+      const failed = boundaryResults.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      if (failed) {
+        throw failed.reason;
+      }
     } finally {
       if (this.persistRuntimeState) {
         removeServerState();

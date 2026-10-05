@@ -116,6 +116,7 @@ export class ServerV1Routes implements RouteHandler {
 
     app.post('/v1/sessions/start', writeAuth, this.handleCreate(CreateServerSessionSchema, (req, res, body) => {
       if (!this.ensureProjectAllowed(req, res, body.projectId)) return;
+      if (!this.ensureProjectExists(res, body.projectId)) return;
       const session = new ServerSessionsRepository(this.options.getDatabase()).create(body);
       this.audit(req, 'session.start', session.id, session.projectId);
       res.status(201).json({ session });
@@ -149,6 +150,7 @@ export class ServerV1Routes implements RouteHandler {
 
     app.post('/v1/events', writeAuth, this.handleCreate(CreateAgentEventSchema, (req, res, body) => {
       if (!this.ensureProjectAllowed(req, res, body.projectId)) return;
+      if (!this.ensureProjectExists(res, body.projectId)) return;
       const event = new AgentEventsRepository(this.options.getDatabase()).create(body);
       this.audit(req, 'event.write', event.id, event.projectId);
       res.status(201).json({ event });
@@ -157,6 +159,9 @@ export class ServerV1Routes implements RouteHandler {
     app.post('/v1/events/batch', writeAuth, this.handleCreate(z.array(CreateAgentEventSchema).min(1).max(500), (req, res, body) => {
       for (const event of body) {
         if (!this.ensureProjectAllowed(req, res, event.projectId)) return;
+      }
+      for (const projectId of new Set(body.map(event => event.projectId))) {
+        if (!this.ensureProjectExists(res, projectId)) return;
       }
       const db = this.options.getDatabase();
       const repo = new AgentEventsRepository(db);
@@ -182,6 +187,7 @@ export class ServerV1Routes implements RouteHandler {
 
     app.post('/v1/memories', writeAuth, this.handleCreate(CreateMemoryItemSchema, (req, res, body) => {
       if (!this.ensureProjectAllowed(req, res, body.projectId)) return;
+      if (!this.ensureProjectExists(res, body.projectId)) return;
       // Write-path contract (#2684/#2533): the FTS trigger (trg_memory_items_fts_insert)
       // copies title/subtitle/text/narrative/facts/concepts into the search index.
       // A row with NONE of the searchable text columns populated is invisible to
@@ -245,6 +251,7 @@ export class ServerV1Routes implements RouteHandler {
       limit: z.number().int().positive().max(100).optional(),
     }), (req, res, body) => {
       if (!this.ensureProjectAllowed(req, res, body.projectId)) return;
+      if (!this.ensureProjectExists(res, body.projectId)) return;
       const memories = new MemoryItemsRepository(this.options.getDatabase()).search(body.projectId, body.query, body.limit ?? 20);
       this.audit(req, 'memory.search', null, body.projectId);
       res.json({ memories });
@@ -258,6 +265,7 @@ export class ServerV1Routes implements RouteHandler {
       limit: z.number().int().positive().max(50).optional(),
     }), (req, res, body) => {
       if (!this.ensureProjectAllowed(req, res, body.projectId)) return;
+      if (!this.ensureProjectExists(res, body.projectId)) return;
       const repo = new MemoryItemsRepository(this.options.getDatabase());
       const memories = body.query
         ? repo.search(body.projectId, body.query, body.limit ?? 10)
@@ -294,6 +302,17 @@ export class ServerV1Routes implements RouteHandler {
   private ensureProjectAllowed(req: Request, res: Response, projectId: string): boolean {
     if (req.authContext?.projectId && req.authContext.projectId !== projectId) {
       res.status(403).json({ error: 'Forbidden', message: 'API key is scoped to a different project' });
+      return false;
+    }
+    return true;
+  }
+
+  // Body-supplied projectIds are FK references (and the audit row references the
+  // project too), so an unknown id must be answered as 404 here rather than
+  // surfacing as a 500 "FOREIGN KEY constraint failed" from SQLite.
+  private ensureProjectExists(res: Response, projectId: string): boolean {
+    if (!new ProjectsRepository(this.options.getDatabase()).getById(projectId)) {
+      res.status(404).json({ error: 'NotFound', message: 'Project not found' });
       return false;
     }
     return true;

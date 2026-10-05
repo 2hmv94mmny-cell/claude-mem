@@ -55,6 +55,25 @@ describe('ServerService', () => {
     expect(body.boundaries.queueManager.status).toBe('disabled');
   });
 
+  it('still ends the Postgres pool when closing the queue manager fails', async () => {
+    loggerSpies.push(
+      spyOn(logger, 'info').mockImplementation(() => {}),
+      spyOn(logger, 'warn').mockImplementation(() => {}),
+    );
+    const graph = createStubGraph();
+    const closeError = new Error('redis unreachable during shutdown');
+    graph.queueManager.close = mock(() => Promise.reject(closeError));
+    const stopping = new ServerService({
+      graph,
+      port: 0,
+      host: '127.0.0.1',
+      persistRuntimeState: false,
+    });
+
+    await expect(stopping.stop()).rejects.toBe(closeError);
+    expect(graph.postgres.pool.end).toHaveBeenCalledTimes(1);
+  });
+
   // Phase 4 integration test: Postgres-backed v1 events route must enforce
   // auth, write the event row, create the outbox row, and respond with both
   // event and generationJob. Skipped when no test Postgres URL is set so the

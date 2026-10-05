@@ -207,6 +207,40 @@ describe('ServerJobQueue', () => {
     expect(counters.errored).toBe(1);
   });
 
+  it('routes a rejected worker.run() into the error path instead of leaving it unhandled', async () => {
+    // BullMQ's Worker.run() is async and rejects when e.g. the connection is
+    // closed before it became ready ("Connection is closed."). start() calls
+    // it fire-and-forget, so an unobserved rejection would crash the process.
+    const queueState: FakeQueueState = { added: [], removed: [], closed: false };
+    const errors: unknown[] = [];
+    const runError = new Error('Connection is closed.');
+    const sjq = new ServerJobQueue<{ x: number }>({
+      name: 'q',
+      config: fakeConfig,
+      queueFactory: buildFakeQueue(queueState),
+      workerFactory: () => ({
+        on: () => {},
+        run: () => Promise.reject(runError),
+        close: async () => {},
+      }) as never,
+    });
+    sjq.observe({ onError: (error) => { errors.push(error); } });
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      sjq.start(async () => {});
+      await new Promise(resolve => setTimeout(resolve, 10));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+
+    expect(unhandled).toEqual([]);
+    expect(errors).toEqual([runError]);
+    expect(sjq.getLifecycleCounters().errored).toBe(1);
+  });
+
   it('closes worker and queue on close()', async () => {
     const queueState: FakeQueueState = { added: [], removed: [], closed: false };
     const workerState: FakeWorkerState = {
