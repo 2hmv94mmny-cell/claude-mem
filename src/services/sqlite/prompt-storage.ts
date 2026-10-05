@@ -20,5 +20,10 @@ export function normalizeStoredPromptText(promptText: string): string {
     originalLength: preferredPrompt.length,
     storedLength: MAX_STORED_PROMPT_CHARS,
   });
-  return `${preferredPrompt.slice(0, MAX_STORED_PROMPT_CHARS - 1)}…`;
+  // Never cut between a surrogate pair: a lone high surrogate is mangled on the
+  // UTF-8 write and breaks any later API request that carries the prompt (#2787).
+  let end = MAX_STORED_PROMPT_CHARS - 1;
+  const lastCode = preferredPrompt.charCodeAt(end - 1);
+  if (lastCode >= 0xd800 && lastCode <= 0xdbff) end--;
+  return `${preferredPrompt.slice(0, end)}…`;
 }

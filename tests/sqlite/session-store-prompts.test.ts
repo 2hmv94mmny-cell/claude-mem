@@ -53,6 +53,22 @@ describe('SessionStore prompts', () => {
       expect(stored.prompt_text.length).toBe(MAX_STORED_PROMPT_CHARS);
       expect(stored.prompt_text.endsWith('…')).toBe(true);
     });
+
+    it('never splits a surrogate pair when truncating at the cap', () => {
+      const session = createSession('content-astral-cut');
+      // Place an astral character (two UTF-16 code units) so the cap's cut
+      // point falls between its high and low surrogate.
+      const oversized = `${'A'.repeat(MAX_STORED_PROMPT_CHARS - 2)}😀${'B'.repeat(50)}`;
+
+      const id = store.saveUserPrompt(session, 1, oversized);
+      const stored = store.db.prepare('SELECT prompt_text FROM user_prompts WHERE id = ?').get(id) as { prompt_text: string };
+
+      expect(stored.prompt_text.length).toBeLessThanOrEqual(MAX_STORED_PROMPT_CHARS);
+      expect(stored.prompt_text.endsWith('…')).toBe(true);
+      // No lone surrogate (in JS) and no U+FFFD (what SQLite's UTF-8 encode turns one into).
+      expect(stored.prompt_text).not.toMatch(/[\uD800-\uDFFF�]/);
+      expect(stored.prompt_text).toBe(`${'A'.repeat(MAX_STORED_PROMPT_CHARS - 2)}…`);
+    });
   });
 
   describe('importUserPrompt', () => {
