@@ -43,7 +43,7 @@ export interface Product {
   sourcing?: {
     keyword: string;
     why: string;
-    cjCandidates?: { title: string; pid: string; url: string; options: string }[];
+    cjCandidates?: { title: string; pid: string; url: string; options: string; cjPrice?: string }[];
   };
   /** Example products are shown with a notice and are never sent to a supplier. */
   example?: boolean;
