@@ -231,7 +231,8 @@ export class SessionSearch {
     if (filters.concepts) {
       const concepts = Array.isArray(filters.concepts) ? filters.concepts : [filters.concepts];
       const conceptConditions = concepts.map(() => {
-        return `EXISTS (SELECT 1 FROM json_each(${tableAlias}.concepts) WHERE value = ?)`;
+        // json_each throws on a non-JSON value; such rows match nothing (as in v49) instead of failing the query.
+        return `EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(${tableAlias}.concepts) THEN ${tableAlias}.concepts END) WHERE value = ?)`;
       });
       if (conceptConditions.length > 0) {
         conditions.push(`(${conceptConditions.join(' OR ')})`);
@@ -243,8 +244,8 @@ export class SessionSearch {
       const files = Array.isArray(filters.files) ? filters.files : [filters.files];
       const fileConditions = files.map(() => {
         return `(
-          EXISTS (SELECT 1 FROM json_each(${tableAlias}.files_read) WHERE value LIKE ? ESCAPE '\\')
-          OR EXISTS (SELECT 1 FROM json_each(${tableAlias}.files_modified) WHERE value LIKE ? ESCAPE '\\')
+          EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(${tableAlias}.files_read) THEN ${tableAlias}.files_read END) WHERE value LIKE ? ESCAPE '\\')
+          OR EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(${tableAlias}.files_modified) THEN ${tableAlias}.files_modified END) WHERE value LIKE ? ESCAPE '\\')
         )`;
       });
       if (fileConditions.length > 0) {
@@ -642,7 +643,8 @@ export class SessionSearch {
   /** Any of `columns` (JSON arrays) holds a value matching any pattern; bind every pattern once per column. */
   private static jsonArrayLikeClause(columns: string[], patternCount: number): string {
     const anyPattern = Array.from({ length: patternCount }, () => "value LIKE ? ESCAPE '\\'").join(' OR ');
-    return `(${columns.map(column => `EXISTS (SELECT 1 FROM json_each(${column}) WHERE ${anyPattern})`).join(' OR ')})`;
+    // A non-JSON value matches nothing rather than making json_each throw for the whole query.
+    return `(${columns.map(column => `EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(${column}) THEN ${column} END) WHERE ${anyPattern})`).join(' OR ')})`;
   }
 
   findByFile(filePath: string, options: SearchOptions = {}): {

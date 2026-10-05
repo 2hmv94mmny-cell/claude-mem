@@ -119,7 +119,7 @@ export function queryObservationsNewest(
       AND (${manualClause} (
         type IN (${typePlaceholders})
         AND EXISTS (
-          SELECT 1 FROM json_each(o.concepts)
+          SELECT 1 FROM json_each(CASE WHEN json_valid(o.concepts) THEN o.concepts END)
           WHERE value IN (${conceptPlaceholders})
         )
       ))

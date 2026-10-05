@@ -403,6 +403,28 @@ describe('concept exact-match injection (#3379)', () => {
       db.close();
     }
   });
+
+  it('still injects the valid rows when another row has non-JSON concepts', () => {
+    // v49 skips non-JSON concepts rows (json_valid guard) because json_each
+    // throws on them; the injection query must skip them too, or one such row
+    // fails SessionStart context for the whole project.
+    const db = new Database(':memory:');
+    try {
+      const store = new SessionStore(db);
+      const sessionDbId = store.createSDKSession('content-invalid-json', 'concept-project', 'prompt');
+      store.ensureMemorySessionIdRegistered(sessionDbId, 'mem-invalid-json');
+      const insert = db.prepare(`
+        INSERT INTO observations (memory_session_id, project, type, title, concepts, created_at, created_at_epoch)
+        VALUES ('mem-invalid-json', 'concept-project', 'discovery', ?, ?, ?, ?)
+      `);
+      insert.run('VALID_CONCEPTS_OBS', '["gotcha"]', new Date().toISOString(), 1_700_000_000_000);
+      insert.run('NON_JSON_CONCEPTS_OBS', 'gotcha', new Date().toISOString(), 1_700_000_100_000);
+
+      expect(queryObservationsMulti(store, ['concept-project'], config).map(obs => obs.title)).toEqual(['VALID_CONCEPTS_OBS']);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe('queryObservationsNewest house feed', () => {

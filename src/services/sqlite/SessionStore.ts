@@ -3044,7 +3044,7 @@ export class SessionStore {
     if (concepts) {
       const conceptsList = Array.isArray(concepts) ? concepts : [concepts];
       const conceptConditions = conceptsList.map(() =>
-        'EXISTS (SELECT 1 FROM json_each(o.concepts) WHERE value = ?)'
+        'EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(o.concepts) THEN o.concepts END) WHERE value = ?)'
       );
       params.push(...conceptsList);
       additionalConditions.push(`(${conceptConditions.join(' OR ')})`);
@@ -3053,7 +3053,7 @@ export class SessionStore {
     if (files) {
       const filesList = Array.isArray(files) ? files : [files];
       const fileConditions = filesList.map(() => {
-        return "(EXISTS (SELECT 1 FROM json_each(o.files_read) WHERE value LIKE ? ESCAPE '\\') OR EXISTS (SELECT 1 FROM json_each(o.files_modified) WHERE value LIKE ? ESCAPE '\\'))";
+        return "(EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(o.files_read) THEN o.files_read END) WHERE value LIKE ? ESCAPE '\\') OR EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(o.files_modified) THEN o.files_modified END) WHERE value LIKE ? ESCAPE '\\'))";
       });
       filesList.forEach(file => {
         // The hydration filter receives literal file paths, like SQLite search.
