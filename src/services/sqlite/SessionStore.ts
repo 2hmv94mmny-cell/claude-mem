@@ -1467,11 +1467,16 @@ export class SessionStore {
       )
     `);
 
+    // Carry later columns (e.g. v11's discovery_tokens) and their values over
+    // instead of dropping them with the fixed v9 column set (#3890 class).
+    const copyColumns = this.carryLiveColumnsOntoNewTable('observations', 'observations_new', [
+      'id', 'memory_session_id', 'project', 'text', 'type', 'title', 'subtitle', 'facts',
+      'narrative', 'concepts', 'files_read', 'files_modified', 'prompt_number',
+      'created_at', 'created_at_epoch',
+    ]).map(name => `"${name}"`).join(', ');
     this.db.run(`
-      INSERT INTO observations_new
-      SELECT id, memory_session_id, project, text, type, title, subtitle, facts,
-             narrative, concepts, files_read, files_modified, prompt_number,
-             created_at, created_at_epoch
+      INSERT INTO observations_new (${copyColumns})
+      SELECT ${copyColumns}
       FROM observations
     `);
 
