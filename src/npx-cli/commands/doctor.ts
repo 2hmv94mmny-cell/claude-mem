@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { styleText } from 'node:util';
 import { IS_WINDOWS, marketplaceDirectory, readPluginVersion } from '../utils/paths.js';
-import { resolvePluginRoot, type PluginRootResolution } from '../../shared/worker-utils.js';
+import { buildWorkerUrl, resolvePluginRoot, type PluginRootResolution } from '../../shared/worker-utils.js';
 import {
   getBunVersion,
   getUvVersion,
@@ -17,7 +17,6 @@ import {
   isTreeSitterCliBinaryUsable,
   treeSitterCliBinaryPath,
 } from '../install/setup-runtime.js';
-import { SettingsDefaultsManager } from '../../shared/SettingsDefaultsManager.js';
 import { resolveDataDir } from '../../shared/paths.js';
 import { paths } from '../../shared/paths.js';
 import { findOrphanedChromaRoots, readProcessTablePosix } from '../../supervisor/orphan-chroma-sweep.js';
@@ -68,12 +67,11 @@ function probeVersion(bin: 'bun' | 'uv'): string | null {
   }
 }
 
-async function probeWorkerHealth(workerHost: string, workerPort: string): Promise<{
+async function probeWorkerHealth(workerUrl: string): Promise<{
   status: CheckStatus;
   detail: string;
   workerUrl: string;
 }> {
-  const workerUrl = `http://${workerHost}:${workerPort}`;
   const res = await fetch(`${workerUrl}/api/health`, {
     signal: AbortSignal.timeout(3000),
   });
@@ -327,13 +325,14 @@ export async function runDoctorCommand(): Promise<void> {
   checks.push(marketplaceManifestCheck(marketplaceDir));
 
   // 5. Worker health.
-  const workerHost = SettingsDefaultsManager.get('CLAUDE_MEM_WORKER_HOST');
-  const workerPort = SettingsDefaultsManager.get('CLAUDE_MEM_WORKER_PORT');
+  // The same host/port every other client uses: settings.json with env
+  // overrides, and an IPv6 host bracketed.
+  const workerUrl = buildWorkerUrl('');
   let workerStatus: CheckStatus = 'fail';
-  let workerDetail = `no response at http://${workerHost}:${workerPort} — start with \`npx claude-mem start\``;
+  let workerDetail = `no response at ${workerUrl} — start with \`npx claude-mem start\``;
   let chromaChecks: CheckResult[] = [];
   try {
-    const worker = await probeWorkerHealth(workerHost, workerPort);
+    const worker = await probeWorkerHealth(workerUrl);
     workerStatus = worker.status;
     workerDetail = worker.detail;
     chromaChecks = await probeChromaDiagnostics(worker.workerUrl);
