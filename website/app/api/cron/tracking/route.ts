@@ -26,7 +26,7 @@ export async function GET(request: Request) {
         text:
           `Hallo,\n\ndeine Bestellung wurde verschickt.\n\n` +
           `Sendungsnummer: ${order.trackingNumber}${order.carrier ? ` (${order.carrier})` : ""}${link}\n\n` +
-          `Viele Grüße\n${shopName}`,
+          `Freundliche Grüsse\n${shopName}`,
       });
     },
   });

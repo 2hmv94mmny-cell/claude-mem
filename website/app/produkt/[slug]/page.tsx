@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { AddToCart } from "@/components/AddToCart";
 import { ProductImage } from "@/components/ProductImage";
 import { SHIPPING, getCategory, getProductBySlug, getProducts } from "@/lib/catalog";
-import { formatEuro } from "@/lib/money";
+import { formatChf } from "@/lib/money";
+import { priceNote } from "@/content";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -35,16 +36,20 @@ export default async function ProductPage({ params }: Props) {
         )}
         <h1>{product.name}</h1>
         <p className="product-price">
-          <span>{formatEuro(product.priceCents)}</span>
-          {product.compareAtCents && <s className="muted">{formatEuro(product.compareAtCents)}</s>}
+          <span>{formatChf(product.priceCents)}</span>
+          {product.compareAtCents && <s className="muted">{formatChf(product.compareAtCents)}</s>}
         </p>
         <p className="muted small">
-          inkl. MwSt., zzgl. <Link href="/info/versand">Versand</Link> ({formatEuro(SHIPPING.flatCents)}, ab{" "}
-          {formatEuro(SHIPPING.freeFromCents)} kostenlos)
+          {priceNote} (<Link href="/info/versand">{formatChf(SHIPPING.flatCents)}</Link>, ab{" "}
+          {formatChf(SHIPPING.freeFromCents)} kostenlos)
         </p>
         <p>{product.description}</p>
         <AddToCart product={product} />
         <p className="delivery">Lieferzeit: {product.deliveryDays}</p>
+        <p className="muted small">
+          Versand aus dem Lager unseres Lieferanten im Ausland.{" "}
+          <Link href="/info/versand">Hinweis zu Zoll und Einfuhrabgaben</Link>
+        </p>
         <ul className="details">
           {product.details.map((d) => (
             <li key={d}>{d}</li>

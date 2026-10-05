@@ -9,9 +9,10 @@ const target = process.argv[2] ?? join(root, "preview.html");
 const html = readFileSync(join(root, ".next/server/app/index.html"), "utf8");
 
 const title = html.match(/<title>(.*?)<\/title>/s)?.[1] ?? "Website";
-const fontLinks = [...html.matchAll(/<link[^>]+href="https:\/\/fonts\.googleapis\.com\/css2[^"]*"[^>]*>/g)]
-  .map((m) => m[0])
-  .filter((tag) => tag.includes('rel="stylesheet"'));
+// The shop self-hosts its fonts; the standalone preview loads the same families from Google Fonts.
+const fontLinks = [
+  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;0,6..96,700;1,6..96,500&family=Manrope:wght@400;500;600;700&display=swap">',
+];
 const css = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="\/_next\/(static\/[^"]+\.css)"[^>]*>/g)]
   .map((m) => readFileSync(join(root, ".next", m[1]), "utf8"))
   .join("\n");

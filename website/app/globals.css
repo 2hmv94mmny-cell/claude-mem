@@ -11,8 +11,8 @@
   --notice-ink: #4a3b22;
   --error: #a3262f;
 
-  --font-display: "Bodoni Moda", "Didot", "Bodoni 72", Georgia, serif;
-  --font-body: "Manrope", "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-display-face, "Bodoni Moda"), "Didot", "Bodoni 72", Georgia, serif;
+  --font-body: var(--font-body-face, "Manrope"), "Helvetica Neue", Arial, sans-serif;
 
   --radius: 4px;
   --gutter: clamp(16px, 4vw, 40px);
@@ -72,6 +72,9 @@ h3 {
   line-height: 1.08;
   margin: 0;
   text-wrap: balance;
+  /* Long German compounds (Datenschutzerklärung) must not widen the page on phones. */
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
 
 h2 {
@@ -123,7 +126,7 @@ select:focus-visible,
 }
 
 .page-title {
-  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  font-size: clamp(1.9rem, 5vw, 3.5rem);
 }
 
 .eyebrow {
@@ -404,7 +407,8 @@ select:focus-visible,
 .price-line,
 .product-price {
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 0 10px;
   align-items: baseline;
   font-variant-numeric: tabular-nums;
 }
@@ -665,6 +669,17 @@ select:focus-visible,
 
 .prose p {
   color: var(--muted);
+}
+
+.prose-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prose-section h2 {
+  font-size: 1.4rem;
+  color: var(--ink);
 }
 
 /* Footer */

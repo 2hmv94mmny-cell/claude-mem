@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { setQuantity, useCart } from "@/lib/cart-store";
-import { formatEuro } from "@/lib/money";
+import { formatChf } from "@/lib/money";
 import type { Product } from "@/lib/types";
 import { ProductImage } from "./ProductImage";
 
@@ -84,7 +84,7 @@ export function CartView({
                 </select>
               </label>
             </div>
-            <span className="cart-line-price">{formatEuro(l.product.priceCents * l.quantity)}</span>
+            <span className="cart-line-price">{formatChf(l.product.priceCents * l.quantity)}</span>
           </li>
         ))}
       </ul>
@@ -93,20 +93,23 @@ export function CartView({
         <dl>
           <div>
             <dt>Zwischensumme</dt>
-            <dd>{formatEuro(subtotal)}</dd>
+            <dd>{formatChf(subtotal)}</dd>
           </div>
           <div>
             <dt>Versand</dt>
-            <dd>{shippingCost === 0 ? "kostenlos" : formatEuro(shippingCost)}</dd>
+            <dd>{shippingCost === 0 ? "kostenlos" : formatChf(shippingCost)}</dd>
           </div>
           <div className="summary-total">
             <dt>Gesamt</dt>
-            <dd>{formatEuro(subtotal + shippingCost)}</dd>
+            <dd>{formatChf(subtotal + shippingCost)}</dd>
           </div>
         </dl>
-        <p className="muted small">inkl. MwSt. Lieferadresse und Zahlung gibst du im nächsten Schritt an.</p>
+        <p className="muted small">
+          Endpreise in CHF. Lieferadresse und Zahlung gibst du im nächsten Schritt an.{" "}
+          <Link href="/info/versand">Hinweis zu Zoll und Einfuhrabgaben</Link>
+        </p>
         {shippingCost > 0 && (
-          <p className="small">Noch {formatEuro(shipping.freeFromCents - subtotal)} bis zum kostenlosen Versand.</p>
+          <p className="small">Noch {formatChf(shipping.freeFromCents - subtotal)} bis zum kostenlosen Versand.</p>
         )}
         <button className="button button-primary wide" type="button" onClick={checkout} disabled={loading}>
           {loading ? "Kasse wird geöffnet …" : "Zur Kasse"}

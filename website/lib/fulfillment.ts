@@ -32,7 +32,7 @@ export function holdReason(order: PaidOrder, rules: FulfillmentRules): string | 
     return `Kein Lieferanten-Artikel verknüpft: ${unlinked.map((l) => l.name).join(", ")}`;
   }
   if (order.totalCents > rules.holdAboveCents) {
-    return `Bestellwert über ${(rules.holdAboveCents / 100).toFixed(2)} € – bitte manuell prüfen`;
+    return `Bestellwert über CHF ${(rules.holdAboveCents / 100).toFixed(2)} – bitte manuell prüfen`;
   }
   if (order.riskLevel === "elevated" || order.riskLevel === "highest") {
     return `Erhöhtes Betrugsrisiko laut Stripe (${order.riskLevel})`;

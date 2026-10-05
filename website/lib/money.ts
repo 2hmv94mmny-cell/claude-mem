@@ -1,5 +1,5 @@
-const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const euro = new Intl.NumberFormat("de-CH", { style: "currency", currency: "CHF" });
 
-export function formatEuro(cents: number): string {
+export function formatChf(cents: number): string {
   return euro.format(cents / 100);
 }

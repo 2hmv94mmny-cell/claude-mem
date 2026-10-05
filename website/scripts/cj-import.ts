@@ -2,7 +2,7 @@
 //
 //   CJ_API_KEY=... npm run cj:import -- --keyword "women loafers" --category schuhe --limit 5
 //
-// Options: --markup 2.5 (price = CJ cost × markup), --usd-eur 0.92, --country DE (only items
+// Options: --markup 2.5 (price = CJ cost × markup), --usd-chf 0.80, --country DE (only items
 // stocked in that country's warehouse). Imported products are saved with "published": false.
 // Check name, text, sizes and images, then set "published": true to put them in the shop.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -17,7 +17,7 @@ const { values } = parseArgs({
     category: { type: "string" },
     limit: { type: "string", default: "5" },
     markup: { type: "string", default: "2.5" },
-    "usd-eur": { type: "string", default: "0.92" },
+    "usd-chf": { type: "string", default: "0.80" },
     country: { type: "string" },
   },
 });
@@ -36,13 +36,13 @@ if (!config) {
 
 const cj = new CjSupplier(config);
 const markup = Number(values.markup);
-const usdToEur = Number(values["usd-eur"]);
+const usdToChf = Number(values["usd-chf"]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Rounds up to a price ending in ,95 (e.g. 37.12 € -> 37,95 €). */
+/** Price in Rappen, rounded up to end in .90 (e.g. CHF 37.12 -> CHF 37.90). */
 export function shopPriceCents(costUsd: number): number {
-  const euros = costUsd * usdToEur * markup;
-  return Math.ceil(euros - 0.95) * 100 + 95;
+  const francs = costUsd * usdToChf * markup;
+  return Math.ceil(francs - 0.9) * 100 + 90;
 }
 
 function slugify(text: string): string {
@@ -95,11 +95,11 @@ async function main() {
         supplierSku: v.variantSku,
         costUsd: v.variantSellPrice,
       })),
-      deliveryDays: values.country === "DE" ? "3–6 Werktage" : "8–14 Werktage",
+      deliveryDays: values.country && values.country !== "CN" ? "5–10 Werktage" : "8–15 Werktage",
       supplier: "cj",
       published: false,
     });
-    console.log(`+ ${detail.productNameEn}: cost up to $${maxCost}, price ${(shopPriceCents(maxCost) / 100).toFixed(2)} €`);
+    console.log(`+ ${detail.productNameEn}: cost up to $${maxCost}, price CHF ${(shopPriceCents(maxCost) / 100).toFixed(2)}`);
   }
 
   writeFileSync(file, JSON.stringify(products, null, 2) + "\n");

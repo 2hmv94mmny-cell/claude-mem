@@ -2,8 +2,8 @@ import rawProducts from "../data/products.json";
 import type { CartLine, CategoryId, Product } from "./types";
 
 export const categories: { id: CategoryId; name: string; intro: string }[] = [
-  { id: "kleidung", name: "Kleidung", intro: "Strick, Blusen, Röcke und Mäntel in den Größen XS bis XL." },
-  { id: "taschen", name: "Taschen", intro: "Shopper, Crossbody-Bags und Clutches mit Maßangaben in cm." },
+  { id: "kleidung", name: "Kleidung", intro: "Strick, Blusen, Röcke und Mäntel in den Grössen XS bis XL." },
+  { id: "taschen", name: "Taschen", intro: "Shopper, Crossbody-Bags und Clutches mit Massangaben in cm." },
   { id: "schuhe", name: "Schuhe", intro: "Loafer, Stiefeletten, Ballerinas und Sneaker in EU 36 bis 41." },
 ];
 
@@ -30,9 +30,10 @@ export function hasExampleProducts(): boolean {
 }
 
 export const SHIPPING = {
-  flatCents: 495,
-  freeFromCents: 6000,
-  countries: ["DE", "AT"] as const,
+  // Amounts in Rappen (1/100 CHF).
+  flatCents: 690,
+  freeFromCents: 8000,
+  countries: ["CH", "LI"] as const,
 };
 
 export const MAX_QUANTITY_PER_LINE = 10;

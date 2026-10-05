@@ -18,8 +18,14 @@ export default async function InfoPage({ params }: Props) {
   return (
     <section className="wrap section narrow prose">
       <h1 className="page-title">{page.title}</h1>
-      {page.body.map((p) => (
-        <p key={p}>{p}</p>
+      {page.updated && <p className="muted small">Stand: {page.updated}</p>}
+      {page.sections.map((section, i) => (
+        <div key={section.heading ?? i} className="prose-section">
+          {section.heading && <h2>{section.heading}</h2>}
+          {section.paragraphs.map((p) => (
+            <p key={p}>{p}</p>
+          ))}
+        </div>
       ))}
     </section>
   );

@@ -1,6 +1,7 @@
 # Maison Elva – fashion dropshipping shop
 
-Next.js shop for women's clothing, bags and shoes. Customers pay with Stripe; paid orders are
+Next.js shop for women's clothing, bags and shoes, run by a company in Switzerland. Prices are in CHF;
+delivery to Switzerland and Liechtenstein. Customers pay with Stripe; paid orders are
 sent to CJdropshipping automatically, and customers get their tracking number by email.
 
 ## How an order flows
@@ -40,14 +41,20 @@ Remove the example products (`"example": true`) before going live.
 ### Stripe
 1. Use test keys first. Add a webhook endpoint `https://<your-domain>/api/stripe/webhook` for
    `checkout.session.completed` and `checkout.session.async_payment_succeeded`, and copy its signing secret.
-2. Enable the payment methods you want (cards, PayPal, Klarna, Apple Pay) in the Stripe dashboard.
+2. Enable the payment methods you want (cards, TWINT, PayPal, Apple Pay) in the Stripe dashboard.
 
 ### Deploy on Vercel
 Import the repository, select the `website` branch, set **Root Directory** to `website`, add the
 environment variables, and deploy. `vercel.json` schedules the daily tracking job.
 
-## Before going live (Germany)
-- Replace the placeholder texts in `content.ts` → `legalPages` (Impressum, Datenschutz, AGB, Widerruf).
-- Register a business (Gewerbe), the packaging register (LUCID), and check GPSR product safety
-  information for every product.
+## Before going live (Switzerland)
+- Fill in `company` in `content.ts` (company name, address, UID, commercial register, return address).
+  The Impressum, privacy policy, terms and returns page are generated from it.
+- Decide who pays import VAT and customs fees (terms section 6) and replace the placeholder text.
+- Have the legal texts in `content.ts` reviewed by a Swiss lawyer or a legal text service.
+- VAT: set `vatRegistered: true` once the company is registered for Swiss VAT (mandatory from
+  CHF 100'000 turnover); prices then show "inkl. MWST".
+- Enable TWINT in the Stripe dashboard; most Swiss customers expect it.
+- Selling to the EU later (e.g. Germany) brings EU consumer law: a 14-day statutory right of withdrawal,
+  EU VAT/OSS, packaging registration and GPSR. The texts here do not cover that.
 - Run one real test order end to end with `CJ_SANDBOX=false` before advertising.

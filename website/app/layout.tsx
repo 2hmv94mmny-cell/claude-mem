@@ -1,9 +1,20 @@
 import type { Metadata } from "next";
+import { Bodoni_Moda, Manrope } from "next/font/google";
 import Link from "next/link";
 import { CartCount } from "@/components/CartCount";
 import { categories, hasExampleProducts } from "@/lib/catalog";
-import { shop } from "@/content";
+import { company, shop } from "@/content";
 import "./globals.css";
+
+// next/font downloads the fonts at build time and serves them from this site,
+// so visitors' browsers never contact Google (relevant for the privacy policy).
+const display = Bodoni_Moda({
+  subsets: ["latin"],
+  weight: ["500", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-display-face",
+});
+const body = Manrope({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-body-face" });
 
 export const metadata: Metadata = {
   title: { default: shop.name, template: `%s · ${shop.name}` },
@@ -12,16 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;0,6..96,700;1,6..96,500&family=Manrope:wght@400;500;600;700&display=swap"
-        />
-      </head>
+    <html lang="de-CH" className={`${display.variable} ${body.variable}`}>
       <body>
         {hasExampleProducts() && (
           <p className="demo-bar" role="note">
@@ -52,11 +54,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="wrap footer-grid">
             <div>
               <p className="footer-brand">{shop.name}</p>
-              <p className="muted">{shop.email}</p>
+              <p className="muted">{company.email}</p>
             </div>
             <ul className="footer-links">
               <li><Link href="/info/versand">Versand und Lieferzeiten</Link></li>
-              <li><Link href="/info/widerruf">Widerrufsbelehrung</Link></li>
+              <li><Link href="/info/rueckgabe">Rückgabe</Link></li>
               <li><Link href="/info/agb">AGB</Link></li>
               <li><Link href="/info/datenschutz">Datenschutz</Link></li>
               <li><Link href="/info/impressum">Impressum</Link></li>

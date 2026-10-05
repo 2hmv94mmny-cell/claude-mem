@@ -12,7 +12,7 @@ const product: Product = {
   details: [],
   images: [],
   swatch: "#000",
-  variantLabel: "EU-Größe",
+  variantLabel: "EU-Grösse",
   variants: [{ id: "v38", label: "38", supplierVid: "VID" }],
   deliveryDays: "6–10 Werktage",
   supplier: "cj",
@@ -42,8 +42,8 @@ describe("priceCart", () => {
 });
 
 describe("shippingCents", () => {
-  it("is free from 60 €", () => {
-    expect(shippingCents(5999)).toBe(495);
-    expect(shippingCents(6000)).toBe(0);
+  it("costs CHF 6.90 and is free from CHF 80", () => {
+    expect(shippingCents(7999)).toBe(690);
+    expect(shippingCents(8000)).toBe(0);
   });
 });

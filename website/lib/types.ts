@@ -17,7 +17,7 @@ export interface Product {
   slug: string;
   name: string;
   category: CategoryId;
-  /** Selling price in euro cents, VAT included. */
+  /** Final selling price in Rappen (1/100 CHF). */
   priceCents: number;
   compareAtCents?: number;
   description: string;

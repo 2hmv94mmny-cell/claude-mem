@@ -4,16 +4,16 @@
     "slug": "strickpullover-alma",
     "name": "Strickpullover Alma",
     "category": "kleidung",
-    "priceCents": 4995,
+    "priceCents": 5990,
     "description": "Lockerer Rundhalspullover aus weichem Grobstrick, leicht verlängert geschnitten.",
     "details": [
       "Material: 60 % Baumwolle, 40 % Acryl",
-      "Länge in Größe M: 66 cm",
+      "Länge in Grösse M: 66 cm",
       "Waschen bei 30 °C"
     ],
     "images": [],
     "swatch": "#c9b8a8",
-    "variantLabel": "Größe",
+    "variantLabel": "Grösse",
     "variants": [
       {
         "id": "strickpullover-alma-xs",
@@ -41,19 +41,19 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true,
-    "compareAtCents": 6495
+    "compareAtCents": 7990
   },
   {
     "id": "satinrock-mila",
     "slug": "satinrock-mila",
     "name": "Satin-Midirock Mila",
     "category": "kleidung",
-    "priceCents": 3995,
-    "description": "Fließender Midirock aus Satin mit elastischem Bund.",
+    "priceCents": 4990,
+    "description": "Fliessender Midirock aus Satin mit elastischem Bund.",
     "details": [
       "Material: 100 % Polyester",
       "Länge: 78 cm",
@@ -61,7 +61,7 @@
     ],
     "images": [],
     "swatch": "#6b4a5e",
-    "variantLabel": "Größe",
+    "variantLabel": "Grösse",
     "variants": [
       {
         "id": "satinrock-mila-xs",
@@ -89,7 +89,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true
@@ -99,16 +99,16 @@
     "slug": "leinenbluse-noor",
     "name": "Leinenbluse Noor",
     "category": "kleidung",
-    "priceCents": 4495,
+    "priceCents": 5490,
     "description": "Luftige Bluse in Leinenoptik mit Knopfleiste und Brusttasche.",
     "details": [
       "Material: 55 % Leinen, 45 % Viskose",
-      "Länge in Größe M: 70 cm",
+      "Länge in Grösse M: 70 cm",
       "Waschen bei 30 °C"
     ],
     "images": [],
     "swatch": "#e6e1d6",
-    "variantLabel": "Größe",
+    "variantLabel": "Grösse",
     "variants": [
       {
         "id": "leinenbluse-noor-xs",
@@ -136,7 +136,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true
@@ -146,16 +146,16 @@
     "slug": "trenchcoat-ines",
     "name": "Trenchcoat Ines",
     "category": "kleidung",
-    "priceCents": 8995,
+    "priceCents": 10900,
     "description": "Zweireihiger Trenchcoat mit Bindegürtel und Schulterpatten.",
     "details": [
       "Material: 65 % Polyester, 35 % Baumwolle",
-      "Länge in Größe M: 102 cm",
+      "Länge in Grösse M: 102 cm",
       "Abnehmbarer Gürtel"
     ],
     "images": [],
     "swatch": "#b39b7a",
-    "variantLabel": "Größe",
+    "variantLabel": "Grösse",
     "variants": [
       {
         "id": "trenchcoat-ines-xs",
@@ -183,22 +183,22 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true,
-    "compareAtCents": 11995
+    "compareAtCents": 13900
   },
   {
     "id": "shopper-lea",
     "slug": "shopper-lea",
     "name": "Shopper Lea",
     "category": "taschen",
-    "priceCents": 5495,
-    "description": "Geräumiger Shopper aus Lederimitat mit Innenfach mit Reißverschluss.",
+    "priceCents": 6490,
+    "description": "Geräumiger Shopper aus Lederimitat mit Innenfach mit Reissverschluss.",
     "details": [
       "Material: PU-Lederimitat",
-      "Maße: 38 × 30 × 14 cm",
+      "Masse: 38 × 30 × 14 cm",
       "Passt für 13-Zoll-Laptops"
     ],
     "images": [],
@@ -221,7 +221,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true
@@ -231,11 +231,11 @@
     "slug": "crossbody-juna",
     "name": "Mini-Crossbody Juna",
     "category": "taschen",
-    "priceCents": 3495,
+    "priceCents": 3990,
     "description": "Kleine Umhängetasche mit verstellbarem Kettenriemen.",
     "details": [
       "Material: PU-Lederimitat",
-      "Maße: 19 × 12 × 6 cm",
+      "Masse: 19 × 12 × 6 cm",
       "Riemenlänge bis 120 cm"
     ],
     "images": [],
@@ -258,7 +258,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true
@@ -268,11 +268,11 @@
     "slug": "schultertasche-ava",
     "name": "Gesteppte Schultertasche Ava",
     "category": "taschen",
-    "priceCents": 4495,
+    "priceCents": 5490,
     "description": "Weiche Schultertasche mit Steppmuster und Magnetverschluss.",
     "details": [
       "Material: Nylon, gesteppt",
-      "Maße: 32 × 20 × 8 cm",
+      "Masse: 32 × 20 × 8 cm",
       "Magnetverschluss"
     ],
     "images": [],
@@ -295,7 +295,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true
@@ -305,11 +305,11 @@
     "slug": "clutch-elin",
     "name": "Clutch Elin",
     "category": "taschen",
-    "priceCents": 2995,
+    "priceCents": 3490,
     "description": "Schmale Abendclutch in Satinoptik mit Kettenriemen zum Einklappen.",
     "details": [
       "Material: Satin, Polyester",
-      "Maße: 24 × 13 × 4 cm",
+      "Masse: 24 × 13 × 4 cm",
       "Abnehmbare Kette"
     ],
     "images": [],
@@ -327,7 +327,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true
@@ -337,7 +337,7 @@
     "slug": "loafer-romy",
     "name": "Loafer Romy",
     "category": "schuhe",
-    "priceCents": 5995,
+    "priceCents": 6990,
     "description": "Klassische Loafer mit Kettendetail und leicht erhöhtem Absatz.",
     "details": [
       "Obermaterial: PU-Lederimitat",
@@ -346,7 +346,7 @@
     ],
     "images": [],
     "swatch": "#1f1b22",
-    "variantLabel": "EU-Größe",
+    "variantLabel": "EU-Grösse",
     "variants": [
       {
         "id": "loafer-romy-36",
@@ -379,7 +379,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true
@@ -389,8 +389,8 @@
     "slug": "ankleboots-lina",
     "name": "Ankle Boots Lina",
     "category": "schuhe",
-    "priceCents": 6995,
-    "description": "Stiefeletten mit Blockabsatz und seitlichem Reißverschluss.",
+    "priceCents": 8490,
+    "description": "Stiefeletten mit Blockabsatz und seitlichem Reissverschluss.",
     "details": [
       "Obermaterial: Veloursleder-Optik",
       "Absatzhöhe: 6 cm",
@@ -398,7 +398,7 @@
     ],
     "images": [],
     "swatch": "#5a4535",
-    "variantLabel": "EU-Größe",
+    "variantLabel": "EU-Grösse",
     "variants": [
       {
         "id": "ankleboots-lina-36",
@@ -431,18 +431,18 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true,
-    "compareAtCents": 8995
+    "compareAtCents": 10900
   },
   {
     "id": "ballerinas-zoe",
     "slug": "ballerinas-zoe",
     "name": "Ballerinas Zoé",
     "category": "schuhe",
-    "priceCents": 3995,
+    "priceCents": 4990,
     "description": "Spitze Ballerinas mit Slingback-Riemen.",
     "details": [
       "Obermaterial: Lack-Optik",
@@ -451,7 +451,7 @@
     ],
     "images": [],
     "swatch": "#a4344a",
-    "variantLabel": "EU-Größe",
+    "variantLabel": "EU-Grösse",
     "variants": [
       {
         "id": "ballerinas-zoe-36",
@@ -484,7 +484,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true
@@ -494,16 +494,16 @@
     "slug": "sneaker-kaya",
     "name": "Plateau-Sneaker Kaya",
     "category": "schuhe",
-    "priceCents": 5495,
-    "description": "Weiße Plateau-Sneaker mit gepolsterter Zunge.",
+    "priceCents": 6490,
+    "description": "Weisse Plateau-Sneaker mit gepolsterter Zunge.",
     "details": [
       "Obermaterial: PU",
       "Sohlenhöhe: 4 cm",
-      "Fällt eine halbe Nummer groß aus"
+      "Fällt eine halbe Nummer gross aus"
     ],
     "images": [],
     "swatch": "#ecebea",
-    "variantLabel": "EU-Größe",
+    "variantLabel": "EU-Grösse",
     "variants": [
       {
         "id": "sneaker-kaya-36",
@@ -536,7 +536,7 @@
         "supplierVid": null
       }
     ],
-    "deliveryDays": "6–10 Werktage",
+    "deliveryDays": "8–15 Werktage",
     "supplier": "cj",
     "example": true,
     "published": true

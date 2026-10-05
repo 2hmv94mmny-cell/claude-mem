@@ -32,7 +32,7 @@ export async function createCheckoutSession(stripe: Stripe, cart: CartLine[], or
     line_items: priced.map((l) => ({
       quantity: l.quantity,
       price_data: {
-        currency: "eur",
+        currency: "chf",
         unit_amount: l.product.priceCents,
         product_data: {
           name: `${l.product.name} (${l.product.variantLabel}: ${l.variant.label})`,
@@ -51,7 +51,7 @@ export async function createCheckoutSession(stripe: Stripe, cart: CartLine[], or
         shipping_rate_data: {
           type: "fixed_amount",
           display_name: shipping === 0 ? "Kostenloser Versand" : "Standardversand",
-          fixed_amount: { amount: shipping, currency: "eur" },
+          fixed_amount: { amount: shipping, currency: "chf" },
         },
       },
     ],
@@ -103,7 +103,7 @@ export async function paidOrderFromSession(stripe: Stripe, sessionId: string): P
       postalCode: address?.postal_code ?? "",
       city: address?.city ?? "",
       state: address?.state ?? undefined,
-      country: address?.country ?? "DE",
+      country: address?.country ?? "CH",
       phone: session.customer_details?.phone ?? undefined,
       email: session.customer_details?.email ?? undefined,
     },
