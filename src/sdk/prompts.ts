@@ -329,6 +329,14 @@ export function stripImagePayloadsFromField(value: unknown): unknown {
   return stripped === parsed ? value : stripped;
 }
 
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xD800 && code <= 0xDBFF;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xDC00 && code <= 0xDFFF;
+}
+
 function truncateObservationField(value: unknown, maxChars: number = OBS_PROMPT_FIELD_MAX_CHARS): string {
   // JSON.stringify returns undefined for undefined / functions / symbols;
   // fall back to empty string so the call sites (template literal output)
@@ -337,8 +345,14 @@ function truncateObservationField(value: unknown, maxChars: number = OBS_PROMPT_
   if (raw.length <= maxChars) return raw;
   const headChars = Math.max(0, Math.floor(maxChars * OBS_PROMPT_FIELD_HEAD_RATIO));
   const tailChars = Math.max(0, Math.floor(maxChars * OBS_PROMPT_FIELD_TAIL_RATIO));
-  const head = raw.slice(0, headChars);
-  const tail = tailChars > 0 ? raw.slice(-tailChars) : '';
+  // Never cut between the halves of a surrogate pair: a lone surrogate makes
+  // the request body invalid JSON for the provider. Shrink each slice by one.
+  let headEnd = headChars;
+  if (headEnd > 0 && isHighSurrogate(raw.charCodeAt(headEnd - 1))) headEnd--;
+  let tailStart = raw.length - tailChars;
+  if (tailChars > 0 && isLowSurrogate(raw.charCodeAt(tailStart))) tailStart++;
+  const head = raw.slice(0, headEnd);
+  const tail = tailChars > 0 ? raw.slice(tailStart) : '';
   const elidedChars = Math.max(0, raw.length - head.length - tail.length);
   return `${head}\n... <elided chars="${elidedChars}" original_size_chars="${raw.length}" reason="oversize" /> ...\n${tail}`;
 }
