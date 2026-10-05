@@ -577,3 +577,23 @@ describe('parseAgentXml — tag casing (#4098)', () => {
     expect(result.valid).toBe(false);
   });
 });
+
+// Root detection accepts `<observation …>` / `<summary …>` with attributes, so
+// the block regexes must too; otherwise the response is classified as XML and
+// then rejected as invalid, and the whole batch is lost.
+describe('parseAgentXml — root tags with attributes', () => {
+  it('parses an <observation> root that carries attributes', () => {
+    const result = expectObservation(
+      '<observation id="1"><type>discovery</type><title>Attributed root</title></observation>'
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe('Attributed root');
+  });
+
+  it('parses a <summary> root that carries attributes', () => {
+    const result = parseAgentXml('<summary session="abc"><request>Fix the bug</request></summary>');
+    expect(result.valid).toBe(true);
+    if (!result.valid) return;
+    expect(result.summary?.request).toBe('Fix the bug');
+  });
+});

@@ -118,7 +118,9 @@ function parseObservationBlocks(
 ): ParsedObservation[] {
   const observations: ParsedObservation[] = [];
 
-  const observationRegex = /<observation>([\s\S]*?)<\/observation>/gi;
+  // Attributes are tolerated (`<observation id="1">`), matching root detection
+  // in parseAgentXml; a self-closing tag is not an opening one.
+  const observationRegex = /<observation(?:\s[^>]*?)?(?<!\/)>([\s\S]*?)<\/observation>/gi;
 
   let match;
   while ((match = observationRegex.exec(text)) !== null) {
@@ -207,7 +209,7 @@ function parseObservationBlocks(
 }
 
 function parseSummaryBlock(text: string, correlationId?: string | number): ParsedSummary | null {
-  const summaryRegex = /<summary>([\s\S]*?)<\/summary>/i;
+  const summaryRegex = /<summary(?:\s[^>]*?)?(?<!\/)>([\s\S]*?)<\/summary>/i;
   const summaryMatch = summaryRegex.exec(text);
   if (!summaryMatch) return null;
 
