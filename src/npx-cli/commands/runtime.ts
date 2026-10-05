@@ -1,6 +1,7 @@
 import { spawnHidden } from '../../shared/spawn.js';
 import { sanitizeEnv } from '../../supervisor/env-sanitizer.js';
 import { existsSync } from 'fs';
+import { constants as osConstants } from 'os';
 import { join } from 'path';
 import { styleText } from 'node:util';
 import { getBunPath } from '../install/setup-runtime.js';
@@ -55,6 +56,17 @@ function packagePluginScriptPath(scriptName: string): string {
 }
 
 /**
+ * The exit status to forward for a child that closed with `code`/`signal`. A
+ * child killed by a signal closes with a null code; report it the way a shell
+ * does (128 + signal number) rather than as success.
+ */
+function childExitCode(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code;
+  if (signal) return 128 + (osConstants.signals[signal] ?? 0);
+  return 0;
+}
+
+/**
  * Spawn a plugin .cjs script under Bun with inherited stdio, exiting this
  * process with the child's exit code. `args[0]` is the script path. Sanitizes
  * host CLI bleed-through and Anthropic credentials before launch; credentials
@@ -72,8 +84,8 @@ function spawnPlugin(bunPath: string, args: string[], cwd: string, startFailureL
     process.exit(1);
   });
 
-  child.on('close', (exitCode) => {
-    process.exit(exitCode ?? 0);
+  child.on('close', (exitCode, signal) => {
+    process.exit(childExitCode(exitCode, signal));
   });
 }
 
@@ -189,8 +201,8 @@ export function runMcpCommand(): void {
     process.exit(1);
   });
 
-  child.on('close', (exitCode) => {
-    process.exit(exitCode ?? 0);
+  child.on('close', (exitCode, signal) => {
+    process.exit(childExitCode(exitCode, signal));
   });
 }
 
@@ -213,8 +225,8 @@ export function runHookCommand(extraArgs: string[] = []): void {
     process.exit(1);
   });
 
-  child.on('close', (exitCode) => {
-    process.exit(exitCode ?? 0);
+  child.on('close', (exitCode, signal) => {
+    process.exit(childExitCode(exitCode, signal));
   });
 }
 

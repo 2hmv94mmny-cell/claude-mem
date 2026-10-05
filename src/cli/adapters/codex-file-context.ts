@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'fs';
 import path from 'path';
-import { parse, type ParsedToken } from 'shell-quote';
+import { parse, quote, type ParsedToken } from 'shell-quote';
 
 const MAX_FILE_PATHS = 10;
 const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'less', 'more', 'bat', 'view', 'nl', 'tac']);
@@ -37,7 +37,9 @@ function normalizeCommand(command: unknown): string | null {
   if (typeof command === 'string') return command;
   if (Array.isArray(command)) {
     const parts = command.filter((part): part is string => typeof part === 'string');
-    return parts.length > 0 ? parts.join(' ') : null;
+    // An argv array is already tokenised: quote each element so one holding a
+    // space or shell metacharacter stays a single token when re-parsed.
+    return parts.length > 0 ? quote(parts) : null;
   }
   return null;
 }

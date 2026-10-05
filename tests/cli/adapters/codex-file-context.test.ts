@@ -111,4 +111,11 @@ describe('extractFilePaths', () => {
     // The guard must not swallow the feature it protects.
     expect(extractFilePaths('Bash', { command: 'cat README.md' }, tmpDir)).toEqual(['README.md']);
   });
+
+  it('keeps argv-array elements intact when they contain spaces', () => {
+    // An argv array is already tokenised: joining it with plain spaces split
+    // "my notes.txt" into two tokens, so the real file was never found.
+    writeFileSync(join(tmpDir, 'my notes.txt'), 'notes');
+    expect(extractFilePaths('Bash', { command: ['cat', 'my notes.txt'] }, tmpDir)).toEqual(['my notes.txt']);
+  });
 });
