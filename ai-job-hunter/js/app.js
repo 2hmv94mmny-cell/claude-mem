@@ -1,7 +1,8 @@
 import { store, STATUSES } from './store.js';
 import { searchJobs, SOURCE_IDS, sourceLabel } from './jobs.js';
 import * as ai from './ai.js';
-import { h, md, toast, copy, download, printDoc, fmtDate, debounce } from './ui.js';
+import { h, md, toast, copy, download, printDoc, canPrint, confirmButton, fmtDate, debounce } from './ui.js';
+import { inArtifact, ready as runtimeReady } from './runtime.js';
 
 const view = document.getElementById('view');
 const nav = document.getElementById('nav');
@@ -37,7 +38,7 @@ let currentAbort = null;
 function route() {
   currentAbort?.abort();
   currentAbort = null;
-  const path = location.hash.replace(/^#/, '') || '/';
+  const path = currentPath;
   for (const a of nav.querySelectorAll('a')) {
     const target = a.getAttribute('href').replace(/^#/, '');
     a.classList.toggle('active', target === '/' ? path === '/' : path.startsWith(target));
@@ -52,14 +53,35 @@ function route() {
       return;
     }
   }
-  location.hash = '#/';
+  go('/');
 }
 
-window.addEventListener('hashchange', route);
+// Routing keeps the current screen in memory so it also works inside the
+// artifact viewer, where links cannot carry "#/path" state. In a normal
+// browser the hash is kept in sync so Back and bookmarks work.
+let currentPath = /^#\//.test(location.hash) ? location.hash.slice(1) : '/';
 
 function go(path) {
-  location.hash = '#' + path;
+  currentPath = path;
+  if (!inArtifact) {
+    try {
+      history.pushState(null, '', '#' + path);
+    } catch {}
+  }
+  route();
 }
+
+window.addEventListener('popstate', () => {
+  currentPath = /^#\//.test(location.hash) ? location.hash.slice(1) : '/';
+  route();
+});
+
+document.addEventListener('click', (e) => {
+  const a = e.target.closest?.('a[href^="#/"]');
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  e.preventDefault();
+  go(a.getAttribute('href').slice(1));
+});
 
 function newAbort() {
   currentAbort?.abort();
@@ -82,6 +104,16 @@ function pageHeader(title, subtitle, ...actions) {
 
 function keyNotice() {
   if (ai.hasKey()) return null;
+  if (inArtifact) {
+    return h(
+      'div',
+      { class: 'notice' },
+      h('strong', {}, 'AI features need permission. '),
+      'Allow this page to use Claude when asked, or add an Anthropic API key in ',
+      h('a', { href: '#/settings' }, 'Settings'),
+      '.',
+    );
+  }
   return h(
     'div',
     { class: 'notice' },
@@ -120,7 +152,7 @@ function scorePill(score) {
  * `task(onText, signal)` must resolve with the final text.
  */
 function aiButton(label, { output, task, onDone, variant = 'primary' }) {
-  const btn = h('button', { class: `btn ${variant}` }, label);
+  const btn = h('button', { class: `btn ${variant}`, type: 'button' }, label);
   btn.addEventListener('click', async () => {
     if (!ai.hasKey()) {
       toast('Add your API key in Settings first.');
@@ -256,6 +288,19 @@ function renderFind() {
     sources: srcBoxes.map((l) => l.querySelector('input')).filter((c) => c.checked).map((c) => c.value),
   });
 
+  // Inside the artifact viewer the page cannot reach job boards directly, so
+  // live search goes through the viewer's web-search connector instead.
+  const webMode = inArtifact;
+
+  async function showExamples() {
+    const { jobs } = await searchJobs({ sources: [] });
+    session.results = jobs;
+    session.scores = {};
+    session.errors = [];
+    session.examples = true;
+    drawResults();
+  }
+
   async function runBoardSearch() {
     const p = params();
     if (!p.sources.length) return toast('Pick at least one job board.');
@@ -263,6 +308,7 @@ function renderFind() {
     status.textContent = 'Searching job boards…';
     results.replaceChildren(skeleton());
     const { jobs, errors } = await searchJobs(p);
+    session.examples = false;
     session.results = jobs;
     session.scores = {};
     session.errors = errors;
@@ -270,7 +316,7 @@ function renderFind() {
   }
 
   const aiStream = h('div', { class: 'ai-output compact', hidden: true });
-  const aiBtn = aiButton('AI web search', {
+  const aiBtn = aiButton(webMode ? 'Search jobs' : 'AI web search', {
     variant: '',
     output: aiStream,
     task: async (onText, signal) => {
@@ -282,6 +328,7 @@ function renderFind() {
       const jobs = await ai.aiFindJobs(query, { onText: () => onText('Searching and reading postings…'), signal });
       session.results = jobs;
       session.scores = {};
+      session.examples = false;
       session.errors = jobs.length ? [] : ['No postings found'];
       aiStream.hidden = true;
       drawResults();
@@ -304,7 +351,9 @@ function renderFind() {
 
   function drawResults() {
     const n = session.results.length;
-    status.textContent = `${n} job${n === 1 ? '' : 's'} found` + (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
+    status.textContent = session.examples
+      ? 'These are example listings. Press Search jobs to find live openings.'
+      : `${n} job${n === 1 ? '' : 's'} found` + (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
     if (!n) {
       results.replaceChildren(
         h('div', { class: 'empty' }, h('p', {}, 'No jobs matched. Try broader keywords, or '), h('a', { href: '#/add' }, 'add a job you found elsewhere.')),
@@ -351,16 +400,41 @@ function renderFind() {
   const form = h(
     'form',
     { class: 'card search-form' },
-    h('div', { class: 'search-row' }, q, loc, h('button', { class: 'btn primary', type: 'submit' }, 'Search boards')),
-    h('div', { class: 'row wrap' }, h('label', { class: 'check' }, remote, 'Remote only'), h('span', { class: 'muted small' }, 'Boards:'), ...srcBoxes, h('span', { class: 'spacer' }), aiBtn, scoreBtn),
+    h('div', { class: 'search-row' }, q, loc, webMode ? aiBtn : h('button', { class: 'btn primary', type: 'submit' }, 'Search boards')),
+    h(
+      'div',
+      { class: 'row wrap' },
+      h('label', { class: 'check' }, remote, 'Remote only'),
+      ...(webMode ? [h('span', { class: 'muted small' }, 'Searches the live web with Claude')] : [h('span', { class: 'muted small' }, 'Boards:'), ...srcBoxes]),
+      h('span', { class: 'spacer' }),
+      webMode ? '' : aiBtn,
+      scoreBtn,
+    ),
   );
+  if (webMode) {
+    aiBtn.classList.add('primary');
+    for (const el of [q, loc]) {
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          aiBtn.click();
+        }
+      });
+    }
+  }
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    runBoardSearch();
+    if (webMode) aiBtn.click();
+    else runBoardSearch();
   });
 
   view.append(
-    pageHeader('Find jobs', 'Search free job boards, or let Claude search the whole web for openings that fit your profile.'),
+    pageHeader(
+      'Find jobs',
+      webMode
+        ? 'Claude searches the web for open roles that fit your profile, then scores how well each one matches your CV.'
+        : 'Search free job boards, or let Claude search the whole web for openings that fit your profile.',
+    ),
     profileNotice() || '',
     form,
     aiStream,
@@ -369,6 +443,7 @@ function renderFind() {
   );
 
   if (session.results.length) drawResults();
+  else if (webMode) showExamples();
   else runBoardSearch();
 }
 
@@ -515,7 +590,10 @@ function renderJob(id) {
   ];
   const tabBar = h('div', { class: 'tabs', role: 'tablist' });
   const panel = h('div', { class: 'tab-panel' });
-  let active = sessionStorage.getItem('ajh:tab') || 'overview';
+  let active = 'overview';
+  try {
+    active = sessionStorage.getItem('ajh:tab') || 'overview';
+  } catch {}
 
   function showTab(key) {
     active = key;
@@ -549,13 +627,11 @@ function renderJob(id) {
       });
       const notes = h('textarea', { rows: 6, placeholder: 'Contacts, salary notes, next steps…' }, current.notes || '');
       notes.addEventListener('input', debounce(() => store.update((s) => (s.jobs[id].notes = notes.value)), 400));
-      const remove = h('button', { class: 'btn danger small' }, 'Remove job');
-      remove.addEventListener('click', () => {
-        if (confirm('Remove this job and its documents?')) {
-          store.removeJob(id);
-          go('/tracker');
-        }
-      });
+      const remove = confirmButton('Remove job', 'Tap again to remove', () => {
+        store.removeJob(id);
+        toast('Job removed');
+        go('/tracker');
+      }, 'btn danger small');
       side.append(
         field('Status', select),
         field('Notes', notes),
@@ -650,8 +726,8 @@ function renderJob(id) {
     cp.addEventListener('click', () => (text ? copy(text) : toast('Generate it first')));
     const dl = h('button', { class: 'btn small' }, 'Download');
     dl.addEventListener('click', () => (text ? download(`${slug(job.company)}-${slug(title)}.md`, text) : toast('Generate it first')));
-    const pdf = h('button', { class: 'btn small' }, 'Print / PDF');
-    pdf.addEventListener('click', () => (text ? printDoc(`${title} – ${job.company}`, md(text)) : toast('Generate it first')));
+    const pdf = canPrint ? h('button', { class: 'btn small' }, 'Print / PDF') : '';
+    if (pdf) pdf.addEventListener('click', () => (text ? printDoc(`${title} – ${job.company}`, md(text)) : toast('Generate it first')));
 
     return h(
       'section',
@@ -857,6 +933,9 @@ function renderSettings() {
     'form',
     { class: 'card form' },
     h('h2', {}, 'AI'),
+    ai.usingViewerClaude()
+      ? h('p', { class: 'notice' }, 'AI features run on your Claude account here, so no API key is needed. The key and model settings below apply when you run the app outside Claude.')
+      : '',
     field('Anthropic API key', key, 'Get one at console.anthropic.com. Stored only in this browser and sent only to api.anthropic.com.'),
     h('div', { class: 'grid-2' }, field('Model', model), field('Effort', effort, 'Higher effort gives more thorough results but takes longer.')),
     h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, 'Save settings')),
@@ -893,13 +972,10 @@ function renderSettings() {
       toast('That file is not a valid backup.');
     }
   });
-  const wipe = h('button', { class: 'btn danger' }, 'Erase all data');
-  wipe.addEventListener('click', () => {
-    if (confirm('Erase your profile, saved jobs, documents and settings from this device?')) {
-      store.reset();
-      toast('All data erased');
-      go('/');
-    }
+  const wipe = confirmButton('Erase all data', 'Tap again to erase everything', () => {
+    store.reset();
+    toast('All data erased');
+    go('/');
   });
 
   view.append(
@@ -912,7 +988,7 @@ function renderSettings() {
       h('p', { class: 'muted' }, 'Everything is stored locally in this browser. Export a backup to move it to another device.'),
       h('div', { class: 'row wrap' }, exp, imp, fileIn, wipe),
     ),
-    installCard(),
+    inArtifact ? '' : installCard(),
   );
 }
 
@@ -962,8 +1038,11 @@ function installCard() {
   );
 }
 
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+if (!inArtifact && 'serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW failed', e)));
 }
 
 route();
+// In the artifact viewer, capabilities arrive a moment after load: redraw
+// once they do so AI and web search light up.
+if (inArtifact) runtimeReady.then((c) => (c.sample || c.mcp) && route());

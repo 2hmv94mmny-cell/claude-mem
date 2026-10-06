@@ -81,3 +81,15 @@ ai-job-hunter/
     ├── store.js           Local-first state (localStorage), export/import
     └── ui.js              DOM helpers, safe Markdown renderer, toast, print/download
 ```
+
+## Live link (claude.ai)
+
+The app is published as a claude.ai artifact: https://claude.ai/artifact/QKNv5QPa6ExDHzDRsJ35va
+
+`artifact.html` is its entry page; it loads the same `styles.css` and `js/` files. Inside the claude.ai viewer the app adapts automatically (`js/runtime.js`):
+
+- AI features run on the viewer's own Claude account (`sample` capability), so no API key is needed.
+- Live job search uses the viewer's Exa web-search connector, because the viewer blocks direct calls to job boards.
+- Files are saved through the viewer's download prompt. Printing isn't available there.
+
+When you change the app, republish `artifact.html` with the same files so the link stays the same.

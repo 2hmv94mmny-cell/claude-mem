@@ -1,3 +1,5 @@
+import { caps, inArtifact } from './runtime.js';
+
 // Tiny DOM helpers. No framework: keeps the app small, fast and easy to wrap
 // as a native app later.
 
@@ -123,13 +125,53 @@ export async function copy(text) {
   }
 }
 
-export function download(filename, text, type = 'text/markdown') {
+export async function download(filename, text, type = 'text/markdown') {
+  if (caps.downloads) {
+    try {
+      await caps.downloads.save({ filename, data: text });
+      toast('Saved');
+    } catch (e) {
+      if (e?.code !== 'declined') toast('Could not save the file here. Use Copy instead.');
+    }
+    return;
+  }
+  if (inArtifact) {
+    toast('Saving files is not available here. Use Copy instead.');
+    return;
+  }
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = h('a', { href: url, download: filename });
   document.body.append(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Whether this view can print (artifact viewers cannot). */
+export const canPrint = !inArtifact;
+
+/**
+ * Two-step confirm built into the button itself (the artifact viewer
+ * blocks window.confirm). First click arms it; a second click within a few
+ * seconds runs `action`.
+ */
+export function confirmButton(label, armedLabel, action, cls = 'btn danger') {
+  const btn = h('button', { class: cls, type: 'button' }, label);
+  let timer;
+  btn.addEventListener('click', () => {
+    if (btn.dataset.armed) {
+      clearTimeout(timer);
+      action();
+      return;
+    }
+    btn.dataset.armed = '1';
+    btn.textContent = armedLabel;
+    timer = setTimeout(() => {
+      delete btn.dataset.armed;
+      btn.textContent = label;
+    }, 4000);
+  });
+  return btn;
 }
 
 /** Open a clean, print-ready page so the user can "Save as PDF". */

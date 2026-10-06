@@ -1,11 +1,15 @@
-// All AI features go through Claude via the official Anthropic TypeScript/JS SDK,
-// loaded as an ES module from a CDN so the app needs no build step.
+// All AI features go through Claude, by one of two routes:
 //
-// The user's API key is stored only in their own browser and sent straight to
-// api.anthropic.com. For a multi-user deployment, put a small server in front
-// of the API instead and drop `dangerouslyAllowBrowser`.
+// 1. Inside a claude.ai Artifact viewer: the viewer's `sample` capability,
+//    which runs on the viewer's own Claude account. No API key needed.
+// 2. Standalone (website / installed PWA): the official Anthropic JS SDK,
+//    loaded as an ES module from a CDN, with the user's own API key. The key is
+//    stored only in their browser and sent straight to api.anthropic.com. For a
+//    multi-user deployment, put a small server in front of the API instead and
+//    drop `dangerouslyAllowBrowser`.
 
 import { store } from './store.js';
+import { caps, disable, SEARCH_SERVER, SEARCH_TOOL } from './runtime.js';
 
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm';
 
@@ -15,8 +19,19 @@ function loadSDK() {
   return sdkPromise;
 }
 
+/** True when AI features can run (viewer's Claude, or an API key). */
 export function hasKey() {
-  return Boolean(store.get().settings.apiKey);
+  return usingViewerClaude() || Boolean(store.get().settings.apiKey);
+}
+
+/** True when running in a claude.ai viewer that lends us its Claude. */
+export function usingViewerClaude() {
+  return Boolean(caps.sample);
+}
+
+/** True when live web job search is possible. */
+export function canSearchWeb() {
+  return Boolean(caps.mcp && caps.sample) || (!caps.sample && Boolean(store.get().settings.apiKey));
 }
 
 async function client() {
@@ -36,7 +51,8 @@ async function client() {
  * @param {AbortSignal} [opts.signal]
  * @returns {Promise<string>} final text
  */
-export async function ask({ system, messages, tools, onText, signal }) {
+export async function ask({ system, messages, tools, onText, signal, json = false }) {
+  if (usingViewerClaude()) return askViewer({ system, messages, onText, signal, json });
   const anthropic = await client();
   const { model, effort } = store.get().settings;
 
@@ -74,6 +90,44 @@ export async function ask({ system, messages, tools, onText, signal }) {
   } catch (err) {
     throw friendlyError(err, await loadSDK());
   }
+}
+
+// Run through the viewer's own Claude. There is no system prompt here, so the
+// instructions lead the first user turn.
+async function askViewer({ system, messages, onText, signal, json }) {
+  const turns = messages.map((m) => ({ role: m.role, content: String(m.content) }));
+  turns[0] = { role: 'user', content: `${system}\n\n${turns[0].content}` };
+  const input = turns.length === 1 ? turns[0].content : turns;
+  const opts = { cache: false, signal, onText: onText && (({ text }) => onText(text)) };
+  try {
+    if (json) return await caps.sample.json(input, opts);
+    const { text, truncated } = await caps.sample(input, opts);
+    return truncated ? `${text}\n\n*(Cut short. Try again for the rest.)*` : text;
+  } catch (e) {
+    throw viewerError(e);
+  }
+}
+
+function viewerError(e) {
+  const code = e?.code;
+  if (code === 'cancelled') {
+    const err = new Error('Stopped');
+    err.name = 'AbortError';
+    return err;
+  }
+  if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) {
+    disable('sample');
+    return new Error('Claude is not allowed for this page. Allow it from the page\'s permissions, or add an API key in Settings.');
+  }
+  const copy = {
+    rate_limited: 'You have hit a usage limit. Wait a little and try again.',
+    session_expired: 'Your Claude session expired. Sign in again and retry.',
+    refused: 'Claude declined this request. Try rephrasing it.',
+    empty_completion: 'Claude returned nothing. Try again with less text.',
+    invalid_json: 'Claude replied in an unexpected format. Try again.',
+    prompt_too_large: 'That is too much text in one go. Shorten your CV or the job description.',
+  };
+  return new Error(copy[code] || 'Something went wrong reaching Claude. Try again.');
 }
 
 function friendlyError(err, A) {
@@ -149,6 +203,7 @@ const HONESTY =
 
 /** Use Claude + web search to find live openings that fit the profile. */
 export async function aiFindJobs(query, { onText, signal } = {}) {
+  if (usingViewerClaude()) return viewerFindJobs(query, { onText, signal });
   const text = await ask({
     system:
       'You are a job-search assistant. Use web search to find real, currently open job postings. ' +
@@ -169,19 +224,85 @@ export async function aiFindJobs(query, { onText, signal } = {}) {
   });
   const list = extractJSON(text);
   if (!Array.isArray(list)) throw new Error('Unexpected reply format');
-  return list
-    .filter((j) => j && j.title)
-    .map((j) => ({
-      id: 'ai:' + hash(`${j.company}|${j.title}|${j.url}`),
-      source: 'AI web search',
-      title: String(j.title),
-      company: String(j.company || ''),
-      location: String(j.location || ''),
-      url: String(j.url || ''),
-      description: String(j.description || ''),
-      posted: String(j.posted || ''),
-      tags: [],
-    }));
+  return list.filter((j) => j && j.title).map(toJob);
+}
+
+// Viewer route: search the web with the viewer's Exa connector, then have
+// Claude pick out the real postings from the results.
+async function viewerFindJobs(query, { onText, signal }) {
+  if (!caps.mcp) throw new Error('Live web search needs the Exa connector. Add it in claude.ai Settings → Connectors, then reload.');
+  const p = store.get().profile;
+  const what = query || p.targetRoles || p.headline || 'jobs that fit my profile';
+  onText?.('Searching the web for openings…');
+  let results;
+  try {
+    const res = await caps.mcp.callTool(
+      SEARCH_SERVER,
+      SEARCH_TOOL,
+      {
+        query: `currently open job posting for ${what}`,
+        objective: `Find open job postings (employer careers pages or job boards) for: ${what}. Rank direct postings first; exclude articles, salary guides and listicles. Pull job title, company, location, salary and key requirements.`,
+        numResults: 15,
+      },
+      { signal },
+    );
+    results = typeof res.payload === 'string' ? res.payload : JSON.stringify(res.payload ?? res.content);
+  } catch (e) {
+    throw mcpError(e);
+  }
+  onText?.('Reading the postings…');
+  const list = await ask({
+    system:
+      'You extract job postings from web search results. Only include real, specific open positions that appear in the results, ' +
+      'with the URL exactly as given. Skip articles, salary guides, lists of companies and expired postings.',
+    messages: [
+      {
+        role: 'user',
+        content:
+          `Search request: ${what}\n\n<search_results>\n${results.slice(0, 60000)}\n</search_results>\n\n` +
+          'Reply with only a JSON array (best matches first, max 10) where each item is ' +
+          '{"title": string, "company": string, "location": string, "url": string, "salary": string, "description": string (2-4 sentences: the role and key requirements), "posted": string}.',
+      },
+    ],
+    json: true,
+    signal,
+  });
+  if (!Array.isArray(list)) throw new Error('Claude replied in an unexpected format. Try again.');
+  return list.filter((j) => j && j.title).map(toJob);
+}
+
+function mcpError(e) {
+  if (e?.code === 'cancelled') {
+    const err = new Error('Stopped');
+    err.name = 'AbortError';
+    return err;
+  }
+  const copy = {
+    server_not_connected: 'Add the Exa connector in claude.ai Settings → Connectors to search live jobs.',
+    selection_required: 'Choose which Exa connector to use when claude.ai asks, then search again.',
+    needs_reauth: 'Reconnect Exa in claude.ai Settings → Connectors, then search again.',
+    not_in_manifest: 'Web search is turned off for this page. Allow Exa in the page\'s permissions to search live jobs.',
+    blocked_by_policy: 'Your organization blocks web search here.',
+    server_unavailable: 'The search service did not answer. Try again in a moment.',
+    tool_error: `Search failed: ${e?.message || 'unknown error'}`,
+  };
+  return new Error(copy[e?.code] || 'Web search is not available right now. Try again later.');
+}
+
+function toJob(j) {
+  return {
+    id: 'ai:' + hash(`${j.company}|${j.title}|${j.url}`),
+    source: 'Web search',
+    title: String(j.title),
+    company: String(j.company || ''),
+    location: String(j.location || ''),
+    remote: /remote|anywhere/i.test(String(j.location || '')),
+    url: String(j.url || ''),
+    salary: String(j.salary || ''),
+    description: String(j.description || ''),
+    posted: String(j.posted || ''),
+    tags: [],
+  };
 }
 
 /** Score how well the candidate fits a set of jobs. Returns {id: {score, reason}}. */
@@ -190,7 +311,8 @@ export async function scoreJobs(jobs, { signal } = {}) {
     .slice(0, 15)
     .map((j, i) => `[${i}] ${j.title} at ${j.company} (${j.location || 'n/a'})\n${(j.description || '').slice(0, 700)}`)
     .join('\n\n');
-  const text = await ask({
+  const reply = await ask({
+    json: true,
     system:
       'You are a pragmatic recruiter. Score how well a candidate fits each job from 0-100, ' +
       'based on skills, seniority, domain and location fit. Be honest; most jobs are not a great fit.',
@@ -204,8 +326,9 @@ export async function scoreJobs(jobs, { signal } = {}) {
     ],
     signal,
   });
+  const rows = typeof reply === 'string' ? extractJSON(reply) : reply;
   const out = {};
-  for (const row of extractJSON(text)) {
+  for (const row of Array.isArray(rows) ? rows : []) {
     const job = jobs[row.index];
     if (job) out[job.id] = { score: Math.round(row.score), reason: row.reason };
   }
