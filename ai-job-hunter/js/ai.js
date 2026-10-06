@@ -54,8 +54,8 @@ async function client() {
  * @param {AbortSignal} [opts.signal]
  * @returns {Promise<string>} final text
  */
-export async function ask({ system, messages, tools, onText, signal, json = false, images = [] }) {
-  if (usingViewerClaude()) return askViewer({ system, messages, onText, signal, json, images });
+export async function ask({ system, messages, tools, onText, signal, json = false, images = [], quick = false }) {
+  if (usingViewerClaude()) return askViewer({ system, messages, onText, signal, json, images, quick });
   const anthropic = await client();
   const { model, effort } = store.get().settings;
 
@@ -71,7 +71,7 @@ export async function ask({ system, messages, tools, onText, signal, json = fals
     max_tokens: 64000,
     system,
     messages,
-    output_config: { effort },
+    output_config: { effort: quick ? 'low' : effort },
     // If a safety classifier declines, let the API retry on a suitable model
     // instead of failing the request outright.
     betas: ['server-side-fallback-2026-07-01'],
@@ -117,11 +117,12 @@ async function imageBlock(blob) {
 
 // Run through the viewer's own Claude. There is no system prompt here, so the
 // instructions lead the first user turn.
-async function askViewer({ system, messages, onText, signal, json, images }) {
+async function askViewer({ system, messages, onText, signal, json, images, quick }) {
   const turns = messages.map((m) => ({ role: m.role, content: String(m.content) }));
   turns[0] = { role: 'user', content: `${system}\n\n${turns[0].content}` };
   const input = turns.length === 1 ? turns[0].content : turns;
   const opts = { cache: false, signal, onText: onText && (({ text }) => onText(text)) };
+  if (quick) opts.modelTier = 'quick';
   if (images?.length) {
     const limits = await caps.sample.limits().catch(() => null);
     if (!limits?.images) throw new Error('Reading images is not available here. Upload your CV as a PDF, Word or text file instead.');
@@ -534,37 +535,79 @@ export function analyzeGap(job, opts) {
   });
 }
 
-export function interviewQuestions(job, opts) {
-  return ask({
-    system: 'You are an experienced hiring manager and interview coach.',
+// ---------------------------------------------------------------------------
+// Interview game
+// ---------------------------------------------------------------------------
+
+export const CATEGORIES = ['Story time', 'Skills check', 'Motivation', 'Curveball', 'Company fit'];
+
+/** Build a deck of question cards for this job. */
+export async function interviewDeck(job, { signal } = {}) {
+  const reply = await ask({
+    system: 'You are a sharp, friendly hiring manager preparing someone for a real interview for this exact job.',
     messages: [
       {
         role: 'user',
         content:
           `${profileBlock()}\n\n${jobBlock(job)}\n\n` +
-          'Prepare this candidate for interviews for this role. In Markdown, give:\n' +
-          '## Likely questions: 10 questions mixing behavioural, technical/role-specific and motivation questions, each followed by a 2-3 line suggested answer outline in STAR form drawn from the CV.\n' +
-          '## Questions to ask them: 5 sharp questions.\n' +
-          '## Research checklist: what to look up about the company before the interview.',
+          'Make a deck of 8 interview question cards that this employer would really ask for this role. Mix: 3 "Story time" (behavioural, "tell me about a time"), ' +
+          '2 "Skills check" (role or technical questions based on the posting), 1 "Motivation", 1 "Company fit", 1 "Curveball". Order them like a real interview, easy first.\n' +
+          'Keep every question short and spoken, under 25 words. No dashes as punctuation.\n' +
+          'Reply with only a JSON object: {"cards": [{"category": one of ' + JSON.stringify(CATEGORIES) + ', "difficulty": 1-3, ' +
+          '"question": string, "testing": string (what they really want to find out, max 10 words), ' +
+          '"hint": string (a nudge pointing at something specific from the CV to use, max 18 words), ' +
+          '"lookFor": [3 short points a great answer covers, max 8 words each]}], ' +
+          '"askThem": [3 smart questions the candidate can ask at the end, max 18 words each]}',
       },
     ],
-    ...opts,
+    json: true,
+    signal,
   });
+  const cards = Array.isArray(reply?.cards) ? reply.cards : [];
+  return {
+    cards: cards
+      .filter((c) => c && c.question)
+      .map((c) => ({
+        category: CATEGORIES.includes(c.category) ? c.category : 'Story time',
+        difficulty: Math.min(3, Math.max(1, Number(c.difficulty) || 1)),
+        question: cleanText(String(c.question)),
+        testing: cleanText(String(c.testing || '')),
+        hint: cleanText(String(c.hint || '')),
+        lookFor: (Array.isArray(c.lookFor) ? c.lookFor : []).map((x) => cleanText(String(x))).slice(0, 4),
+      })),
+    askThem: (Array.isArray(reply?.askThem) ? reply.askThem : []).map((x) => cleanText(String(x))).slice(0, 4),
+  };
 }
 
-/** One turn of a mock interview. `chat` is the full history so far. */
-export function mockInterviewTurn(job, chat, opts) {
-  return ask({
+/** Score one spoken or typed answer. Fast and short by design. */
+export async function scoreAnswer(job, card, answer, { signal } = {}) {
+  const reply = await ask({
     system:
-      'You are conducting a realistic mock interview for the job below. Ask one question at a time. ' +
-      'After the candidate answers, give brief, specific feedback (what worked, what to improve, a stronger phrasing) ' +
-      'and then ask the next question. After about 6 questions, wrap up with an overall assessment and 3 things to practise.\n\n' +
-      profileBlock() +
-      '\n\n' +
-      jobBlock(job),
-    messages: chat.length ? chat : [{ role: 'user', content: "I'm ready. Please start the interview." }],
-    ...opts,
+      'You coach people for job interviews. You are warm and encouraging but honest, like a good friend who has hired people. ' +
+      'Answers may be voice transcripts with filler words and missing punctuation; judge the content, not the transcription.',
+    messages: [
+      {
+        role: 'user',
+        content:
+          `${profileBlock()}\n\nJob: ${job.title} at ${job.company}\n\nQuestion: ${card.question}\n` +
+          `A great answer covers: ${card.lookFor.join('; ')}\n\nCandidate's answer:\n"""${answer.slice(0, 6000)}"""\n\n` +
+          'Reply with only a JSON object: {"stars": 1-5, "verdict": string (a fun 2-5 word reaction, like "Solid story!" or "Almost there"), ' +
+          '"good": string (one specific thing that worked, max 20 words), "improve": string (the single most useful fix, max 22 words), ' +
+          '"stronger": string (a better version of their answer in first person, as they would say it out loud, using only facts from their answer or CV, max 70 words)}. ' +
+          'No dashes as punctuation. Plain, spoken words.',
+      },
+    ],
+    json: true,
+    quick: true,
+    signal,
   });
+  return {
+    stars: Math.min(5, Math.max(1, Math.round(Number(reply?.stars) || 1))),
+    verdict: cleanText(String(reply?.verdict || '')),
+    good: cleanText(String(reply?.good || '')),
+    improve: cleanText(String(reply?.improve || '')),
+    stronger: cleanText(String(reply?.stronger || '')),
+  };
 }
 
 function hash(s) {

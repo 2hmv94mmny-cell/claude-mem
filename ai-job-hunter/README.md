@@ -6,7 +6,7 @@ A website that helps you find a job faster, and installs as an app on phones and
 - **Upload your CV**: PDF, Word (.docx), text, or a photo/scan. Claude reviews it (score, strengths, what to fix, applicant-tracking issues) and fills in your profile.
 - **A redesigned CV for each job**: when you apply, Claude rewrites your CV around that posting and lays it out in one of three designs (Modern, Classic, Compact). It lists what it changed and which keywords are now covered, takes follow-up requests ("make it one page"), and downloads as a real-text PDF that applicant tracking systems can read. Cover letters download as PDF too. The prompts forbid inventing experience the CV doesn't support.
 - **Track applications**: a kanban board (Saved → Applied → Interview → Offer → Rejected) with drag and drop, notes and a history of status changes.
-- **Prepare for interviews**: a prep guide with likely questions, STAR answer outlines drawn from your CV, and questions to ask them. A mock interviewer asks one question at a time and gives feedback on each answer.
+- **Interview game**: interview prep as a card game. Claude deals 8 question cards for the job (stories, skills, motivation, company fit, a curveball). Answer by typing or speaking; the card flips to show 1 to 5 stars, what worked, what to fix and a stronger version you can hear read aloud. XP, hints, streaks, a soft 2 minute timer, a final rank and a replay of your weakest cards. Voice answers use the browser's speech recognition where the page may use the microphone; inside the Claude app, use the keyboard's dictation key.
 
 It's plain HTML, CSS and JavaScript with no build step and no backend. All data (profile, jobs, documents) stays in the user's browser.
 
@@ -79,6 +79,8 @@ ai-job-hunter/
     ├── app.js             Router and all screens
     ├── ai.js              Claude prompts and API calls
     ├── jobs.js            Free job board search, plus demo listings used when offline
+    ├── game.js            Interview card game
+    ├── voice.js           Speech recognition for answers, read-aloud for questions
     ├── portals.js         Job portals per country, location detection, portal search links
     ├── files.js           Reads uploaded CVs (PDF via pdf.js, Word via mammoth, images)
     ├── cvdoc.js           Structured CV: layout templates, plain text, PDF (pdfmake)

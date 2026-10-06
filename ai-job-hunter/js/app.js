@@ -5,6 +5,7 @@ import { h, md, toast, copy, download, confirmButton, fmtDate, debounce } from '
 import { inArtifact, ready as runtimeReady } from './runtime.js';
 import { portalsFor } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
+import { renderInterviewGame } from './game.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { TEMPLATES, renderCV, cvToText, cvPDFDefinition, letterPDFDefinition, makePDF, cvFromProfile } from './cvdoc.js';
 
@@ -614,7 +615,7 @@ function renderJob(id) {
   const tabs = [
     ['overview', 'Overview'],
     ['docs', 'CV & cover letter'],
-    ['prep', 'Interview prep'],
+    ['prep', 'Interview game'],
   ];
   const tabBar = h('div', { class: 'tabs', role: 'tablist' });
   const panel = h('div', { class: 'tab-panel' });
@@ -915,91 +916,9 @@ function renderJob(id) {
 
   // ----- Interview prep -----
   function prepTab() {
-    const prep = store.get().prep[id] || {};
-    const qs = h('div', { class: 'ai-output' });
-    if (prep.questions) qs.replaceChildren(md(prep.questions));
-    else qs.replaceChildren(h('p', { class: 'muted' }, 'Generate likely questions, answer outlines from your CV, and questions to ask them.'));
-    const qBtn = aiButton(prep.questions ? 'Regenerate' : 'Generate prep guide', {
-      output: qs,
-      task: (onText, signal) => ai.interviewQuestions(job, { onText, signal }),
-      onDone: (text) => {
-        ensureSaved();
-        store.update((s) => (s.prep[id] = { ...s.prep[id], questions: text }));
-      },
-    });
-
-    // Mock interview chat
-    let chat = prep.chat ? [...prep.chat] : [];
-    const log = h('div', { class: 'chat-log', 'aria-live': 'polite' });
-    const input = h('textarea', { rows: 3, placeholder: 'Type your answer…' });
-    const send = h('button', { class: 'btn primary', type: 'submit' }, 'Send');
-    const reset = h('button', { class: 'btn small', type: 'button' }, 'Restart');
-
-    function drawChat(streaming) {
-      const visible = chat.filter((m, i) => !(i === 0 && m.role === 'user' && m.content === START));
-      log.replaceChildren(
-        ...(visible.length || streaming
-          ? visible.map((m) => bubble(m.role, m.content))
-          : [h('p', { class: 'muted' }, 'Practise with an AI interviewer who asks one question at a time and gives feedback on each answer.')]),
-        ...(streaming ? [bubble('assistant', streaming)] : []),
-      );
-      log.scrollTop = log.scrollHeight;
-    }
-    const bubble = (role, content) => h('div', { class: `bubble ${role}` }, role === 'assistant' ? md(content) : content);
-
-    async function turn() {
-      if (!ai.hasKey()) {
-        toast('Add your API key in Settings first.');
-        return;
-      }
-      const signal = newAbort();
-      send.disabled = true;
-      try {
-        const reply = await ai.mockInterviewTurn(job, chat, { onText: (t) => drawChat(t), signal });
-        chat.push({ role: 'assistant', content: reply });
-        ensureSaved();
-        store.update((s) => (s.prep[id] = { ...s.prep[id], chat }));
-      } catch (err) {
-        if (!signal.aborted) toast(err.message);
-        // Drop the unanswered user turn so the history stays valid.
-        if (chat.at(-1)?.role === 'user') chat.pop();
-      } finally {
-        send.disabled = false;
-        drawChat();
-        input.focus();
-      }
-    }
-
-    const form = h('form', { class: 'chat-form' }, input, h('div', { class: 'row' }, send, reset));
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const answer = input.value.trim();
-      if (!chat.length) chat.push({ role: 'user', content: START });
-      else if (!answer) return;
-      if (answer) chat.push({ role: 'user', content: answer });
-      input.value = '';
-      drawChat();
-      turn();
-    });
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) form.requestSubmit();
-    });
-    reset.addEventListener('click', () => {
-      currentAbort?.abort();
-      chat = [];
-      store.update((s) => (s.prep[id] = { ...s.prep[id], chat: [] }));
-      drawChat();
-      send.textContent = 'Start interview';
-    });
-    if (!chat.length) send.textContent = 'Start interview';
-    form.addEventListener('submit', () => (send.textContent = 'Send'));
-    drawChat();
-
-    panel.append(
-      keyNotice() || '',
-      h('section', { class: 'card' }, h('div', { class: 'row space' }, h('h2', {}, 'Prep guide'), qBtn), qs),
-      h('section', { class: 'card' }, h('h2', {}, 'Mock interview'), log, form),
-    );
+    const root = h('div', { class: 'game-root' });
+    panel.append(keyNotice() || '', root);
+    renderInterviewGame(root, job, { ensureSaved });
   }
 
   const header = h(
@@ -1018,8 +937,6 @@ function renderJob(id) {
   view.append(header, tabBar, panel);
   showTab(tabs.some(([k]) => k === active) ? active : 'overview');
 }
-
-const START = "I'm ready. Please start the interview.";
 
 function slug(s = '') {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'doc';
