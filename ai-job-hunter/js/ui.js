@@ -1,3 +1,4 @@
+import { locale } from './i18n.js';
 import { caps, inArtifact } from './runtime.js';
 
 // Tiny DOM helpers. No framework: keeps the app small, fast and easy to wrap
@@ -197,7 +198,7 @@ export function printDoc(title, node) {
 
 export function fmtDate(ts) {
   if (!ts) return '';
-  return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return new Date(ts).toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
 }
 
 export function debounce(fn, ms) {

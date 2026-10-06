@@ -13,6 +13,12 @@ import { caps, disable, SEARCH_SERVER, SEARCH_TOOL } from './runtime.js';
 import { portalsFor, portalForUrl } from './portals.js';
 import { normalizeCV } from './cvdoc.js';
 import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
+import { currentLanguage, languageName } from './i18n.js';
+
+/** Coaching replies follow the interface language the user picked. */
+function uiLanguage(extra = '') {
+  return currentLanguage() === 'en' ? '' : ` Write everything meant for the user in ${languageName()}${extra}.`;
+}
 
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm';
 
@@ -502,7 +508,7 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
  */
 export async function analyzeCV({ text = '', images = [] }, { signal, onText } = {}) {
   const reply = await ask({
-    system: 'You are a senior recruiter and CV coach. You give specific, honest, practical feedback.',
+    system: 'You are a senior recruiter and CV coach. You give specific, honest, practical feedback.' + uiLanguage(' (verdict, strengths, improvements, atsIssues), but keep the profile fields and cvText in the language of the CV'),
     messages: [
       {
         role: 'user',
@@ -567,7 +573,7 @@ export async function reviseLetter(job, letter, phrases, opts = {}) {
 
 export function analyzeGap(job, opts) {
   return ask({
-    system: 'You are a candid career coach.',
+    system: 'You are a candid career coach.' + uiLanguage(),
     messages: [
       {
         role: 'user',
@@ -605,7 +611,7 @@ export async function companyProfile(job, { signal } = {}) {
   const where = job.location ? ` (${job.location})` : '';
   const system =
     'You research employers for job seekers. Use only facts that appear in the sources or the job posting, and keep them current. ' +
-    'If the sources are about a different company with a similar name, ignore them. Write plainly, no dashes as punctuation, no marketing language.';
+    'If the sources are about a different company with a similar name, ignore them. Write plainly, no dashes as punctuation, no marketing language.' + uiLanguage(' (keep company and product names as they are)');
   const posting = `<job_posting>\nCompany: ${name}${where}\nTitle: ${job.title}\n${String(job.description || '').slice(0, 4000)}\n</job_posting>`;
 
   let reply;
@@ -665,7 +671,7 @@ export const CATEGORIES = ['Story time', 'Skills check', 'Motivation', 'Curvebal
 /** Build a deck of question cards for this job. */
 export async function interviewDeck(job, { signal } = {}) {
   const reply = await ask({
-    system: 'You are a sharp, friendly hiring manager preparing someone for a real interview for this exact job.',
+    system: 'You are a sharp, friendly hiring manager preparing someone for a real interview for this exact job.' + uiLanguage(' (questions, hints, what they test, model answers)'),
     messages: [
       {
         role: 'user',
@@ -705,7 +711,7 @@ export async function scoreAnswer(job, card, answer, { signal } = {}) {
   const reply = await ask({
     system:
       'You coach people for job interviews. You are warm and encouraging but honest, like a good friend who has hired people. ' +
-      'Answers may be voice transcripts with filler words and missing punctuation; judge the content, not the transcription.',
+      'Answers may be voice transcripts with filler words and missing punctuation; judge the content, not the transcription.' + uiLanguage(),
     messages: [
       {
         role: 'user',

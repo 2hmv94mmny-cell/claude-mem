@@ -1213,3 +1213,13 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .letter-regen select { width: auto; }
 .tpl-thumb .cv-page { text-align: left; }
 .letter-regen select { max-width: 15rem; }
+
+/* ---------- Language picker (Settings) ---------- */
+.lang-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--sp-2); }
+.lang-option {
+  font: 600 var(--fs-md) var(--font); color: var(--text); background: var(--surface); cursor: pointer;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); min-height: 48px; text-align: left;
+}
+.lang-option:hover { background: var(--surface-hover); }
+.lang-option[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent); }
+@media (max-width: 560px) { .lang-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -19,6 +19,7 @@
 import { portalsFor, portalForUrl, detectCountry } from './portals.js';
 import { searchJobs } from './jobs.js';
 import { caps, inArtifact, ready, SEARCH_SERVER, SEARCH_TOOL } from './runtime.js';
+import { t, fmt, word } from './i18n.js';
 
 // ---------------------------------------------------------------------------
 // Text helpers
@@ -482,7 +483,7 @@ export function scoreJob(job, me, prefs = {}, location = '') {
     const shared = [...rw].filter((w) => tw.has(w)).length;
     if (rw.size) title = Math.max(title, Math.round((40 * shared) / rw.size));
   }
-  if (title >= 30) reasons.push('your kind of role');
+  if (title >= 30) reasons.push(t('your kind of role'));
 
   // Skills (35)
   const jobSkills = [...find(SKILLS, text).keys()];
@@ -490,8 +491,8 @@ export function scoreJob(job, me, prefs = {}, location = '') {
   const have = jobSkills.filter((s) => mine.has(norm(s)));
   const miss = jobSkills.filter((s) => !mine.has(norm(s)));
   const skills = jobSkills.length ? Math.round(35 * Math.min(1, have.length / Math.min(jobSkills.length, 6))) : 14;
-  if (have.length) reasons.push(`you have ${have.slice(0, 3).join(', ')}`);
-  if (miss.length && have.length < jobSkills.length) gaps.push(`asks for ${miss.slice(0, 2).join(', ')}`);
+  if (have.length) reasons.push(fmt('you have {1}', have.slice(0, 3).join(', ')));
+  if (miss.length && have.length < jobSkills.length) gaps.push(fmt('asks for {1}', miss.slice(0, 2).join(', ')));
 
   // Place (15)
   const city = norm(location.split(',')[0].trim());
@@ -501,10 +502,10 @@ export function scoreJob(job, me, prefs = {}, location = '') {
   let place = 6;
   if (city && jobPlace.includes(city)) {
     place = 15;
-    reasons.push(`in ${location.split(',')[0].trim()}`);
+    reasons.push(fmt('in {1}', location.split(',')[0].trim()));
   } else if (job.remote && (wantsRemote || !city)) {
     place = 13;
-    reasons.push('remote');
+    reasons.push(t('remote'));
   } else if (job.location) {
     const theirs = detectCountry(job.location);
     const ours = detectCountry(location);
@@ -517,9 +518,9 @@ export function scoreJob(job, me, prefs = {}, location = '') {
   if (need && me.level) {
     const gap = LEVELS.indexOf(need) - LEVELS.indexOf(me.level);
     level = gap === 0 ? 10 : Math.abs(gap) === 1 ? 6 : 0;
-    if (gap >= 2) gaps.push(`aimed at ${need} level`);
-    if (gap <= -2) gaps.push(`more junior than you`);
-    if (gap === 0) reasons.push(`fits your ${me.years >= 1 ? `${Math.round(me.years)} years` : 'level'}`);
+    if (gap >= 2) gaps.push(fmt('aimed at {1} level', word(need)));
+    if (gap <= -2) gaps.push(t('more junior than you'));
+    if (gap === 0) reasons.push(me.years >= 1 ? fmt('fits your {1} years', Math.round(me.years)) : fmt('fits your level'));
   }
 
   // Penalties
@@ -529,7 +530,7 @@ export function scoreJob(job, me, prefs = {}, location = '') {
     const asked = [...find(LANGUAGES, text).keys()].filter((l) => !me.languages.has(l));
     if (asked.length) {
       penalty += Math.min(15, asked.length * 8);
-      gaps.push(`needs ${asked.slice(0, 2).join(' and ')}`);
+      gaps.push(fmt('needs {1}', asked.slice(0, 2).map(word).join(` ${word('and')} `)));
     }
   }
   const types = prefs.types || [];
@@ -538,19 +539,20 @@ export function scoreJob(job, me, prefs = {}, location = '') {
     const offered = Object.entries(TYPE_WORDS).filter(([, re]) => re.test(t)).map(([k]) => k);
     if (offered.length && !offered.some((o) => types.includes(o))) {
       penalty += 10;
-      gaps.push(`${offered[0].toLowerCase()}`);
+      gaps.push(word(offered[0].toLowerCase()));
     }
   }
   if (remoteOnly && !job.remote) {
     penalty += 15;
-    gaps.push('not remote');
+    gaps.push(t('not remote'));
   }
 
   const score = Math.max(0, Math.min(100, title + skills + place + level - penalty));
   const good = reasons.slice(0, 3).join(', ');
   const bad = gaps.slice(0, 2).join(', ');
-  const reason = [good && good[0].toUpperCase() + good.slice(1), bad && `but ${bad}`].filter(Boolean).join(' ');
-  return { score, reason: reason || 'Partly matches your profile' };
+  const cap = (x) => x && x[0].toUpperCase() + x.slice(1);
+  const reason = good && bad ? fmt('{1} but {2}', cap(good), bad) : cap(good || bad);
+  return { score, reason: reason || t('Partly matches your profile') };
 }
 
 // ---------------------------------------------------------------------------

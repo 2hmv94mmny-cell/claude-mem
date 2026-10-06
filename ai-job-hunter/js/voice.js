@@ -7,6 +7,7 @@
 // which works in any text box.
 //
 // Hearing questions: speech synthesis needs no permission.
+import { locale } from './i18n.js';
 
 const Recognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
@@ -30,7 +31,7 @@ export function listen({ base = '', onText, onEnd }) {
     queueMicrotask(() => onEnd('unsupported'));
     return { stop() {} };
   }
-  rec.lang = navigator.language || 'en-US';
+  rec.lang = locale();
   rec.continuous = true;
   rec.interimResults = true;
 
@@ -77,7 +78,7 @@ export function speak(text) {
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = navigator.language || 'en-US';
+    u.lang = locale();
     u.rate = 1;
     speechSynthesis.speak(u);
   } catch {}

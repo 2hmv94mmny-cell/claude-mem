@@ -8,6 +8,7 @@ import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
 import { jobsForYou, aboutFromPosting, norm } from './match.js';
+import { LANGUAGES, setLanguage, currentLanguage } from './i18n.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
 import { TEMPLATES, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
@@ -41,7 +42,7 @@ function feedInputs() {
   const remote = Boolean(p.remoteOnly);
   const hasExperience = Boolean(p.cv.trim() || roles.length || p.headline.trim());
   // Changes to any of these mean the feed should be rebuilt.
-  const key = JSON.stringify(['rules-v1', roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300), p.prefs?.workModes, p.prefs?.types, p.prefs?.salaryMin]);
+  const key = JSON.stringify(['rules-v1', currentLanguage(), roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300), p.prefs?.workModes, p.prefs?.types, p.prefs?.salaryMin]);
   return { roles, location, remote, hasExperience, key };
 }
 
@@ -863,7 +864,7 @@ function lookupCompany(job) {
         .then((data) => {
           store.update((s) => {
             s.companies = s.companies || {};
-            s.companies[key] = { data, at: Date.now() };
+            s.companies[key] = { data, at: Date.now(), lang: currentLanguage() };
             // Keep the cache small: the 40 most recent companies.
             const keys = Object.keys(s.companies).sort((a, b) => s.companies[b].at - s.companies[a].at);
             for (const k of keys.slice(40)) delete s.companies[k];
@@ -968,7 +969,10 @@ function companySection(job) {
     }
   }
 
-  const cached = store.get().companies?.[key];
+  const cachedEntry = store.get().companies?.[key];
+  // A profile written in another interface language is shown, then refreshed.
+  const cached = cachedEntry;
+  const otherLanguage = cachedEntry && (cachedEntry.lang || 'en') !== currentLanguage();
   if (!job.company) postingOnly('The posting does not name the company.');
   else if (cached) draw(cached);
   else if (ai.canSearchWeb()) {
@@ -980,7 +984,7 @@ function companySection(job) {
       lookBtn('Look up company', 'small primary'),
     );
   }
-  if (cached && Date.now() - cached.at > COMPANY_TTL && ai.canSearchWeb()) start();
+  if (cached && (Date.now() - cached.at > COMPANY_TTL || otherLanguage) && ai.canSearchWeb()) start();
   return card;
 }
 
@@ -2284,8 +2288,30 @@ function renderSettings() {
 
   const acctBtn = h('button', { class: 'btn', type: 'button' }, account.status === 'signed-in' ? 'Manage account' : 'Create account or sign in');
   acctBtn.addEventListener('click', openAccount);
+  // Interface language: names are shown in their own language and never translated.
+  const langGroup = h(
+    'div',
+    { class: 'lang-grid', role: 'radiogroup', 'aria-label': 'App language' },
+    ...LANGUAGES.map((l) => {
+      const b = h('button', { type: 'button', class: 'lang-option', role: 'radio', 'aria-checked': String(l.code === currentLanguage()), lang: l.code, translate: 'no' }, l.name);
+      b.addEventListener('click', () => {
+        store.update((st) => (st.settings.language = l.code));
+        setLanguage(l.code);
+        for (const x of langGroup.children) x.setAttribute('aria-checked', String(x === b));
+      });
+      return b;
+    }),
+  );
+
   view.append(
     pageHeader('Settings'),
+    h(
+      'section',
+      { class: 'card' },
+      h('h2', {}, 'Language'),
+      h('p', { class: 'muted' }, 'Menus, buttons and Claude’s coaching (fit analysis, CV review, company profiles, interview game) use this language. Your CVs and cover letters are written in the language of each job posting.'),
+      langGroup,
+    ),
     h(
       'section',
       { class: 'card' },
@@ -2456,7 +2482,10 @@ function openAccount() {
 accountBtn?.addEventListener('click', openAccount);
 onAccountChange(drawAccountButton);
 drawAccountButton();
-initAccount(() => route());
+initAccount(() => {
+  setLanguage(store.get().settings.language || 'en');
+  route();
+});
 
 // ---------------------------------------------------------------------------
 // Install as an app (PWA)
@@ -2508,6 +2537,7 @@ if (!inArtifact && 'serviceWorker' in navigator && location.protocol !== 'file:'
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW failed', e)));
 }
 
+setLanguage(store.get().settings.language || 'en');
 route();
 // In the artifact viewer, capabilities arrive a moment after load: redraw
 // once they do so AI and web search light up.

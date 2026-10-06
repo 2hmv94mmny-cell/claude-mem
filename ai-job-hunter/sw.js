@@ -1,7 +1,7 @@
 // Offline support: the app shell is cached so the app opens without a
 // connection. Job boards and the Anthropic API are always fetched live.
 
-const CACHE = 'ajh-shell-v13';
+const CACHE = 'ajh-shell-v14';
 const SHELL = [
   './',
   './index.html',
@@ -21,6 +21,7 @@ const SHELL = [
   './js/game.js',
   './js/account.js',
   './js/match.js',
+  './js/i18n.js',
   './js/templates.js',
   './js/cv-fonts.js',
   './icons/icon.svg',
