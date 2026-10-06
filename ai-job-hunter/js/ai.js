@@ -237,22 +237,50 @@ const HONESTY =
  * location (plus LinkedIn, Glassdoor and company careers pages).
  * @returns {Promise<{jobs: object[], country: string|null}>}
  */
-export async function searchEverywhere({ query, location, remoteOnly }, { onText, signal } = {}) {
+export async function searchEverywhere({ query, location, remoteOnly }, { onText, signal, rank = false } = {}) {
   const p = store.get().profile;
   const what = query || p.targetRoles.split(',')[0] || p.headline || 'jobs that fit my profile';
   const where = location || (remoteOnly ? 'remote' : p.location) || '';
   const { portals, country } = portalsFor(what, where, { remote: remoteOnly });
   const live = portals.filter((x) => x.live).slice(0, 6);
-  const jobs = usingViewerClaude()
-    ? await viewerSearch(what, where, remoteOnly, live, { onText, signal })
-    : await sdkSearch(what, where, remoteOnly, live, { onText, signal });
+  let jobs = usingViewerClaude()
+    ? await viewerSearch(what, where, remoteOnly, live, { onText, signal, rank })
+    : await sdkSearch(what, where, remoteOnly, live, { onText, signal, rank });
+  if (rank) jobs = jobs.sort((a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1));
   return { jobs, country };
+}
+
+/** Pick the job titles a CV points to, for searching when the profile has none. */
+export async function suggestRoles({ signal } = {}) {
+  const reply = await ask({
+    system: 'You are a recruiter who reads CVs quickly.',
+    messages: [
+      {
+        role: 'user',
+        content:
+          `${profileBlock()}\n\nWhich 2 or 3 job titles should this person search for next, based on their actual experience and seniority? ` +
+          'Use the common title employers post, in the language of the job market where they live. Reply with only a JSON array of strings.',
+      },
+    ],
+    json: true,
+    quick: true,
+    signal,
+  });
+  return (Array.isArray(reply) ? reply : []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
 }
 
 const EXTRACT_FORMAT =
   'Reply with only a JSON array (best matches first, max 30) where each item is ' +
   '{"title": string, "company": string, "location": string, "url": string, "portal": string (the job site the posting is on), ' +
   '"salary": string, "description": string (2-4 sentences: the role and key requirements), "posted": string}.';
+
+const RANKED_FORMAT =
+  'Reply with only a JSON array (best fit for this candidate first, max 20) where each item is ' +
+  '{"title": string, "company": string, "location": string, "url": string, "portal": string (the job site the posting is on), ' +
+  '"salary": string, "description": string (2-4 sentences: the role and key requirements), "posted": string, ' +
+  '"match": number (0-100, how well the candidate\'s actual experience and seniority fit; be honest), ' +
+  '"why": string (max 14 words, the concrete reason it fits or what is missing, no dashes)}. ' +
+  'Leave out roles that are clearly far too senior, too junior or in another field.';
 
 function placeRule(where, remoteOnly) {
   if (remoteOnly) return 'Only include remote roles.';
@@ -262,7 +290,7 @@ function placeRule(where, remoteOnly) {
 
 // Viewer route: search each portal with the viewer's Exa connector in
 // parallel, then have Claude pick out the real postings.
-async function viewerSearch(what, where, remoteOnly, portals, { onText, signal }) {
+async function viewerSearch(what, where, remoteOnly, portals, { onText, signal, rank }) {
   if (!caps.mcp) throw new Error('Live job search needs the Exa connector. Add it in claude.ai Settings → Connectors, then reload.');
   const place = where ? ` in ${where}` : '';
   const searches = [
@@ -302,7 +330,9 @@ async function viewerSearch(what, where, remoteOnly, portals, { onText, signal }
     messages: [
       {
         role: 'user',
-        content: `Search: ${what}${place}. ${placeRule(where, remoteOnly)}\n\n${blocks.join('\n\n').slice(0, 90000)}\n\n${EXTRACT_FORMAT}`,
+        content:
+          (rank ? `${profileBlock().slice(0, 20000)}\n\n` : '') +
+          `Search: ${what}${place}. ${placeRule(where, remoteOnly)}\n\n${blocks.join('\n\n').slice(0, 90000)}\n\n${rank ? RANKED_FORMAT : EXTRACT_FORMAT}`,
       },
     ],
     json: true,
@@ -313,7 +343,7 @@ async function viewerSearch(what, where, remoteOnly, portals, { onText, signal }
 }
 
 // Standalone route: Claude's own web search tool via the API.
-async function sdkSearch(what, where, remoteOnly, portals, { onText, signal }) {
+async function sdkSearch(what, where, remoteOnly, portals, { onText, signal, rank }) {
   const place = where ? ` in ${where}` : '';
   const list = await ask({
     system:
@@ -325,7 +355,7 @@ async function sdkSearch(what, where, remoteOnly, portals, { onText, signal }) {
         content:
           `${profileBlock()}\n\nFind open positions for "${what}"${place}. ${placeRule(where, remoteOnly)} ` +
           `Search these job portals: ${portals.map((x) => `${x.name} (${x.domain})`).join(', ')}, and company careers pages. ` +
-          `When done, ${EXTRACT_FORMAT}`,
+          `When done, ${rank ? RANKED_FORMAT : EXTRACT_FORMAT}`,
       },
     ],
     tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 10 }],
@@ -368,6 +398,9 @@ function toJob(j) {
     description: String(j.description || ''),
     posted: String(j.posted || ''),
     tags: [],
+    ...(Number.isFinite(Number(j.match)) && j.match !== '' && j.match != null
+      ? { match: { score: Math.max(0, Math.min(100, Math.round(Number(j.match)))), reason: cleanText(String(j.why || '')) } }
+      : {}),
   };
 }
 

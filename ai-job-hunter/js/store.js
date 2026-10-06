@@ -28,6 +28,8 @@ const DEFAULT_STATE = {
   docs: {},
   // Interview prep keyed by job id: { questions, chat: [{role, content}] }
   prep: {},
+  // Home page "Jobs for you": { key, at, jobs, roles, location, country }
+  feed: null,
 };
 
 export const STATUSES = [

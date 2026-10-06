@@ -724,3 +724,25 @@ input[type='checkbox'] { width: auto; accent-color: var(--accent); }
   .studio-bar { gap: 0.5rem; padding-inline: 0.6rem; }
   .studio-actions .btn.primary { padding-inline: 0.7rem; }
 }
+
+/* ---------- Home: jobs for you ---------- */
+.feed { display: grid; gap: 1rem; }
+.feed-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.8rem; flex-wrap: wrap; }
+.feed-head h2 { margin: 0 0 0.15rem; font-size: 1.2rem; }
+.feed-head p { margin: 0; max-width: 60ch; }
+.feed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 0.8rem; }
+.feed-card {
+  display: flex; flex-direction: column; gap: 0.35rem; min-width: 0;
+  padding: 0.9rem 1rem; border-radius: 12px; border: 1px solid var(--border); background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.feed-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: var(--shadow); }
+.feed-card-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.feed-card-top .tag { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-card h3 { margin: 0.2rem 0 0; font-size: 1rem; line-height: 1.3; }
+.feed-card h3 a { color: var(--text); }
+.feed-card p { margin: 0; }
+.feed-card-foot { margin-top: auto; padding-top: 0.5rem; display: flex; gap: 0.4rem; justify-content: flex-end; }
+.feed-empty { display: grid; gap: 0.6rem; justify-items: start; }
+.feed-empty p { margin: 0; }
+.feed-skel { height: 150px; }

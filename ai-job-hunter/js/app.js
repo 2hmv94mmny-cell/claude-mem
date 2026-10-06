@@ -22,7 +22,145 @@ const session = {
 };
 
 function findJob(id) {
-  return store.get().jobs[id] || session.results.find((j) => j.id === id);
+  return store.get().jobs[id] || session.results.find((j) => j.id === id) || store.get().feed?.jobs?.find((j) => j.id === id);
+}
+
+// ---------------------------------------------------------------------------
+// Home feed: jobs near the user that fit their experience
+// ---------------------------------------------------------------------------
+
+const FEED_TTL = 24 * 60 * 60 * 1000;
+let feedRun = null; // in-flight refresh
+let feedError = null; // { key, message } from the last failed refresh
+
+function feedInputs() {
+  const p = store.get().profile;
+  const roles = p.targetRoles.split(',').map((r) => r.trim()).filter(Boolean).slice(0, 2);
+  const location = p.location.trim();
+  const remote = Boolean(p.remoteOnly);
+  const hasExperience = Boolean(p.cv.trim() || roles.length || p.headline.trim());
+  // Changes to any of these mean the feed should be rebuilt.
+  const key = JSON.stringify([roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300)]);
+  return { roles, location, remote, hasExperience, key };
+}
+
+function feedNeedsRefresh() {
+  const f = store.get().feed;
+  const { key } = feedInputs();
+  return !f || f.key !== key || Date.now() - (f.at || 0) > FEED_TTL;
+}
+
+function runFeed() {
+  if (feedRun) return feedRun;
+  const { roles: given, location, remote, key } = feedInputs();
+  feedError = null;
+  feedRun = (async () => {
+    let roles = given;
+    if (!roles.length && store.get().profile.cv.trim()) roles = await ai.suggestRoles();
+    if (!roles.length && store.get().profile.headline.trim()) roles = [store.get().profile.headline.trim()];
+    if (!roles.length) throw new Error('Add your CV or target roles in Profile first.');
+    const { jobs, country } = await ai.searchEverywhere({ query: roles.join(' or '), location, remoteOnly: remote }, { rank: true });
+    store.update((s) => (s.feed = { key, at: Date.now(), jobs: jobs.slice(0, 12), roles, location: remote ? 'Remote' : location, country }));
+  })()
+    .catch((err) => {
+      if (err?.name !== 'AbortError') feedError = { key, message: err.message || 'Could not load jobs.' };
+    })
+    .finally(() => {
+      feedRun = null;
+      if (currentPath === '/') route();
+    });
+  return feedRun;
+}
+
+function timeAgo(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const hrs = Math.round(m / 60);
+  return hrs < 24 ? `${hrs} h ago` : fmtDate(ts);
+}
+
+function feedSection() {
+  const { location, remote, hasExperience, key } = feedInputs();
+  const feed = store.get().feed;
+  const where = remote ? 'remote' : location;
+  const head = (sub, ...actions) =>
+    h('div', { class: 'feed-head' }, h('div', {}, h('h2', {}, where ? `Jobs for you ${remote ? '(remote)' : `in ${location}`}` : 'Jobs for you'), sub && h('p', { class: 'muted small' }, sub)), actions.length ? h('div', { class: 'row' }, ...actions) : '');
+  const prompt = (text, href, label) => h('section', { class: 'card feed' }, head(''), h('div', { class: 'feed-empty' }, h('p', {}, text), h('a', { class: 'btn primary', href }, label)));
+
+  if (!hasExperience) return prompt('Upload your CV and Claude will find jobs near you that fit your experience.', '#/profile', 'Upload your CV');
+  if (!location && !remote) return prompt('Add your city in your profile to see jobs near you.', '#/profile', 'Add your location');
+  if (!ai.hasKey()) {
+    return prompt(
+      inArtifact ? 'Allow this page to use Claude when it asks, then reload to see jobs picked for you.' : 'Add an API key in Settings to see jobs picked for you.',
+      inArtifact ? '#/' : '#/settings',
+      inArtifact ? 'Reload' : 'Open Settings',
+    );
+  }
+
+  if (feedNeedsRefresh() && !feedRun && feedError?.key !== key) runFeed();
+
+  const refresh = h('button', { class: 'btn small', type: 'button', disabled: Boolean(feedRun) }, feedRun ? 'Searching…' : 'Refresh');
+  refresh.addEventListener('click', () => {
+    feedError = null;
+    runFeed();
+    route();
+  });
+
+  const fresh = feed && feed.key === key;
+  if (feedRun && !fresh) {
+    return h(
+      'section',
+      { class: 'card feed' },
+      head(`Searching the job portals${where ? ` for ${where}` : ''} and matching what you find against your experience. This takes about a minute.`),
+      h('div', { class: 'feed-grid' }, ...Array.from({ length: 3 }, () => h('div', { class: 'skeleton feed-skel' }))),
+    );
+  }
+  if (feedError && !fresh) {
+    return h('section', { class: 'card feed' }, head('', refresh), h('div', { class: 'feed-empty' }, h('p', { class: 'error' }, feedError.message)));
+  }
+  if (!feed?.jobs?.length) {
+    return h('section', { class: 'card feed' }, head(feed ? 'No open roles matched this time.' : '', refresh), h('div', { class: 'feed-empty' }, h('p', { class: 'muted' }, 'Try again later, or search with other keywords.'), h('a', { class: 'btn', href: '#/find' }, 'Search jobs')));
+  }
+
+  const seeAll = h('button', { class: 'btn small', type: 'button' }, `See all ${feed.jobs.length}`);
+  seeAll.addEventListener('click', () => {
+    session.results = feed.jobs;
+    session.scores = Object.fromEntries(feed.jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
+    session.examples = false;
+    session.errors = [];
+    session.filter = '';
+    session.query = { query: feed.roles[0] || '', location: feed.location === 'Remote' ? '' : feed.location, remoteOnly: feed.location === 'Remote', sources: [...SOURCE_IDS] };
+    go('/find');
+  });
+
+  return h(
+    'section',
+    { class: 'card feed' },
+    head(`Based on your experience as ${feed.roles.join(' or ')}${feedRun ? ' · updating…' : ` · updated ${timeAgo(feed.at)}`}`, refresh, seeAll),
+    h('div', { class: 'feed-grid' }, ...feed.jobs.slice(0, 6).map(feedCard)),
+  );
+}
+
+function feedCard(job) {
+  const saved = Boolean(store.get().jobs[job.id]);
+  const save = h('button', { class: 'btn small', type: 'button', disabled: saved }, saved ? 'Saved' : 'Save');
+  save.addEventListener('click', () => {
+    store.saveJob(job);
+    save.textContent = 'Saved';
+    save.disabled = true;
+    toast('Saved to your tracker');
+  });
+  const href = `#/job/${encodeURIComponent(job.id)}`;
+  return h(
+    'article',
+    { class: 'feed-card' },
+    h('div', { class: 'feed-card-top' }, scorePill(job.match), h('span', { class: 'tag source' }, job.source)),
+    h('h3', {}, h('a', { href }, job.title)),
+    h('p', { class: 'muted small' }, [job.company, job.location].filter(Boolean).join(' · ')),
+    job.match?.reason ? h('p', { class: 'small reason' }, job.match.reason) : '',
+    h('div', { class: 'feed-card-foot' }, save, h('a', { class: 'btn small primary', href }, 'Open')),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +358,7 @@ function renderHome() {
         h('a', { class: 'btn', href: '#/add' }, 'Add a job I found'),
       ),
     ),
+    feedSection(),
     h(
       'section',
       { class: 'stats' },
