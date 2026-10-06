@@ -1,5 +1,124 @@
 [
   {
+    "id": "soft-faux-fur-coat",
+    "slug": "soft-faux-fur-coat",
+    "name": "Soft Faux Fur Coat",
+    "category": "ready-to-wear",
+    "silhouette": "coat",
+    "priceCents": 18900,
+    "colour": "Black",
+    "description": "Made for the cold season and the evenings in between. The Soft Faux Fur Coat is cut in a relaxed, hip-length silhouette with a generous notch lapel that frames the face, finished in a dense, lustrous faux fur that moves with you. Fully lined to slip easily over knitwear and tailoring, it lends quiet glamour to denim by day and a sense of occasion to eveningwear by night. Warmth without compromise, and entirely animal-free.",
+    "details": [
+      "Dense, lustrous faux fur",
+      "Generous notch lapel",
+      "Relaxed, hip-length fit: 72 cm in size M",
+      "Fully lined",
+      "Side pockets",
+      "Animal-free"
+    ],
+    "care": [
+      "Specialist dry clean only",
+      "Shake out and brush gently to lift the pile",
+      "Hang on a wide shoulder hanger, away from direct heat"
+    ],
+    "sizeChart": {
+      "note": "Garment measurements in cm, as listed by the supplier. The coat is cut generously; supplier sizing runs small, so if you are between two sizes, choose the larger. Please allow 2–3 cm difference due to manual measurement.",
+      "head": [
+        "Size",
+        "Chest",
+        "Shoulder",
+        "Length",
+        "Sleeve"
+      ],
+      "rows": [
+        [
+          "XS",
+          "104",
+          "55",
+          "70",
+          "51"
+        ],
+        [
+          "S",
+          "108",
+          "56",
+          "71",
+          "52"
+        ],
+        [
+          "M",
+          "112",
+          "57",
+          "72",
+          "53"
+        ],
+        [
+          "L",
+          "116",
+          "58",
+          "73",
+          "54"
+        ],
+        [
+          "XL",
+          "120",
+          "59",
+          "74",
+          "55"
+        ],
+        [
+          "XXL",
+          "124",
+          "60",
+          "75",
+          "56"
+        ]
+      ]
+    },
+    "images": [
+      "/images/products/soft-faux-fur-coat/1.jpg",
+      "/images/products/soft-faux-fur-coat/2.jpg",
+      "/images/products/soft-faux-fur-coat/3.jpg"
+    ],
+    "swatch": "#151414",
+    "variantLabel": "Size",
+    "variants": [
+      {
+        "id": "soft-faux-fur-coat-xs",
+        "label": "XS",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-faux-fur-coat-s",
+        "label": "S",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-faux-fur-coat-m",
+        "label": "M",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-faux-fur-coat-l",
+        "label": "L",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-faux-fur-coat-xl",
+        "label": "XL",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-faux-fur-coat-xxl",
+        "label": "XXL",
+        "supplierVid": null
+      }
+    ],
+    "deliveryDays": "8–15 business days",
+    "supplier": "cj",
+    "published": true
+  },
+  {
     "id": "margaux-funnel-neck-coat",
     "slug": "margaux-funnel-neck-coat",
     "name": "Margaux Funnel-Neck Coat",
