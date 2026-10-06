@@ -58,6 +58,8 @@ export function normalizeCV(raw = {}) {
     languages: arr(raw.languages).map(str).filter(Boolean),
     changes: arr(raw.changes).map(str).filter(Boolean),
     keywords: arr(raw.keywords).map(str).filter(Boolean),
+    // Section titles the user retyped on the page (e.g. "Berufserfahrung").
+    titles: Object.fromEntries(Object.entries(raw.titles && typeof raw.titles === 'object' ? raw.titles : {}).map(([k, v]) => [k, str(v)]).filter(([, v]) => v)),
   };
 }
 

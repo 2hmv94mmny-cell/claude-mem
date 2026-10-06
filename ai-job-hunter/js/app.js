@@ -899,6 +899,70 @@ function renderTracker() {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// Editing a CV on the page: write a field, add or remove entries
+// ---------------------------------------------------------------------------
+
+/**
+ * The text typed into an editable field. Unlike innerText this ignores CSS
+ * (uppercase headings stay as typed) and turns line breaks into "\n".
+ */
+function fieldText(el) {
+  let out = '';
+  for (const n of el.childNodes) {
+    if (n.nodeType === 3) out += n.nodeValue;
+    else if (n.nodeName === 'BR') out += '\n';
+    else if (n.nodeType === 1) out += (/^(DIV|P)$/.test(n.nodeName) && out && !out.endsWith('\n') ? '\n' : '') + fieldText(n);
+  }
+  return out.replace(/\n$/, '').replace(/\u00a0/g, ' ');
+}
+
+/** Set obj[a][b][c] from "a.b.c"; list fields are split on their separator. */
+function setAt(obj, path, value, list = '') {
+  const keys = path.split('.');
+  let o = obj;
+  for (const k of keys.slice(0, -1)) {
+    if (o[k] === undefined || o[k] === null) o[k] = /^\d+$/.test(k) ? [] : {};
+    o = o[k];
+  }
+  o[keys.at(-1)] = list ? value.split(list).map((x) => x.trim()).filter(Boolean) : value;
+}
+
+const BLANK = {
+  experience: () => ({ title: '', company: '', location: '', start: '', end: '', bullets: [''] }),
+  education: () => ({ degree: '', school: '', location: '', start: '', end: '', details: '' }),
+  projects: () => ({ name: '', description: '', link: '' }),
+  skills: () => ({ label: '', items: [] }),
+};
+const FIRST_FIELD = { experience: 'title', education: 'degree', projects: 'name', skills: 'label' };
+
+/** Apply an editing action to a CV in place. Returns the data path to focus next. */
+function cvAction(cv, action, path) {
+  const keys = path.split('.');
+  if (action === 'add') {
+    cv[path] = cv[path] || [];
+    cv[path].push(BLANK[path]());
+    return `${path}.${cv[path].length - 1}.${FIRST_FIELD[path]}`;
+  }
+  if (action === 'remove') {
+    const [list, i] = keys;
+    cv[list].splice(Number(i), 1);
+    return '';
+  }
+  // bullets: experience.<i>.bullets.<j>
+  const [list, i, , j] = keys;
+  const bullets = cv[list][Number(i)].bullets;
+  if (action === 'bullet-after') {
+    bullets.splice(Number(j) + 1, 0, '');
+    return `${list}.${i}.bullets.${Number(j) + 1}`;
+  }
+  if (action === 'bullet-remove') {
+    if (bullets.length > 1) bullets.splice(Number(j), 1);
+    return `${list}.${i}.bullets.${Math.max(0, Number(j) - 1)}`;
+  }
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // About the company (job overview)
 // ---------------------------------------------------------------------------
 
@@ -1200,6 +1264,26 @@ function renderJob(id) {
     const pdf = h('button', { type: 'button', class: 'btn primary small' });
     pdf.addEventListener('click', () => cfg.download(pdf));
     const close = h('button', { type: 'button', class: 'btn small studio-close', 'aria-label': 'Close' }, '← Back');
+
+    // Edit on page: the A4 page itself becomes the editor, like a Word document.
+    let editing = false;
+    const editBtn = h('button', { type: 'button', class: 'btn small studio-edit', 'aria-pressed': 'false' }, svgIcon(PENCIL), h('span', {}, 'Edit on page'));
+    const hint = h('div', { class: 'studio-hint', role: 'status', hidden: true }, 'Click any text to change it. Enter adds a bullet point. Everything saves as you type.');
+    editBtn.addEventListener('click', () => setEditing(!editing));
+    function setEditing(on) {
+      editing = on;
+      editBtn.setAttribute('aria-pressed', String(on));
+      editBtn.classList.toggle('primary', on);
+      editBtn.lastChild.textContent = on ? 'Done editing' : 'Edit on page';
+      hint.hidden = !on;
+      // Small screens: like Word's mobile view, the page reflows to the screen width while editing
+      // (same template, readable text, no sideways scrolling). The PDF stays A4.
+      studio.classList.toggle('reflow', on && window.innerWidth < 760);
+      if (on && window.innerWidth < 900) panel.classList.remove('open');
+      renderPaper();
+      drawTabs();
+      if (on) requestAnimationFrame(() => paperScale.querySelector('.ed')?.focus());
+    }
     const studio = h(
       'div',
       { class: 'studio', role: 'dialog', 'aria-modal': 'true', 'aria-label': cfg.title },
@@ -1208,8 +1292,9 @@ function renderJob(id) {
         { class: 'studio-bar' },
         close,
         h('div', { class: 'studio-title' }, h('strong', {}, cfg.title), h('span', {}, [job.title, job.company].filter(Boolean).join(' at '))),
-        h('div', { class: 'studio-actions' }, zoomBtn, pdf),
+        h('div', { class: 'studio-actions' }, editBtn, zoomBtn, pdf),
       ),
+      hint,
       h('div', { class: 'studio-body' }, stage, panel),
     );
 
@@ -1226,9 +1311,65 @@ function renderJob(id) {
     const ro = new ResizeObserver(fit);
     ro.observe(stage);
 
-    function renderPaper() {
+    // Typing on the page writes straight into the document's data.
+    const changed = debounce(() => cfg.onChange?.(), 600);
+    paperScale.addEventListener('input', (e) => {
+      const el = e.target.closest?.('[data-path]');
+      if (!el || !editing) return;
+      cfg.setField(el.dataset.path, fieldText(el), el.dataset.list || '');
+      changed();
+      requestAnimationFrame(fit);
+    });
+    paperScale.addEventListener('keydown', (e) => {
+      const el = e.target.closest?.('[data-path]');
+      if (!el || !editing) return;
+      const path = el.dataset.path;
+      const bullet = /\.bullets\.\d+$/.test(path);
+      if (e.key === 'Enter' && !e.shiftKey && !el.dataset.multi) {
+        e.preventDefault();
+        if (bullet && cfg.action) {
+          const next = cfg.action('bullet-after', path);
+          renderPaper(next);
+          changed();
+        }
+      } else if (e.key === 'Backspace' && bullet && !fieldText(el).trim() && cfg.action) {
+        e.preventDefault();
+        const prev = cfg.action('bullet-remove', path);
+        renderPaper(prev);
+        changed();
+      }
+    });
+    paperScale.addEventListener('click', (e) => {
+      const b = e.target.closest?.('.ed-ctl');
+      if (!b || !editing || !cfg.action) return;
+      const focusPath = cfg.action(b.dataset.action, b.dataset.path);
+      renderPaper(focusPath);
+      changed();
+    });
+    // Browsers without plaintext-only editing: paste as plain text.
+    paperScale.addEventListener('paste', (e) => {
+      if (!editing || !e.target.closest?.('[data-path]')) return;
+      const text = e.clipboardData?.getData('text/plain');
+      if (text == null) return;
+      e.preventDefault();
+      document.execCommand('insertText', false, text);
+    });
+
+    function renderPaper(focusPath, caretAtEnd = true) {
       const t = getTemplate(cfg.tplId());
-      paperScale.replaceChildren(cfg.page(t.id, cfg.accent()));
+      paperScale.replaceChildren(cfg.page(t.id, cfg.accent(), { editable: editing }));
+      if (focusPath) {
+        const el = [...paperScale.querySelectorAll('[data-path]')].find((x) => x.dataset.path === focusPath);
+        if (el) {
+          el.focus();
+          const r = document.createRange();
+          r.selectNodeContents(el);
+          r.collapse(!caretAtEnd ? true : false);
+          const sel = getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+        }
+      }
       pdf.textContent = `Download PDF · ${t.name}`;
       requestAnimationFrame(fit);
     }
@@ -1441,9 +1582,20 @@ function renderJob(id) {
         content: () => docs().cvData,
         tplId: template,
         accent,
-        page: (id, color) => renderCV(docs().cvData, id, color),
+        page: (id, color, opts) => renderCV(docs().cvData, id, color, opts),
         pick: (patch) => saveDoc(patch),
         download: downloadCV,
+        setField(path, value, list) {
+          const cvData = structuredClone(docs().cvData);
+          setAt(cvData, path, value, list);
+          saveDoc({ cvData, cv: cvToText(cvData) });
+        },
+        action(action, path) {
+          const cvData = structuredClone(docs().cvData);
+          const next = cvAction(cvData, action, path);
+          saveDoc({ cvData, cv: cvToText(cvData) });
+          return next;
+        },
         tabs: [
           ['changes', 'What changed'],
           ['edit', 'Edit'],
@@ -1454,6 +1606,7 @@ function renderJob(id) {
           const reworkCV = (instructions, signal, message) =>
             rework(message, async () => {
               const cvData = await ai.tailorCV(job, { instructions, previous: docs().cvData, signal });
+              cvData.titles = { ...(docs().cvData?.titles || {}), ...(cvData.titles || {}) };
               saveDoc({ cvData, cv: cvToText(cvData) });
             });
           if (tab === 'changes') {
@@ -1512,8 +1665,29 @@ function renderJob(id) {
     // The letter follows the CV's template until the user picks another one for it.
     const letterTpl = () => getTemplate(docs().letterTemplate || template()).id;
     const letterAccent = () => accentFor(getTemplate(letterTpl()), docs().letterAccent || (docs().letterTemplate ? '' : docs().accent));
-    const meta = () => ({ title: job.title, company: job.company, location: job.location, date: docs().letterDate });
-    const page = (id, color) => renderLetter(letterCV(), docs().coverLetter || '', id, color, meta());
+    const meta = () => ({
+      title: job.title,
+      company: job.company,
+      location: job.location,
+      date: docs().letterDate,
+      // Lines retyped on the page
+      dateLine: docs().letterDateLine,
+      recipient: docs().letterRecipient,
+      subject: docs().letterSubject,
+    });
+    const page = (id, color, opts) => renderLetter(letterCV(), docs().coverLetter || '', id, color, meta(), opts);
+    // Header fields on the letter belong to the person: the tailored CV for this job, or the profile.
+    const PROFILE_FIELD = { name: 'name', headline: 'headline', 'contact.email': 'email', 'contact.phone': 'phone', 'contact.location': 'location' };
+    function setLetterField(path, value, list) {
+      const own = { 'letter.date': 'letterDateLine', 'letter.to': 'letterRecipient', 'letter.subject': 'letterSubject', 'letter.body': 'coverLetter' }[path];
+      if (own) return saveDoc({ [own]: value });
+      if (docs().cvData) {
+        const cvData = structuredClone(docs().cvData);
+        setAt(cvData, path, value, list);
+        return saveDoc({ cvData, cv: cvToText(cvData) });
+      }
+      if (PROFILE_FIELD[path]) store.update((st) => (st.profile[PROFILE_FIELD[path]] = value.trim()));
+    }
 
     const tone = h('select', { 'aria-label': 'Tone' }, ...['professional', 'warm and enthusiastic', 'concise and direct', 'formal'].map((t) => h('option', { value: t }, t)));
     const gen = aiButton('Write cover letter', {
@@ -1587,6 +1761,7 @@ function renderJob(id) {
         page,
         pick: (patch) => saveDoc('template' in patch ? { letterTemplate: patch.template, letterAccent: '' } : { letterAccent: patch.accent }),
         download: downloadLetter,
+        setField: setLetterField,
         tabs: [
           ['edit', 'Edit'],
           ['check', 'Writing check'],

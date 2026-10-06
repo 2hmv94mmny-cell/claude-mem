@@ -61,12 +61,88 @@ function sectionsFor(cv, t) {
     t.layout === 'sidebar'
       ? ['summary', 'experience', 'projects']
       : ['summary', 'experience', 'projects', 'education', 'skills', 'certifications', 'languages'];
-  return order.filter((k) => has[k]);
+  return EDIT ? order : order.filter((k) => has[k]);
 }
+
+// ---------------------------------------------------------------------------
+// Editing on the page ("like a Word page")
+//
+// With { editable: true } the same preview is drawn, but every piece of text
+// is its own contenteditable field carrying the data path it came from
+// (data-path="experience.0.bullets.2"). The app listens for input on the page
+// and writes the text straight back into the structured CV, so the PDF, which
+// is built from that data, always matches what was typed.
+// ---------------------------------------------------------------------------
+
+let EDIT = false;
+
+/** A text field: the plain value normally, an editable span while editing. */
+function F(path, value, { tag = 'span', cls = '', ph = '', list = '', multi = false } = {}) {
+  if (!EDIT) return value || '';
+  return h(
+    tag,
+    {
+      class: `ed ${cls}`.trim(),
+      contenteditable: 'plaintext-only',
+      spellcheck: 'true',
+      'data-path': path,
+      'data-ph': ph || 'Type here',
+      'data-list': list || null,
+      'data-multi': multi ? '1' : null,
+    },
+    value || '',
+  );
+}
+/** A block element holding one field (skipped when empty, unless editing). */
+function P(tag, cls, path, value, ph, opts = {}) {
+  if (EDIT) return F(path, value, { tag, cls, ph, ...opts });
+  return value ? h(tag, { class: cls }, value) : '';
+}
+/** Fields joined by a separator; empty ones are dropped, but kept while editing so they can be filled. */
+function J(fields, sep) {
+  if (!EDIT) return fields.map(([, v]) => v).filter(Boolean).join(sep);
+  const out = [];
+  fields.forEach(([path, v, ph, opts], i) => {
+    if (i) out.push(h('span', { class: 'ed-sep' }, sep));
+    out.push(F(path, v, { ph, ...(opts || {}) }));
+  });
+  return out;
+}
+/** Start – end, each editable. */
+function D(base, e) {
+  if (!EDIT) return dates(e);
+  return [F(`${base}.start`, e.start, { ph: 'Start' }), ' – ', F(`${base}.end`, e.end, { ph: 'End' })];
+}
+/** Small editing controls that never reach the PDF. */
+function ctl(action, path, label, cls = '') {
+  if (!EDIT) return '';
+  return h('button', { type: 'button', class: `ed-ctl ${cls}`.trim(), contenteditable: 'false', 'data-action': action, 'data-path': path, 'aria-label': label, title: label }, action === 'remove' ? '×' : `+ ${label}`);
+}
+
+export const SECTION_NAMES = { ...SECTION_TITLES, contact: 'Contact' };
+/** A section title: the user's own wording if they changed it on the page. */
+export const sectionTitle = (cv, key) => cv.titles?.[key] || SECTION_NAMES[key];
+
+const ADD_LABEL = { experience: 'Add job', education: 'Add education', projects: 'Add project', skills: 'Add skill group' };
 
 // How the two lines of an experience entry are arranged, per template:
 // [[line1 left, line1 right], [line2 left, line2 right]]
-function expRows(t, e) {
+function expRows(t, e, i = 0) {
+  const b = `experience.${i}`;
+  if (EDIT) {
+    const title = [`${b}.title`, e.title, 'Job title'];
+    const company = [`${b}.company`, e.company, 'Company'];
+    const place = [`${b}.location`, e.location, 'Location'];
+    switch (t.id) {
+      case 'harvard':
+      case 'awesome':
+        return [[F(...company.slice(0, 2), { ph: 'Company' }), F(place[0], place[1], { ph: 'Location' })], [F(title[0], title[1], { ph: 'Job title' }), D(b, e)]];
+      case 'jakes':
+        return [[F(title[0], title[1], { ph: 'Job title' }), D(b, e)], [F(company[0], company[1], { ph: 'Company' }), F(place[0], place[1], { ph: 'Location' })]];
+      default:
+        return [[F(title[0], title[1], { ph: 'Job title' }), D(b, e)], [J([company, place], ', '), '']];
+    }
+  }
   const where = [e.company, e.location].filter(Boolean).join(', ');
   switch (t.id) {
     case 'harvard':
@@ -79,11 +155,18 @@ function expRows(t, e) {
   }
 }
 
-function eduRows(t, e) {
+function eduRows(t, e, i = 0) {
+  const b = `education.${i}`;
+  if (EDIT) {
+    const school = F(`${b}.school`, e.school, { ph: 'School' });
+    const degree = F(`${b}.degree`, e.degree, { ph: 'Degree' });
+    const place = F(`${b}.location`, e.location, { ph: 'Location' });
+    if (t.id === 'harvard' || t.id === 'awesome' || t.id === 'jakes') return [[school, place], [degree, D(b, e)]];
+    return [[degree, D(b, e)], [J([[`${b}.school`, e.school, 'School'], [`${b}.location`, e.location, 'Location']], ', '), '']];
+  }
   switch (t.id) {
     case 'harvard':
     case 'awesome':
-      return [[e.school || e.degree, e.location], [e.school ? e.degree : '', dates(e)]];
     case 'jakes':
       return [[e.school || e.degree, e.location], [e.school ? e.degree : '', dates(e)]];
     default:
@@ -100,53 +183,76 @@ const splitName = (name) => {
 // On-screen preview
 // ===========================================================================
 
-export function renderCV(cv, templateId = 'harvard', pickedAccent) {
+/**
+ * The CV on an A4 page in a template.
+ * @param {object} [opts] { editable } draw every text as an editable field
+ */
+export function renderCV(cv, templateId = 'harvard', pickedAccent, { editable = false } = {}) {
   const t = getTemplate(templateId);
   const accent = accentFor(t, pickedAccent);
-  const page = h('article', { class: `cv-page tpl-${t.id} lay-${t.layout}`, style: `--cv-accent:${accent}` });
-
-  if (t.layout === 'sidebar') {
-    page.append(sidebarPreview(cv, t));
+  const page = h('article', { class: `cv-page tpl-${t.id} lay-${t.layout}${editable ? ' editing' : ''}`, style: `--cv-accent:${accent}` });
+  EDIT = editable;
+  try {
+    if (t.layout === 'sidebar') {
+      page.append(sidebarPreview(cv, t));
+      return page;
+    }
+    page.append(headerPreview(cv, t));
+    for (const key of sectionsFor(cv, t)) page.append(sectionPreview(cv, t, key));
     return page;
+  } finally {
+    EDIT = false;
   }
-
-  page.append(headerPreview(cv, t));
-  for (const key of sectionsFor(cv, t)) {
-    if (t.layout === 'single') page.append(h('section', { class: 'cv-section' }, headingPreview(t, SECTION_TITLES[key]), ...bodyPreview(cv, t, key)));
-    else page.append(h('section', { class: 'cv-section cv-grid' }, h('div', { class: 'cv-label' }, t.layout === 'datecol' ? h('span', { class: 'cv-bar' }) : SECTION_TITLES[key]), h('div', {}, t.layout === 'datecol' ? headingPreview(t, SECTION_TITLES[key]) : '', ...bodyPreview(cv, t, key))));
-  }
-  return page;
 }
 
-function headerPreview(cv, t) {
-  const [first, last] = splitName(cv.name);
-  const name = t.id === 'awesome' ? h('h2', {}, h('span', { class: 'light' }, first ? `${first} ` : ''), last) : h('h2', {}, cv.name || 'Your name');
-  const contact = contactParts(cv);
-  if (t.layout === 'europass') {
-    const c = cv.contact;
-    const rows = [
-      ['Email', c.email],
-      ['Phone', c.phone],
-      ['Location', c.location],
-      ['Links', c.links.join(', ')],
-    ].filter(([, v]) => v);
-    return h(
-      'header',
-      { class: 'cv-head' },
-      h('div', { class: 'cv-grid' }, h('div', { class: 'cv-label' }, 'Personal'), h('div', {}, name, cv.headline && h('p', { class: 'cv-headline' }, cv.headline))),
-      ...rows.map(([k, v]) => h('div', { class: 'cv-grid cv-contact-row' }, h('div', { class: 'cv-label sub' }, k), h('div', {}, v))),
-    );
-  }
+function sectionPreview(cv, t, key) {
+  const title = sectionTitle(cv, key);
+  const body = [...bodyPreview(cv, t, key), ADD_LABEL[key] ? ctl('add', key, ADD_LABEL[key], 'ed-add') : ''];
+  if (t.layout === 'single') return h('section', { class: 'cv-section' }, headingPreview(t, title, key), ...body);
   return h(
-    'header',
-    { class: 'cv-head' },
-    name,
-    cv.headline && h('p', { class: 'cv-headline' }, cv.headline),
-    h('p', { class: 'cv-contact' }, contact.join(t.sep)),
+    'section',
+    { class: 'cv-section cv-grid' },
+    h('div', { class: 'cv-label' }, t.layout === 'datecol' ? h('span', { class: 'cv-bar' }) : F(`titles.${key}`, title)),
+    h('div', {}, t.layout === 'datecol' ? headingPreview(t, title, key) : '', ...body),
   );
 }
 
-function headingPreview(t, title) {
+function nameNode(cv, t) {
+  if (EDIT) return h('h2', {}, F('name', cv.name, { ph: 'Your name' }));
+  const [first, last] = splitName(cv.name);
+  return t.id === 'awesome' ? h('h2', {}, h('span', { class: 'light' }, first ? `${first} ` : ''), last) : h('h2', {}, cv.name || 'Your name');
+}
+
+const contactFields = (cv) => [
+  ['contact.location', cv.contact.location, 'Location'],
+  ['contact.email', cv.contact.email, 'Email'],
+  ['contact.phone', cv.contact.phone, 'Phone'],
+  ['contact.links', cv.contact.links.join(', '), 'Links', { list: ',' }],
+];
+
+function headerPreview(cv, t) {
+  const name = nameNode(cv, t);
+  const headline = P('p', 'cv-headline', 'headline', cv.headline, 'Headline');
+  if (t.layout === 'europass') {
+    const c = cv.contact;
+    const rows = [
+      ['Email', 'contact.email', c.email],
+      ['Phone', 'contact.phone', c.phone],
+      ['Location', 'contact.location', c.location],
+      ['Links', 'contact.links', c.links.join(', ')],
+    ].filter(([, , v]) => v || EDIT);
+    return h(
+      'header',
+      { class: 'cv-head' },
+      h('div', { class: 'cv-grid' }, h('div', { class: 'cv-label' }, 'Personal'), h('div', {}, name, headline)),
+      ...rows.map(([k, path, v]) => h('div', { class: 'cv-grid cv-contact-row' }, h('div', { class: 'cv-label sub' }, k), h('div', {}, F(path, v, { ph: k, list: path === 'contact.links' ? ',' : '' })))),
+    );
+  }
+  return h('header', { class: 'cv-head' }, name, headline, h('p', { class: 'cv-contact' }, J(contactFields(cv), t.sep)));
+}
+
+function headingPreview(t, title, key) {
+  if (EDIT) return h('h3', {}, F(`titles.${key}`, title));
   if (t.id === 'awesome') return h('h3', {}, h('span', { class: 'acc' }, title.slice(0, 3)), title.slice(3));
   return h('h3', {}, title);
 }
@@ -157,40 +263,62 @@ function rowsPreview(rows) {
     .map(([l, r], i) => h('div', { class: `cv-row r${i + 1}` }, h('span', { class: 'l' }, l || ''), r ? h('span', { class: 'r' }, r) : ''));
 }
 
+function bulletsPreview(base, bullets) {
+  const items = bullets.filter((b) => EDIT || b);
+  if (!items.length && !EDIT) return '';
+  const list = (EDIT && !bullets.length ? [''] : bullets).map((b, j) => (EDIT ? F(`${base}.bullets.${j}`, b, { tag: 'li', ph: 'What you did and what came of it' }) : b ? h('li', {}, b) : ''));
+  return h('ul', {}, ...list);
+}
+
 function bodyPreview(cv, t, key) {
   const dateCol = t.layout === 'datecol' || t.layout === 'europass';
-  const entry = (rows, bullets, when) =>
+  const entry = (rows, bullets, when, removeCtl) =>
     dateCol
-      ? h(
-          'div',
-          { class: 'cv-item cv-grid' },
-          h('div', { class: 'cv-label date' }, when),
-          h('div', {}, ...rowsPreview(rows.map(([l]) => [l, ''])), bullets),
-        )
-      : h('div', { class: 'cv-item' }, ...rowsPreview(rows), bullets);
-  const list = (items) => (items.length ? h('ul', {}, ...items.map((b) => h('li', {}, b))) : '');
+      ? h('div', { class: 'cv-item cv-grid' }, h('div', { class: 'cv-label date' }, when), h('div', {}, ...rowsPreview(rows.map(([l]) => [l, ''])), bullets), removeCtl)
+      : h('div', { class: 'cv-item' }, ...rowsPreview(rows), bullets, removeCtl);
 
   switch (key) {
     case 'summary':
-      return [h('p', {}, cv.summary)];
+      return [P('p', '', 'summary', cv.summary, 'A few lines about you', { multi: true })];
     case 'experience':
-      return cv.experience.map((e) =>
-        dateCol ? entry([[e.title], [[e.company, e.location].filter(Boolean).join(', ')]], list(e.bullets), dates(e)) : entry(expRows(t, e), list(e.bullets)),
-      );
+      return cv.experience.map((e, i) => {
+        const b = `experience.${i}`;
+        const rows = dateCol ? [[F(`${b}.title`, e.title, { ph: 'Job title' })], [J([[`${b}.company`, e.company, 'Company'], [`${b}.location`, e.location, 'Location']], ', ')]] : expRows(t, e, i);
+        return entry(rows, bulletsPreview(b, e.bullets), D(b, e), ctl('remove', b, 'Remove this job'));
+      });
     case 'education':
-      return cv.education.map((e) =>
-        dateCol
-          ? entry([[e.degree], [[e.school, e.location].filter(Boolean).join(', ')], [e.details]], '', dates(e))
-          : h('div', { class: 'cv-item' }, ...rowsPreview(eduRows(t, e)), e.details && h('p', { class: 'cv-muted' }, e.details)),
-      );
+      return cv.education.map((e, i) => {
+        const b = `education.${i}`;
+        const details = P('p', 'cv-muted', `${b}.details`, e.details, 'Details (optional)');
+        if (dateCol) return entry([[F(`${b}.degree`, e.degree, { ph: 'Degree' })], [J([[`${b}.school`, e.school, 'School'], [`${b}.location`, e.location, 'Location']], ', ')], [details]], '', D(b, e), ctl('remove', b, 'Remove this entry'));
+        return h('div', { class: 'cv-item' }, ...rowsPreview(eduRows(t, e, i)), details, ctl('remove', b, 'Remove this entry'));
+      });
     case 'projects':
-      return cv.projects.map((p) => h('div', { class: 'cv-item' }, h('div', { class: 'cv-row r1' }, h('span', { class: 'l' }, p.name), p.link ? h('span', { class: 'r' }, p.link) : ''), p.description && h('p', {}, p.description)));
+      return cv.projects.map((pr, i) => {
+        const b = `projects.${i}`;
+        const link = EDIT ? F(`${b}.link`, pr.link, { ph: 'Link (optional)' }) : pr.link;
+        return h(
+          'div',
+          { class: 'cv-item' },
+          h('div', { class: 'cv-row r1' }, h('span', { class: 'l' }, F(`${b}.name`, pr.name, { ph: 'Project name' })), link ? h('span', { class: 'r' }, link) : ''),
+          P('p', '', `${b}.description`, pr.description, 'What it is and what you did', { multi: true }),
+          ctl('remove', b, 'Remove this project'),
+        );
+      });
     case 'skills':
-      return cv.skills.map((s) => h('p', { class: 'cv-skill' }, s.label && h('strong', {}, `${s.label}: `), s.items.join(', ')));
+      return cv.skills.map((s, i) =>
+        h(
+          'p',
+          { class: 'cv-skill' },
+          EDIT ? [h('strong', {}, F(`skills.${i}.label`, s.label, { ph: 'Group' })), h('strong', {}, ': ')] : s.label && h('strong', {}, `${s.label}: `),
+          F(`skills.${i}.items`, s.items.join(', '), { ph: 'Skill, skill, skill', list: ',' }),
+          ctl('remove', `skills.${i}`, 'Remove this group'),
+        ),
+      );
     case 'certifications':
-      return [h('p', {}, cv.certifications.join(t.sep.trim() === '|' ? '  |  ' : '  ·  '))];
+      return [P('p', '', 'certifications', cv.certifications.join(EDIT ? ' · ' : t.sep.trim() === '|' ? '  |  ' : '  ·  '), 'Certificate · Certificate', { list: '·' })];
     case 'languages':
-      return [h('p', {}, cv.languages.join('  ·  '))];
+      return [P('p', '', 'languages', cv.languages.join(EDIT ? ' · ' : '  ·  '), 'Language (level) · Language (level)', { list: '·' })];
     default:
       return [];
   }
@@ -198,23 +326,43 @@ function bodyPreview(cv, t, key) {
 
 function sidebarPreview(cv, t) {
   const c = cv.contact;
+  const T = (key) => (EDIT ? h('h4', {}, F(`titles.${key}`, sectionTitle(cv, key))) : h('h4', {}, sectionTitle(cv, key)));
+  const contact = EDIT
+    ? [F('contact.email', c.email, { tag: 'p', ph: 'Email' }), F('contact.phone', c.phone, { tag: 'p', ph: 'Phone' }), F('contact.location', c.location, { tag: 'p', ph: 'Location' }), F('contact.links', c.links.join(', '), { tag: 'p', ph: 'Links', list: ',' })]
+    : [c.email, c.phone, c.location, ...c.links].filter(Boolean).map((x) => h('p', {}, x));
   const side = h(
     'aside',
     { class: 'cv-side' },
-    h('h4', {}, 'Contact'),
-    ...[c.email, c.phone, c.location, ...c.links].filter(Boolean).map((x) => h('p', {}, x)),
-    ...(cv.skills.length ? [h('h4', {}, 'Skills'), ...cv.skills.flatMap((s) => [s.label ? h('p', { class: 'side-label' }, s.label) : '', h('p', {}, s.items.join(', '))])] : []),
-    ...(cv.education.length
-      ? [h('h4', {}, 'Education'), ...cv.education.flatMap((e) => [h('p', { class: 'side-label' }, e.degree), h('p', {}, [e.school, dates(e)].filter(Boolean).join(', '))])]
+    T('contact'),
+    ...contact,
+    ...(cv.skills.length || EDIT
+      ? [
+          T('skills'),
+          ...cv.skills.flatMap((s, i) => [
+            EDIT ? F(`skills.${i}.label`, s.label, { tag: 'p', cls: 'side-label', ph: 'Group' }) : s.label ? h('p', { class: 'side-label' }, s.label) : '',
+            F(`skills.${i}.items`, s.items.join(', '), { tag: 'p', ph: 'Skill, skill', list: ',' }),
+          ]),
+          ctl('add', 'skills', 'Add skill group', 'ed-add'),
+        ]
       : []),
-    ...(cv.languages.length ? [h('h4', {}, 'Languages'), ...cv.languages.map((l) => h('p', {}, l))] : []),
-    ...(cv.certifications.length ? [h('h4', {}, 'Certifications'), ...cv.certifications.map((l) => h('p', {}, l))] : []),
+    ...(cv.education.length || EDIT
+      ? [
+          T('education'),
+          ...cv.education.flatMap((e, i) => [
+            EDIT ? F(`education.${i}.degree`, e.degree, { tag: 'p', cls: 'side-label', ph: 'Degree' }) : h('p', { class: 'side-label' }, e.degree),
+            EDIT ? h('p', {}, F(`education.${i}.school`, e.school, { ph: 'School' }), ', ', D(`education.${i}`, e), ctl('remove', `education.${i}`, 'Remove this entry')) : h('p', {}, [e.school, dates(e)].filter(Boolean).join(', ')),
+          ]),
+          ctl('add', 'education', 'Add education', 'ed-add'),
+        ]
+      : []),
+    ...(cv.languages.length || EDIT ? [T('languages'), EDIT ? F('languages', cv.languages.join(' · '), { tag: 'p', ph: 'Language (level)', list: '·' }) : cv.languages.map((l) => h('p', {}, l))] : []),
+    ...(cv.certifications.length || EDIT ? [T('certifications'), EDIT ? F('certifications', cv.certifications.join(' · '), { tag: 'p', ph: 'Certificate', list: '·' }) : cv.certifications.map((l) => h('p', {}, l))] : []),
   );
   const main = h(
     'div',
     { class: 'cv-main' },
-    h('header', { class: 'cv-head' }, h('h2', {}, cv.name || 'Your name'), cv.headline && h('p', { class: 'cv-headline' }, cv.headline)),
-    ...sectionsFor(cv, t).map((key) => h('section', { class: 'cv-section' }, h('h3', {}, SECTION_TITLES[key]), ...bodyPreview(cv, t, key))),
+    h('header', { class: 'cv-head' }, nameNode(cv, t), P('p', 'cv-headline', 'headline', cv.headline, 'Headline')),
+    ...sectionsFor(cv, t).map((key) => h('section', { class: 'cv-section' }, EDIT ? h('h3', {}, F(`titles.${key}`, sectionTitle(cv, key))) : h('h3', {}, sectionTitle(cv, key)), ...bodyPreview(cv, t, key), ADD_LABEL[key] ? ctl('add', key, ADD_LABEL[key], 'ed-add') : '')),
   );
   return h('div', { class: 'cv-sidebar-wrap' }, side, main);
 }
@@ -312,7 +460,10 @@ function pdfRows(t, L, rows) {
 }
 
 function pdfBody(cv, t, L, key) {
-  const ul = (items) => (items.length ? [{ ul: items, margin: [10, 2, 0, 2], markerColor: t.id === 'awesome' || t.id === 'modern' ? L.accent : INK }] : []);
+  const ul = (all) => {
+    const items = all.filter((x) => String(x).trim());
+    return items.length ? [{ ul: items, margin: [10, 2, 0, 2], markerColor: t.id === 'awesome' || t.id === 'modern' ? L.accent : INK }] : [];
+  };
   switch (key) {
     case 'summary':
       return [{ text: cv.summary, margin: [0, 2, 0, 0] }];
@@ -370,7 +521,7 @@ export function cvPDFDefinition(cv, templateId = 'harvard', pickedAccent) {
   }
   content.push({ text: contactParts(cv).join(t.sep), color: t.id === 'harvard' || t.id === 'jakes' ? INK : MUTED, fontSize: L.base - 0.5, alignment: L.center ? 'center' : 'left', margin: [0, 4, 0, 2] });
 
-  for (const key of sectionsFor(cv, t)) content.push(...pdfHeading(t, L, SECTION_TITLES[key], width), ...pdfBody(cv, t, L, key));
+  for (const key of sectionsFor(cv, t)) content.push(...pdfHeading(t, L, sectionTitle(cv, key), width), ...pdfBody(cv, t, L, key));
 
   return { pageSize: 'A4', pageMargins: margins, info, content, defaultStyle: defaults };
 }
@@ -396,7 +547,7 @@ function gridPDF(cv, t, L, defaults, info, margins, width) {
   }
 
   for (const key of sectionsFor(cv, t)) {
-    const title = SECTION_TITLES[key];
+    const title = sectionTitle(cv, key);
     if (t.layout === 'europass') {
       content.push({ canvas: [{ type: 'line', x1: LEFT + GAP, y1: 0, x2: width, y2: 0, lineWidth: 0.6, lineColor: L.accent }], margin: [0, 12, 0, 4] });
     } else {
@@ -436,18 +587,18 @@ function sidebarPDF(cv, t, L, defaults, info) {
   const sideHead = (s) => ({ text: s.toUpperCase(), bold: true, color: '#ffffff', fontSize: L.base - 0.5, characterSpacing: 1, margin: [0, 14, 0, 4] });
   const sideText = (s, extra = {}) => ({ text: s, color: '#e5e7eb', fontSize: L.base - 1, margin: [0, 1, 0, 1], ...extra });
   const side = [
-    sideHead('Contact'),
+    sideHead(sectionTitle(cv, 'contact')),
     ...[c.email, c.phone, c.location, ...c.links].filter(Boolean).map((x) => sideText(x)),
-    ...(cv.skills.length ? [sideHead('Skills'), ...cv.skills.flatMap((s) => [...(s.label ? [sideText(s.label, { bold: true, color: '#ffffff' })] : []), sideText(s.items.join(', '))])] : []),
-    ...(cv.education.length ? [sideHead('Education'), ...cv.education.flatMap((e) => [sideText(e.degree, { bold: true, color: '#ffffff' }), sideText([e.school, dates(e)].filter(Boolean).join(', '))])] : []),
-    ...(cv.languages.length ? [sideHead('Languages'), ...cv.languages.map((l) => sideText(l))] : []),
-    ...(cv.certifications.length ? [sideHead('Certifications'), ...cv.certifications.map((l) => sideText(l))] : []),
+    ...(cv.skills.length ? [sideHead(sectionTitle(cv, 'skills')), ...cv.skills.flatMap((s) => [...(s.label ? [sideText(s.label, { bold: true, color: '#ffffff' })] : []), sideText(s.items.join(', '))])] : []),
+    ...(cv.education.length ? [sideHead(sectionTitle(cv, 'education')), ...cv.education.flatMap((e) => [sideText(e.degree, { bold: true, color: '#ffffff' }), sideText([e.school, dates(e)].filter(Boolean).join(', '))])] : []),
+    ...(cv.languages.length ? [sideHead(sectionTitle(cv, 'languages')), ...cv.languages.map((l) => sideText(l))] : []),
+    ...(cv.certifications.length ? [sideHead(sectionTitle(cv, 'certifications')), ...cv.certifications.map((l) => sideText(l))] : []),
   ];
   const mainWidth = A4_W - LEFT_MARGIN - SIDE_W - GAP - 36;
   const main = [
     { text: cv.name, bold: true, fontSize: L.nameSize, color: '#111111' },
     ...(cv.headline ? [{ text: cv.headline, color: L.accent, fontSize: L.base + 1.5, margin: [0, 2, 0, 0] }] : []),
-    ...sectionsFor(cv, t).flatMap((key) => [...pdfHeading(t, L, SECTION_TITLES[key], mainWidth), ...pdfBody(cv, t, L, key)]),
+    ...sectionsFor(cv, t).flatMap((key) => [...pdfHeading(t, L, sectionTitle(cv, key), mainWidth), ...pdfBody(cv, t, L, key)]),
   ];
   return {
     pageSize: 'A4',
@@ -483,10 +634,12 @@ export function letterParts(cv, letterText, meta = {}) {
   try {
     date = new Intl.DateTimeFormat(words.locale, { day: 'numeric', month: 'long', year: 'numeric' }).format(meta.date ? new Date(meta.date) : new Date());
   } catch {}
+  // Lines the user retyped on the page win over the generated ones.
+  const given = (v) => typeof v === 'string';
   return {
-    dateLine: [place, `${words.on}${date}`].filter((x) => x.trim()).join(', '),
-    recipient: [meta.company, meta.location && !/remote/i.test(meta.location) ? meta.location : ''].filter(Boolean),
-    subject: meta.title ? words.subject(meta.title) : '',
+    dateLine: given(meta.dateLine) ? meta.dateLine : [place, `${words.on}${date}`].filter((x) => x.trim()).join(', '),
+    recipient: given(meta.recipient) ? meta.recipient.split('\n').map((x) => x.trim()).filter(Boolean) : [meta.company, meta.location && !/remote/i.test(meta.location) ? meta.location : ''].filter(Boolean),
+    subject: given(meta.subject) ? meta.subject : meta.title ? words.subject(meta.title) : '',
     // Short multi-line blocks (the sign-off and name) keep their line breaks.
     paragraphs: text
       .split(/\n{2,}/)
@@ -499,6 +652,16 @@ export function letterParts(cv, letterText, meta = {}) {
 }
 
 function letterBodyPreview(parts) {
+  if (EDIT) {
+    return h(
+      'div',
+      { class: 'letter-body' },
+      F('letter.date', parts.dateLine, { tag: 'p', cls: 'letter-date', ph: 'Place, date' }),
+      F('letter.to', parts.recipient.join('\n'), { tag: 'div', cls: 'letter-to', ph: 'Company\nAddress', multi: true }),
+      F('letter.subject', parts.subject, { tag: 'p', cls: 'letter-subject', ph: 'Subject' }),
+      F('letter.body', parts.paragraphs.join('\n\n'), { tag: 'div', cls: 'letter-text', ph: 'Your letter', multi: true }),
+    );
+  }
   return h(
     'div',
     { class: 'letter-body' },
@@ -510,25 +673,33 @@ function letterBodyPreview(parts) {
 }
 
 /** On-screen cover letter in a template. */
-export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}) {
+export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}, { editable = false } = {}) {
   const t = getTemplate(templateId);
   const accent = accentFor(t, pickedAccent);
   const parts = letterParts(cv, letterText, meta);
-  const page = h('article', { class: `cv-page letter-page tpl-${t.id} lay-${t.layout}`, style: `--cv-accent:${accent}` });
-  if (t.layout === 'sidebar') {
-    const c = cv.contact;
-    page.append(
-      h(
-        'div',
-        { class: 'cv-sidebar-wrap' },
-        h('aside', { class: 'cv-side' }, h('h4', {}, 'Contact'), ...[c.email, c.phone, c.location, ...c.links].filter(Boolean).map((x) => h('p', {}, x))),
-        h('div', { class: 'cv-main' }, h('header', { class: 'cv-head' }, h('h2', {}, cv.name || 'Your name'), cv.headline && h('p', { class: 'cv-headline' }, cv.headline)), letterBodyPreview(parts)),
-      ),
-    );
+  const page = h('article', { class: `cv-page letter-page tpl-${t.id} lay-${t.layout}${editable ? ' editing' : ''}`, style: `--cv-accent:${accent}` });
+  EDIT = editable;
+  try {
+    if (t.layout === 'sidebar') {
+      const c = cv.contact;
+      const contact = EDIT
+        ? [F('contact.email', c.email, { tag: 'p', ph: 'Email' }), F('contact.phone', c.phone, { tag: 'p', ph: 'Phone' }), F('contact.location', c.location, { tag: 'p', ph: 'Location' }), F('contact.links', c.links.join(', '), { tag: 'p', ph: 'Links', list: ',' })]
+        : [c.email, c.phone, c.location, ...c.links].filter(Boolean).map((x) => h('p', {}, x));
+      page.append(
+        h(
+          'div',
+          { class: 'cv-sidebar-wrap' },
+          h('aside', { class: 'cv-side' }, h('h4', {}, sectionTitle(cv, 'contact')), ...contact),
+          h('div', { class: 'cv-main' }, h('header', { class: 'cv-head' }, nameNode(cv, t), P('p', 'cv-headline', 'headline', cv.headline, 'Headline')), letterBodyPreview(parts)),
+        ),
+      );
+      return page;
+    }
+    page.append(headerPreview(cv, t), h('div', { class: 'letter-rule' }), letterBodyPreview(parts));
     return page;
+  } finally {
+    EDIT = false;
   }
-  page.append(headerPreview(cv, t), h('div', { class: 'letter-rule' }), letterBodyPreview(parts));
-  return page;
 }
 
 /** Cover letter PDF matching renderLetter. */
@@ -552,7 +723,7 @@ export function letterPDFDefinition(cv, letterText, templateId = 'harvard', pick
     const GAP = 28;
     const c = cv.contact;
     const side = [
-      { text: 'CONTACT', bold: true, color: '#ffffff', fontSize: L.base - 0.5, characterSpacing: 1, margin: [0, 14, 0, 4] },
+      { text: sectionTitle(cv, 'contact').toUpperCase(), bold: true, color: '#ffffff', fontSize: L.base - 0.5, characterSpacing: 1, margin: [0, 14, 0, 4] },
       ...[c.email, c.phone, c.location, ...c.links].filter(Boolean).map((x) => ({ text: x, color: '#e5e7eb', fontSize: L.base - 1, margin: [0, 1, 0, 1] })),
     ];
     const mainWidth = A4_W - LEFT_MARGIN - SIDE_W - GAP - 40;

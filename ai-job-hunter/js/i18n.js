@@ -279,6 +279,19 @@ const DICT = {
   'Update CV': ['Lebenslauf aktualisieren', 'Mettre à jour le CV', 'Aggiorna CV', 'Actualizar CV', 'Atualizar currículo'],
   'Updating your CV…': ['Lebenslauf wird aktualisiert…', 'Mise à jour du CV…', 'Aggiornamento del CV…', 'Actualizando tu CV…', 'Atualizando seu currículo…'],
 
+  // Editing on the page
+  'Edit on page': ['Auf der Seite bearbeiten', 'Modifier sur la page', 'Modifica sulla pagina', 'Editar en la página', 'Editar na página'],
+  'Done editing': ['Fertig', 'Terminé', 'Fatto', 'Listo', 'Concluir'],
+  'Click any text to change it. Enter adds a bullet point. Everything saves as you type.': ['Klicke auf einen Text, um ihn zu ändern. Enter fügt einen Aufzählungspunkt hinzu. Alles wird beim Tippen gespeichert.', 'Cliquez sur un texte pour le modifier. Entrée ajoute une puce. Tout est enregistré pendant la saisie.', 'Clicca su un testo per cambiarlo. Invio aggiunge un punto elenco. Tutto si salva mentre scrivi.', 'Haz clic en cualquier texto para cambiarlo. Intro añade una viñeta. Todo se guarda mientras escribes.', 'Toque em qualquer texto para mudar. Enter adiciona um item. Tudo é salvo enquanto você digita.'],
+  'Add job': ['Job hinzufügen', 'Ajouter un poste', 'Aggiungi lavoro', 'Añadir empleo', 'Adicionar emprego'],
+  'Add education': ['Ausbildung hinzufügen', 'Ajouter une formation', 'Aggiungi formazione', 'Añadir formación', 'Adicionar formação'],
+  'Add project': ['Projekt hinzufügen', 'Ajouter un projet', 'Aggiungi progetto', 'Añadir proyecto', 'Adicionar projeto'],
+  'Add skill group': ['Fähigkeitsgruppe hinzufügen', 'Ajouter un groupe', 'Aggiungi gruppo', 'Añadir grupo', 'Adicionar grupo'],
+  'Remove this job': ['Diesen Job entfernen', 'Retirer ce poste', 'Rimuovi questo lavoro', 'Quitar este empleo', 'Remover este emprego'],
+  'Remove this entry': ['Diesen Eintrag entfernen', 'Retirer cette entrée', 'Rimuovi questa voce', 'Quitar esta entrada', 'Remover esta entrada'],
+  'Remove this project': ['Dieses Projekt entfernen', 'Retirer ce projet', 'Rimuovi questo progetto', 'Quitar este proyecto', 'Remover este projeto'],
+  'Remove this group': ['Diese Gruppe entfernen', 'Retirer ce groupe', 'Rimuovi questo gruppo', 'Quitar este grupo', 'Remover este grupo'],
+
   // Template descriptions
   'The classic résumé from Harvard career services. Serif, centred, no colour.': ['Der klassische Lebenslauf des Harvard Career Service. Serifenschrift, zentriert, ohne Farbe.', 'Le CV classique du service carrières de Harvard. Empattements, centré, sans couleur.', 'Il CV classico del career service di Harvard. Graziato, centrato, senza colore.', 'El currículum clásico del servicio de carreras de Harvard. Con serifa, centrado, sin color.', 'O currículo clássico do serviço de carreiras de Harvard. Com serifa, centralizado, sem cor.'],
   'The popular LaTeX résumé used across tech. Dense and tidy.': ['Der beliebte LaTeX-Lebenslauf aus der Tech-Welt. Kompakt und aufgeräumt.', 'Le CV LaTeX populaire dans la tech. Dense et soigné.', 'Il popolare CV LaTeX usato nel tech. Compatto e ordinato.', 'El popular currículum LaTeX del mundo tech. Denso y ordenado.', 'O popular currículo em LaTeX usado em tecnologia. Denso e organizado.'],
@@ -750,6 +763,8 @@ const ATTRS = ['placeholder', 'aria-label', 'title'];
 const seen = new WeakMap(); // node -> { src, out } (attributes: element -> { [attr]: { src, out } })
 
 function skipped(el) {
+  // The add/remove buttons on an editable page are interface, not document text.
+  if (el?.closest?.('.ed-ctl')) return false;
   return Boolean(el?.closest?.(SKIP));
 }
 
@@ -766,7 +781,7 @@ function doText(node) {
 
 const ATTR_SKIP = '.cv-page, .description, pre, code, [translate="no"]';
 function doAttrs(el) {
-  if (el.closest?.(ATTR_SKIP)) return;
+  if (el.closest?.(ATTR_SKIP) && !el.classList?.contains('ed-ctl')) return;
   let recs = seen.get(el);
   for (const a of ATTRS) {
     const cur = el.getAttribute(a);
@@ -790,6 +805,10 @@ function walk(root) {
     acceptNode: (n) => {
       if (n.nodeType === 1 && n.matches(SKIP)) {
         doAttrs(n); // e.g. a textarea's placeholder
+        for (const c of n.querySelectorAll?.('.ed-ctl') || []) {
+          doAttrs(c);
+          c.childNodes.forEach((x) => x.nodeType === 3 && doText(x));
+        }
         return NodeFilter.FILTER_REJECT;
       }
       return NodeFilter.FILTER_ACCEPT;

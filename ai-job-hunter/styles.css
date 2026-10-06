@@ -877,7 +877,7 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 /* ---------- Full-screen CV viewer ---------- */
 
 .studio {
-  position: fixed; inset: 0; z-index: 100; display: grid; grid-template-rows: auto minmax(0, 1fr);
+  position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column;
   background: var(--bg); animation: studio-in 0.18s ease-out;
 }
 .studio.closing { animation: studio-out 0.16s ease-in forwards; }
@@ -891,9 +891,10 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .studio-title { display: grid; min-width: 0; flex: 1; line-height: 1.25; }
 .studio-title span { color: var(--muted); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .studio-actions { display: flex; gap: 0.5rem; }
-.studio-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; position: relative; }
-.studio-stage { overflow: auto; background: var(--stage); padding: 2rem 2rem 3rem; display: flex; justify-content: center; align-items: flex-start; }
-.paper-fit { position: relative; flex: none; }
+.studio-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; flex: 1; position: relative; }
+.studio-stage { overflow: auto; background: var(--stage); padding: 2rem 2rem 3rem; display: flex; justify-content: flex-start; align-items: flex-start; }
+/* margin:auto centres the page but, unlike justify-content, still lets a wide page scroll sideways */
+.paper-fit { position: relative; flex: none; margin: 0 auto; }
 .paper-scale { position: absolute; top: 0; left: 0; transform-origin: top left; }
 .paper-scale .cv-page { width: 794px; max-width: none; min-height: 1123px; margin: 0; border-radius: 2px; box-shadow: 0 6px 30px rgb(0 0 0 / 0.18); }
 .studio-busy { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 55%, transparent); z-index: 2; }
@@ -1227,3 +1228,37 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .feed-more { justify-self: start; }
 .feed-portals { border-top: 1px solid var(--border); padding-top: var(--sp-4); display: grid; gap: var(--sp-2); }
 .feed-portals p { margin: 0; }
+
+/* ---------- Editing on the page ---------- */
+.studio-edit { gap: var(--sp-1); }
+.studio-edit svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.studio-hint { background: var(--accent-soft); color: var(--accent-text); border-bottom: 1px solid var(--accent-border); font-size: var(--fs-sm); font-weight: 600; text-align: center; padding: var(--sp-2) var(--sp-4); }
+.cv-page.editing .ed { border-radius: 2px; outline: 1px dashed transparent; outline-offset: 1px; cursor: text; transition: background 0.12s, outline-color 0.12s; min-width: 0.6em; }
+.cv-page.editing .ed:hover { outline-color: color-mix(in srgb, var(--cv-accent) 45%, #9ca3af); }
+.cv-page.editing .ed:focus { outline: 2px solid #3b82f6; background: #fffbeb; }
+.cv-page.editing .ed:empty::before { content: attr(data-ph); color: #9ca3af; font-style: italic; font-weight: 400; pointer-events: none; }
+.cv-page.editing span.ed:empty { display: inline-block; }
+.cv-page.editing li.ed { display: list-item; }
+.cv-page.editing .ed-sep { color: inherit; }
+.cv-page .letter-text { white-space: pre-wrap; }
+.cv-page.editing .letter-to { white-space: pre-line; }
+.cv-page.editing .letter-to::first-line { font-weight: 700; }
+.cv-page .ed-ctl {
+  font: 600 11px/1 var(--f-sans, system-ui); color: #4b5563; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 999px;
+  cursor: pointer; padding: 3px 8px; margin: 2px 0;
+}
+.cv-page .ed-ctl:hover { background: #e5e7eb; color: #111827; }
+.cv-page .ed-ctl[data-action="remove"] { float: right; width: 20px; height: 20px; padding: 0; border-radius: 50%; font-size: 14px; opacity: 0; transition: opacity 0.12s; }
+.cv-page .cv-item:hover > .ed-ctl[data-action="remove"], .cv-page .cv-item:focus-within > .ed-ctl[data-action="remove"], .cv-page .cv-skill:hover > .ed-ctl, .cv-page .cv-skill:focus-within > .ed-ctl { opacity: 1; }
+@media (hover: none) { .cv-page .ed-ctl[data-action="remove"] { opacity: 0.7; } }
+.cv-page .ed-add { display: inline-block; margin-top: 4px; }
+.cv-side .ed-ctl { background: rgb(255 255 255 / 0.15); color: #fff; border-color: rgb(255 255 255 / 0.35); }
+
+/* Editing on a phone: the page reflows to the screen width */
+.studio.reflow .studio-stage { padding-inline: 0.5rem; }
+.studio.reflow .paper-scale .cv-page { width: calc(100vw - 1rem); min-height: 0; padding: 1.2rem 1rem 1.6rem; }
+.studio.reflow .paper-scale .cv-page .cv-row { flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .studio-title { display: none; }
+  .studio-actions { flex: 1; justify-content: flex-end; }
+}
