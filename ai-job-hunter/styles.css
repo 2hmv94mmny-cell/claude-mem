@@ -1163,3 +1163,37 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
   .sheet { width: 100%; border-radius: var(--r-lg) var(--r-lg) 0 0; padding-bottom: calc(var(--sp-6) + env(safe-area-inset-bottom, 0px)); max-height: 90vh; }
   @keyframes rise { from { transform: translateY(40px); opacity: 0; } }
 }
+
+/* ---------- About the company (job overview) ---------- */
+.company-card { display: grid; gap: var(--sp-4); }
+.company-head { display: flex; align-items: center; gap: var(--sp-4); }
+.company-logo {
+  width: 52px; height: 52px; flex: none; border-radius: var(--r-md); display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent-border); font-weight: 800; font-size: var(--fs-lg);
+}
+.company-id { flex: 1; min-width: 0; }
+.company-id h2 { margin: 0; }
+.company-id p { margin: 2px 0 0; }
+.company-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp-3); margin: 0; }
+.company-facts > div { background: var(--surface-2); border-radius: var(--r-sm); padding: var(--sp-3); min-width: 0; }
+.company-facts dt { font-size: var(--fs-xs); color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.company-facts dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.company-skel { height: 58px; }
+.company-what { margin: 0; max-width: 70ch; }
+.company-tags { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.company-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4) var(--sp-6); }
+.company-cols h3, .company-tips h3 { font-size: var(--fs-md); margin: 0 0 var(--sp-2); }
+.company-cols ul, .company-tips ul { margin: 0; padding-left: 1.2em; display: grid; gap: var(--sp-1); }
+.company-news a { font-weight: 600; }
+.company-tips { background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: var(--r-md); padding: var(--sp-4); }
+.company-quote { border-left: 3px solid var(--accent-border); padding-left: var(--sp-4); }
+.company-quote p { margin: 0; }
+.company-quote .label { margin-bottom: var(--sp-1); }
+.company-foot { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+@media (max-width: 560px) {
+  .company-head { flex-wrap: wrap; }
+  .company-id { flex-basis: calc(100% - 52px - var(--sp-4)); }
+  .company-head .btn { margin-left: calc(52px + var(--sp-4)); }
+  .company-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .company-cols { grid-template-columns: 1fr; }
+}

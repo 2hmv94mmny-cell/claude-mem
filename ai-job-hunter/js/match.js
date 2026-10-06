@@ -383,7 +383,7 @@ export function parseSearchResults(text, { city = '' } = {}) {
       .filter((l) => !/^#*\s*$/.test(l) && norm(l) !== norm(title) && !l.startsWith('...'))
       .map((l) => l.replace(/^#+\s*/, ''))
       .join('\n')
-      .slice(0, 1400);
+      .slice(0, 3000);
 
     jobs.push({
       id: `web:${hash(url)}`,
@@ -600,4 +600,39 @@ export async function jobsForYou(profile, { signal } = {}) {
     .sort((a, b) => b.match.score - a.match.score);
 
   return { jobs: ranked, roles: me.roles, country: found.country, via };
+}
+
+// ---------------------------------------------------------------------------
+// About the company, from the posting itself
+// ---------------------------------------------------------------------------
+
+const ABOUT_HEADING = /^(?:#+\s*)?(?:uber uns|about us|about the company|about the team|wer wir sind|who we are|a propos(?: de nous)?|qui sommes-nous|unser unternehmen|das unternehmen|the company|company description|company overview|unternehmensprofil|uber (?:die|das|den)?\s*\S+|about \S+)\s*:?/;
+const COMPANY_FACT = /gegrundet|founded|fondee|mitarbeitende|mitarbeiter|employees|collaborateurs|hauptsitz|headquarter|siege|standorte|locations|marktfuhrer|market leader|weltweit|worldwide|international|familienunternehmen|family[- ]owned|kotiert|listed|seit \d{4}|since \d{4}/;
+
+/**
+ * The posting's own words about the employer (its "About us" part), or ''.
+ * Plain pattern matching, no AI.
+ */
+export function aboutFromPosting(job) {
+  const lines = String(job.description || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const name = norm(String(job.company || '').split(/\s+/)[0] || '');
+  // 1. A heading like "Über uns" / "About us" / "Über Medartis", and what follows it.
+  for (let i = 0; i < lines.length; i++) {
+    const n = norm(lines[i]);
+    if (!ABOUT_HEADING.test(n)) continue;
+    if (/^uber (?:die|das|den)?\s*\S+/.test(n) && name && !n.includes(name) && !/^uber uns/.test(n)) continue;
+    // The heading may be glued to the text ("Über MedartisBei Medartis …").
+    const glued = lines[i].replace(/^#+\s*/, '').replace(/^(?:Über|About|À propos de)\s+\S+?(?=[A-ZÄÖÜ][a-zäöü])/, '');
+    const out = [];
+    if (glued.length > 60) out.push(glued);
+    for (let j = i + 1; j < lines.length && out.join(' ').length < 700; j++) {
+      const l = lines[j];
+      if (l.length < 45 && !/[.!]$/.test(l) && out.length) break; // next heading
+      if (l.length >= 45) out.push(l.replace(/^[-*•]\s*/, ''));
+    }
+    if (out.length) return out.join(' ').slice(0, 900);
+  }
+  // 2. Sentences that state company facts and name the company.
+  const facts = lines.filter((l) => l.length > 60 && COMPANY_FACT.test(norm(l)) && (!name || norm(l).includes(name) || /\b(wir|we|nous)\b/.test(norm(l))));
+  return facts.slice(0, 2).join(' ').slice(0, 900);
 }

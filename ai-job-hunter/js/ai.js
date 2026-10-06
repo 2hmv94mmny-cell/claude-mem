@@ -581,6 +581,81 @@ export function analyzeGap(job, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// About the company
+// ---------------------------------------------------------------------------
+
+const COMPANY_FORMAT =
+  'Reply with only a JSON object: {"name": string, "oneLiner": string (max 14 words: what the company is), ' +
+  '"whatTheyDo": string (2-3 plain sentences), "industry": string, "founded": string, "headquarters": string, ' +
+  '"employees": string (e.g. "about 1,400"), "ownership": string (e.g. "listed on SIX Swiss Exchange", "family owned", "startup, Series B"), ' +
+  '"website": string (official homepage URL), "products": string[] (max 4, short), "culture": string[] (max 3: what working there is like, from the company or reviews), ' +
+  '"rating": string (employee rating with its source, e.g. "4.1/5 on kununu (230 reviews)", or ""), ' +
+  '"news": [{"title": string, "date": string, "url": string}] (max 3, the most recent), ' +
+  '"talkingPoints": string[] (max 3: specific things worth mentioning in an application or interview), "sources": string[] (URLs used)}. ' +
+  'Use "" or [] for anything the sources do not state. Never guess numbers or dates.';
+
+/**
+ * Look the employer up on the web and sum up what matters to an applicant.
+ * @returns {Promise<object>} the COMPANY_FORMAT object
+ */
+export async function companyProfile(job, { signal } = {}) {
+  const name = String(job.company || '').trim();
+  if (!name) throw new Error('This posting does not name the company.');
+  const where = job.location ? ` (${job.location})` : '';
+  const system =
+    'You research employers for job seekers. Use only facts that appear in the sources or the job posting, and keep them current. ' +
+    'If the sources are about a different company with a similar name, ignore them. Write plainly, no dashes as punctuation, no marketing language.';
+  const posting = `<job_posting>\nCompany: ${name}${where}\nTitle: ${job.title}\n${String(job.description || '').slice(0, 4000)}\n</job_posting>`;
+
+  let reply;
+  if (usingViewerClaude()) {
+    if (!caps.mcp) throw new Error('Company lookup needs the Exa connector. Add it in claude.ai Settings → Connectors, then reload.');
+    const searches = [
+      { query: `${name}${where} official website about the company`, objective: `The official website and "about us" page of the employer ${name}${where}: what it does, founding year, headquarters, number of employees, ownership.` },
+      { query: `${name} company news 2026`, objective: `Recent news about the company ${name}${where} from the last 12 months: results, launches, acquisitions, layoffs, leadership changes. Include dates.` },
+      { query: `${name} employee reviews rating kununu glassdoor`, objective: `Employee reviews and the overall rating of ${name}${where} as an employer, with the number of reviews.` },
+    ];
+    const settled = await Promise.allSettled(searches.map((q) => caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { ...q, numResults: 6 }, { signal })));
+    const blocks = settled
+      .map((r, i) => (r.status === 'fulfilled' ? `<results topic="${['about', 'news', 'reviews'][i]}">\n${(typeof r.value.payload === 'string' ? r.value.payload : JSON.stringify(r.value.payload ?? r.value.content)).slice(0, 12000)}\n</results>` : ''))
+      .filter(Boolean);
+    if (!blocks.length) throw mcpError(settled.find((r) => r.status === 'rejected')?.reason);
+    reply = await ask({ system, messages: [{ role: 'user', content: `${posting}\n\n${blocks.join('\n\n')}\n\n${COMPANY_FORMAT}` }], json: true, signal });
+  } else {
+    reply = await ask({
+      system,
+      messages: [{ role: 'user', content: `${posting}\n\nSearch the web for this employer: its website, recent news and employee reviews (kununu, Glassdoor). ${COMPANY_FORMAT}` }],
+      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
+      json: true,
+      signal,
+    });
+  }
+  if (!reply || typeof reply !== 'object' || Array.isArray(reply)) throw new Error('Claude replied in an unexpected format. Try again.');
+  const str = (v) => cleanText(String(v ?? '')).trim();
+  const list = (v, n) => (Array.isArray(v) ? v : []).map(str).filter(Boolean).slice(0, n);
+  return {
+    name: str(reply.name) || name,
+    oneLiner: str(reply.oneLiner),
+    whatTheyDo: str(reply.whatTheyDo),
+    industry: str(reply.industry),
+    founded: str(reply.founded),
+    headquarters: str(reply.headquarters),
+    employees: str(reply.employees),
+    ownership: str(reply.ownership),
+    website: /^https?:\/\//i.test(String(reply.website || '')) ? String(reply.website) : '',
+    products: list(reply.products, 4),
+    culture: list(reply.culture, 3),
+    rating: str(reply.rating),
+    news: (Array.isArray(reply.news) ? reply.news : [])
+      .filter((n) => n && n.title)
+      .slice(0, 3)
+      .map((n) => ({ title: str(n.title), date: str(n.date), url: /^https?:\/\//i.test(String(n.url || '')) ? String(n.url) : '' })),
+    talkingPoints: list(reply.talkingPoints, 3),
+    sources: (Array.isArray(reply.sources) ? reply.sources : []).map(String).filter((u) => /^https?:\/\//i.test(u)).slice(0, 6),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Interview game
 // ---------------------------------------------------------------------------
 

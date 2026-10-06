@@ -7,7 +7,7 @@ import { portalsFor } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
-import { jobsForYou } from './match.js';
+import { jobsForYou, aboutFromPosting, norm } from './match.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
 import { TEMPLATES, getTemplate, accentFor, renderCV, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
@@ -845,6 +845,145 @@ function renderTracker() {
 // Job detail: overview, documents, interview prep
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// About the company (job overview)
+// ---------------------------------------------------------------------------
+
+const COMPANY_TTL = 14 * 24 * 60 * 60 * 1000;
+const companyRuns = new Map(); // company key -> in-flight lookup
+const companyKey = (name) => norm(name).replace(/\b(ag|gmbh|sa|sarl|ltd|inc|llc|plc|bv|nv|se|co|kg|cie)\b\.?/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+function lookupCompany(job) {
+  const key = companyKey(job.company);
+  if (!companyRuns.has(key)) {
+    companyRuns.set(
+      key,
+      ai
+        .companyProfile(job)
+        .then((data) => {
+          store.update((s) => {
+            s.companies = s.companies || {};
+            s.companies[key] = { data, at: Date.now() };
+            // Keep the cache small: the 40 most recent companies.
+            const keys = Object.keys(s.companies).sort((a, b) => s.companies[b].at - s.companies[a].at);
+            for (const k of keys.slice(40)) delete s.companies[k];
+          });
+          return data;
+        })
+        .finally(() => companyRuns.delete(key)),
+    );
+  }
+  return companyRuns.get(key);
+}
+
+function companySection(job) {
+  const card = h('section', { class: 'card company-card', 'aria-live': 'polite' });
+  const key = companyKey(job.company);
+  const fromPosting = aboutFromPosting(job);
+
+  const lookBtn = (label, variant = 'small') => {
+    const b = h('button', { class: `btn ${variant}`, type: 'button' }, label);
+    b.addEventListener('click', () => start());
+    return b;
+  };
+  const logo = (name) => h('div', { class: 'company-logo', 'aria-hidden': 'true' }, initials(name).slice(0, 2));
+
+  function postingOnly(note, action) {
+    card.replaceChildren(
+      h('div', { class: 'company-head' }, logo(job.company), h('div', { class: 'company-id' }, h('h2', {}, job.company ? `About ${job.company}` : 'About the company'), note ? h('p', { class: 'small muted' }, note) : '')),
+      fromPosting ? h('div', { class: 'company-quote' }, h('p', { class: 'small muted label' }, 'In their own words, from the posting'), h('p', {}, fromPosting)) : '',
+      action || '',
+    );
+  }
+
+  function draw(entry) {
+    const c = entry.data;
+    const facts = [
+      ['Industry', c.industry],
+      ['Founded', c.founded],
+      ['Headquarters', c.headquarters],
+      ['Employees', c.employees],
+      ['Ownership', c.ownership],
+      ['Employee rating', c.rating],
+    ].filter(([, v]) => v);
+    const hostOf = (u) => {
+      try {
+        return new URL(u).hostname.replace(/^www\./, '');
+      } catch {
+        return u;
+      }
+    };
+    card.replaceChildren(
+      h(
+        'div',
+        { class: 'company-head' },
+        logo(c.name),
+        h('div', { class: 'company-id' }, h('h2', {}, `About ${c.name}`), c.oneLiner ? h('p', { class: 'muted' }, c.oneLiner) : ''),
+        c.website ? h('a', { class: 'btn small', href: safeUrl(c.website), target: '_blank', rel: 'noopener noreferrer' }, 'Website ↗') : '',
+      ),
+      facts.length ? h('dl', { class: 'company-facts' }, ...facts.map(([k, v]) => h('div', {}, h('dt', {}, k), h('dd', {}, v)))) : '',
+      c.whatTheyDo ? h('p', { class: 'company-what' }, c.whatTheyDo) : '',
+      c.products.length ? h('div', { class: 'company-tags' }, ...c.products.map((x) => h('span', { class: 'tag' }, x))) : '',
+      c.culture.length || c.news.length
+        ? h(
+            'div',
+            { class: 'company-cols' },
+            c.culture.length ? h('div', {}, h('h3', {}, 'Working there'), h('ul', {}, ...c.culture.map((x) => h('li', {}, x)))) : '',
+            c.news.length
+              ? h(
+                  'div',
+                  {},
+                  h('h3', {}, 'Recent news'),
+                  h('ul', { class: 'company-news' }, ...c.news.map((n) => h('li', {}, n.url ? h('a', { href: safeUrl(n.url), target: '_blank', rel: 'noopener noreferrer' }, n.title) : n.title, n.date ? h('span', { class: 'small muted' }, ` · ${n.date}`) : ''))),
+                )
+              : '',
+          )
+        : '',
+      c.talkingPoints.length ? h('div', { class: 'company-tips' }, h('h3', {}, 'Worth mentioning in your application'), h('ul', {}, ...c.talkingPoints.map((x) => h('li', {}, x)))) : '',
+      h(
+        'div',
+        { class: 'company-foot' },
+        h('span', { class: 'small muted' }, [c.sources.length ? `From ${c.sources.slice(0, 3).map(hostOf).join(', ')}${c.sources.length > 3 ? ` and ${c.sources.length - 3} more` : ''}` : 'From a web search', `checked ${fmtDate(entry.at)}`].join(' · ')),
+        lookBtn('Refresh'),
+      ),
+    );
+  }
+
+  function loading() {
+    card.replaceChildren(
+      h('div', { class: 'company-head' }, logo(job.company), h('div', { class: 'company-id' }, h('h2', {}, `About ${job.company}`), h('p', { class: 'small muted' }, `Looking up ${job.company}: website, size, news and employee reviews…`))),
+      h('div', { class: 'company-facts' }, ...Array.from({ length: 4 }, () => h('div', { class: 'skeleton company-skel' }))),
+    );
+  }
+
+  async function start() {
+    if (!job.company) return;
+    loading();
+    try {
+      await lookupCompany(job);
+      if (card.isConnected) draw(store.get().companies[key]);
+    } catch (err) {
+      if (!card.isConnected) return;
+      postingOnly(err.message || 'Could not look up the company.', lookBtn('Try again'));
+    }
+  }
+
+  const cached = store.get().companies?.[key];
+  if (!job.company) postingOnly('The posting does not name the company.');
+  else if (cached) draw(cached);
+  else if (ai.canSearchWeb()) {
+    // Look it up straight away; the answer is cached for every job at this company.
+    start();
+  } else {
+    postingOnly(
+      inArtifact ? 'Allow web search and Claude for this page to see the full company profile.' : 'Add an API key in Settings to see the full company profile.',
+      lookBtn('Look up company', 'small primary'),
+    );
+  }
+  if (cached && Date.now() - cached.at > COMPANY_TTL && ai.canSearchWeb()) start();
+  return card;
+}
+
 function renderJob(id) {
   const job = findJob(id);
   if (!job) {
@@ -941,6 +1080,7 @@ function renderJob(id) {
           'div',
           {},
           h('section', { class: 'card' }, h('div', { class: 'row space' }, h('h2', {}, 'Fit analysis'), fitBtn), fit),
+          companySection(job),
           h('section', { class: 'card' }, h('h2', {}, 'Job description'), h('div', { class: 'description' }, job.description || 'No description provided.')),
         ),
         side,

@@ -45,6 +45,8 @@ const DEFAULT_STATE = {
   prep: {},
   // Home page "Jobs for you": { key, at, jobs, roles, location, country }
   feed: null,
+  // "About the company" lookups, keyed by company name: { data, at }
+  companies: {},
 };
 
 export const STATUSES = [
