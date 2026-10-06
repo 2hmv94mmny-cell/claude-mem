@@ -11,7 +11,6 @@ import { cvToText, cvFromProfile } from './cvdoc.js';
 import { TEMPLATES, getTemplate, accentFor, renderCV, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
 
 const view = document.getElementById('view');
-const nav = document.getElementById('nav');
 
 // Search results are transient; only saved jobs are persisted.
 const session = {
@@ -183,7 +182,7 @@ function route() {
   currentAbort?.abort();
   currentAbort = null;
   const path = currentPath;
-  for (const a of nav.querySelectorAll('a')) {
+  for (const a of document.querySelectorAll('.mainnav a, .tabbar a, .appbar-actions a')) {
     const target = a.getAttribute('href').replace(/^#/, '');
     a.classList.toggle('active', target === '/' ? path === '/' : path.startsWith(target));
   }
@@ -331,74 +330,126 @@ function aiButton(label, { output, task, onDone, variant = 'primary' }) {
 // Home / dashboard
 // ---------------------------------------------------------------------------
 
+const ICON_SEARCH = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>';
+const ICON_PIN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
+
+function svgIcon(markup) {
+  const span = document.createElement('span');
+  span.innerHTML = markup; // static markup defined in this file
+  return span.firstChild;
+}
+
+/** The two-field "what / where" search bar used on Home and Find. */
+function searchBar({ what = '', where = '', onSubmit, button = 'Search jobs', idPrefix = 'sb' }) {
+  const q = h('input', { id: `${idPrefix}-q`, type: 'search', placeholder: 'Job title, skill or company', value: what, autocomplete: 'off', 'aria-label': 'What' });
+  const l = h('input', { id: `${idPrefix}-l`, type: 'text', placeholder: 'City, region or "remote"', value: where, autocomplete: 'off', 'aria-label': 'Where' });
+  const submit = h('button', { class: 'btn primary', type: 'submit' }, button);
+  const form = h(
+    'form',
+    { class: 'searchbar', role: 'search' },
+    h('label', { for: q.id }, svgIcon(ICON_SEARCH), q),
+    h('label', { for: l.id }, svgIcon(ICON_PIN), l),
+    submit,
+  );
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    onSubmit({ query: q.value.trim(), location: l.value.trim() });
+  });
+  return { form, q, l, submit };
+}
+
+function profileStrength(p) {
+  const parts = [
+    [Boolean(p.cv.trim()), 40, 'Upload your CV'],
+    [Boolean(p.location.trim()), 15, 'Add your location'],
+    [Boolean(p.targetRoles.trim()), 15, 'Add the roles you want'],
+    [Boolean(p.skills.trim()), 10, 'List your key skills'],
+    [Boolean(p.headline.trim()), 10, 'Write a one-line headline'],
+    [Boolean(p.email.trim() || p.phone.trim()), 10, 'Add contact details'],
+  ];
+  const score = parts.reduce((s, [ok, w]) => s + (ok ? w : 0), 0);
+  const next = parts.find(([ok]) => !ok)?.[2] || '';
+  return { score, next };
+}
+
 function renderHome() {
-  const { jobs, profile } = store.get();
+  const { jobs, profile, docs } = store.get();
   const all = Object.values(jobs);
   const count = (s) => all.filter((j) => j.status === s).length;
-  const recent = all.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)).slice(0, 5);
+  const first = profile.name.split(' ')[0];
 
+  const { form } = searchBar({
+    what: profile.targetRoles.split(',')[0]?.trim() || '',
+    where: profile.remoteOnly ? 'remote' : profile.location,
+    idPrefix: 'home',
+    onSubmit: ({ query, location }) => {
+      const remoteOnly = /^remote$/i.test(location);
+      session.query = { query, location: remoteOnly ? '' : location, remoteOnly, sources: [...SOURCE_IDS] };
+      session.results = [];
+      session.autoSearch = true;
+      go('/find');
+    },
+  });
+
+  // Side column: applications, profile strength, next steps.
+  const strength = profileStrength(profile);
   const steps = [
-    { done: Boolean(profile.cv.trim()), label: 'Add your CV and preferences', href: '#/profile' },
-    { done: ai.hasKey(), label: 'Connect AI (API key)', href: '#/settings' },
-    { done: all.length > 0, label: 'Find and save a job', href: '#/find' },
-    { done: all.some((j) => store.get().docs[j.id]?.cv), label: 'Tailor your CV for a job', href: '#/tracker' },
-    { done: count('applied') + count('interview') + count('offer') > 0, label: 'Apply and track it', href: '#/tracker' },
+    { done: Boolean(profile.cv.trim()), label: 'Upload your CV', href: '#/profile' },
+    { done: all.length > 0, label: 'Save a job you like', href: '#/find' },
+    { done: all.some((j) => docs[j.id]?.cvData || docs[j.id]?.cv), label: 'Create a tailored CV for it', href: '#/tracker' },
+    { done: count('applied') + count('interview') + count('offer') > 0, label: 'Apply and move it to Applied', href: '#/tracker' },
+    { done: Object.values(store.get().prep).some((p) => p?.results?.length), label: 'Play an interview game', href: '#/tracker' },
   ];
+  const recent = [...all].sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)).slice(0, 3);
+
+  const side = h(
+    'aside',
+    { class: 'home-side' },
+    h(
+      'section',
+      { class: 'card' },
+      h('div', { class: 'section-title' }, h('h2', {}, 'Your applications'), h('a', { class: 'small', href: '#/tracker' }, 'Open tracker')),
+      h(
+        'div',
+        { class: 'pipeline' },
+        ...STATUSES.map((st) => h('a', { href: '#/tracker', class: `status-${st.id}` }, h('span', { class: 'dot' }), st.label, h('strong', {}, String(count(st.id))))),
+      ),
+      recent.length
+        ? h(
+            'ul',
+            { class: 'plain-list', style: 'margin-top:var(--sp-3)' },
+            ...recent.map((j) => h('li', {}, h('a', { href: `#/job/${encodeURIComponent(j.id)}` }, j.title), statusBadge(j.status))),
+          )
+        : '',
+    ),
+    h(
+      'section',
+      { class: 'card' },
+      h('div', { class: 'section-title' }, h('h2', {}, 'Profile strength'), h('strong', {}, `${strength.score}%`)),
+      h('div', { class: 'meter', role: 'img', 'aria-label': `Profile ${strength.score}% complete` }, h('span', { style: `width:${strength.score}%` })),
+      strength.next
+        ? h('p', { class: 'small muted', style: 'margin:0' }, 'Next: ', h('a', { href: '#/profile' }, strength.next))
+        : h('p', { class: 'small muted', style: 'margin:0' }, 'Complete. Claude has everything it needs to match you.'),
+    ),
+    steps.every((x) => x.done)
+      ? ''
+      : h(
+          'section',
+          { class: 'card' },
+          h('div', { class: 'section-title' }, h('h2', {}, 'Next steps')),
+          h('ol', { class: 'checklist' }, ...steps.map((x) => h('li', { class: x.done ? 'done' : '' }, h('a', { href: x.href }, x.label)))),
+        ),
+  );
 
   view.append(
     h(
       'section',
-      { class: 'hero' },
-      h('h1', {}, profile.name ? `Hi ${profile.name.split(' ')[0]}, let's land your next role.` : "Let's land your next role."),
-      h('p', { class: 'muted' }, 'Find jobs, tailor your CV and cover letter for each one, track every application and prepare for interviews, all in one place.'),
-      h(
-        'div',
-        { class: 'row' },
-        h('a', { class: 'btn primary', href: '#/find' }, 'Find jobs'),
-        h('a', { class: 'btn', href: '#/add' }, 'Add a job I found'),
-      ),
+      { class: 'home-hero' },
+      h('h1', {}, first ? `Find your next job, ${first}` : 'Find your next job'),
+      h('p', {}, 'One search covers the job portals near you. Claude ranks every role against your CV, then helps you tailor your application and practise the interview.'),
+      form,
     ),
-    feedSection(),
-    h(
-      'section',
-      { class: 'stats' },
-      ...STATUSES.map((s) =>
-        h('a', { class: `stat status-${s.id}`, href: '#/tracker' }, h('strong', {}, String(count(s.id))), h('span', {}, s.label)),
-      ),
-    ),
-    h(
-      'div',
-      { class: 'grid-2' },
-      h(
-        'section',
-        { class: 'card' },
-        h('h2', {}, 'Getting started'),
-        h(
-          'ol',
-          { class: 'checklist' },
-          ...steps.map((s) => h('li', { class: s.done ? 'done' : '' }, h('a', { href: s.href }, s.label))),
-        ),
-      ),
-      h(
-        'section',
-        { class: 'card' },
-        h('h2', {}, 'Recently saved'),
-        recent.length
-          ? h(
-              'ul',
-              { class: 'plain-list' },
-              ...recent.map((j) =>
-                h(
-                  'li',
-                  {},
-                  h('a', { href: `#/job/${encodeURIComponent(j.id)}` }, h('strong', {}, j.title), h('span', { class: 'muted' }, ` · ${j.company}`)),
-                  statusBadge(j.status),
-                ),
-              ),
-            )
-          : h('p', { class: 'muted' }, 'Nothing saved yet. Search for jobs or add one you found elsewhere.'),
-      ),
-    ),
+    h('div', { class: 'home-grid' }, h('div', {}, feedSection()), side),
   );
 }
 
@@ -415,40 +466,96 @@ function renderFind() {
     sources: [...SOURCE_IDS],
   };
   session.filter ??= '';
+  let remoteOnly = Boolean(defaults.remoteOnly);
+  const wide = () => window.matchMedia('(min-width: 1024px)').matches;
 
-  const q = h('input', { id: 'find-q', type: 'search', placeholder: 'Job title, skill or keyword', value: defaults.query, 'aria-label': 'Keywords' });
-  const loc = h('input', { id: 'find-loc', type: 'text', placeholder: 'City or country, e.g. Amsterdam', value: defaults.location, 'aria-label': 'Location' });
-  const remote = h('input', { id: 'find-remote', type: 'checkbox', checked: defaults.remoteOnly });
+  const results = h('div', { class: 'results', role: 'list' });
+  const status = h('p', { class: 'find-status', role: 'status' });
+  const filters = h('div', { class: 'chip-row', role: 'group', 'aria-label': 'Filter by job site' });
+  const detail = h('aside', { class: 'detail-pane', 'aria-label': 'Job details' });
+  const portalBox = h('section', { class: 'portals' });
+  const aiStream = h('div', { class: 'ai-output compact', hidden: true });
 
-  const results = h('div', { class: 'results' });
-  const status = h('p', { class: 'muted small', role: 'status' });
-  const filters = h('div', { class: 'chip-row', role: 'group', 'aria-label': 'Filter by portal' });
-  const portalBox = h('section', { class: 'card portals' });
+  const bar = searchBar({
+    what: defaults.query,
+    where: remoteOnly ? 'remote' : defaults.location,
+    idPrefix: 'find',
+    button: 'Search',
+    onSubmit: () => search(),
+  });
 
-  const params = () => ({ query: q.value.trim(), location: loc.value.trim(), remoteOnly: remote.checked, sources: [...SOURCE_IDS] });
+  const params = () => {
+    const where = bar.l.value.trim();
+    const isRemote = remoteOnly || /^remote$/i.test(where);
+    return { query: bar.q.value.trim(), location: /^remote$/i.test(where) ? '' : where, remoteOnly: isRemote, sources: [...SOURCE_IDS] };
+  };
 
-  // Links to every portal's own search page for this query and place.
+  // Filters row
+  const remoteChip = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(remoteOnly) }, 'Remote only');
+  remoteChip.addEventListener('click', () => {
+    remoteOnly = !remoteOnly;
+    remoteChip.setAttribute('aria-pressed', String(remoteOnly));
+    drawPortals();
+  });
+  const scoreBtn = aiButton('Rank by my CV', {
+    variant: 'small',
+    task: async (_onText, signal) => {
+      if (!store.get().profile.cv.trim()) throw new Error('Add your CV in Profile so matches can be ranked.');
+      if (!session.results.length) throw new Error('Search first, then rank the results.');
+      status.textContent = 'Ranking each job against your CV…';
+      session.scores = await ai.scoreJobs(session.results, { signal });
+      session.results.sort((a, b) => (session.scores[b.id]?.score ?? -1) - (session.scores[a.id]?.score ?? -1));
+      drawResults();
+      return '';
+    },
+  });
+  const boardsBtn = inArtifact ? '' : h('button', { class: 'btn small', type: 'button' }, 'Free job boards');
+  if (boardsBtn) boardsBtn.addEventListener('click', runBoardSearch);
+
+  // Every portal's own search page for this query and place.
   function drawPortals() {
-    const { query, location, remoteOnly } = params();
-    const { portals, countryName } = portalsFor(query || 'jobs', location, { remote: remoteOnly });
+    const { query, location, remoteOnly: r } = params();
+    const { portals, countryName } = portalsFor(query || 'jobs', location, { remote: r });
     portalBox.replaceChildren(
-      h('h2', {}, countryName ? `Job portals in ${countryName}` : location ? 'Job portals' : 'Job portals worldwide'),
-      h(
-        'p',
-        { class: 'muted small' },
-        countryName || !location
-          ? 'Open the full search on each portal for these keywords and location.'
-          : `No portal list for "${location}" yet; showing international portals. Try adding the country.`,
-      ),
-      h(
-        'div',
-        { class: 'portal-links' },
-        ...portals.map((x) => h('a', { class: 'portal-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.name, h('span', { 'aria-hidden': 'true' }, ' ↗'))),
-      ),
+      h('h2', {}, countryName ? `Search on job sites in ${countryName}` : 'Search on other job sites'),
+      h('p', { class: 'muted small', style: 'margin:0' }, countryName || !location ? 'Opens each site\'s own results for this search.' : `No site list for "${location}" yet. Add the country to see local sites.`),
+      h('div', { class: 'portal-links' }, ...portals.map((x) => h('a', { class: 'portal-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.name, h('span', { 'aria-hidden': 'true' }, '↗')))),
     );
   }
-  for (const el of [q, loc]) el.addEventListener('input', debounce(drawPortals, 250));
-  remote.addEventListener('change', drawPortals);
+  for (const el of [bar.q, bar.l]) el.addEventListener('input', debounce(drawPortals, 250));
+
+  async function search() {
+    if (ai.hasKey()) return aiSearch();
+    if (!inArtifact) return runBoardSearch();
+    toast('Allow this page to use Claude to search job sites.');
+  }
+
+  async function aiSearch() {
+    const p = params();
+    session.query = p;
+    bar.submit.disabled = true;
+    bar.submit.textContent = 'Searching…';
+    results.replaceChildren(skeleton());
+    detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Searching job sites…'));
+    status.textContent = `Searching job sites${p.location ? ` in ${p.location}` : ''}. This usually takes under a minute.`;
+    const ctl = newAbort();
+    try {
+      const { jobs } = await ai.searchEverywhere(p, { onText: (t) => (status.textContent = t), signal: ctl.signal, rank: Boolean(store.get().profile.cv.trim()) });
+      session.results = jobs;
+      session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
+      session.examples = false;
+      session.filter = '';
+      session.selected = jobs[0]?.id;
+      session.errors = jobs.length ? [] : ['No open postings found for this search'];
+    } catch (err) {
+      if (ctl.signal.aborted) return;
+      session.errors = [err.message];
+    } finally {
+      bar.submit.disabled = false;
+      bar.submit.textContent = 'Search';
+    }
+    drawResults();
+  }
 
   async function runBoardSearch() {
     const p = params();
@@ -461,6 +568,7 @@ function renderFind() {
     session.scores = {};
     session.errors = errors;
     session.filter = '';
+    session.selected = jobs[0]?.id;
     drawResults();
   }
 
@@ -470,50 +578,9 @@ function renderFind() {
     session.scores = {};
     session.errors = [];
     session.examples = true;
+    session.selected = jobs[0]?.id;
     drawResults();
   }
-
-  const aiStream = h('div', { class: 'ai-output compact', hidden: true });
-  const searchBtn = aiButton('Search all portals', {
-    output: aiStream,
-    task: async (onText, signal) => {
-      const p = params();
-      session.query = p;
-      aiStream.hidden = false;
-      results.replaceChildren(skeleton());
-      status.textContent = 'Searching job portals… this usually takes under a minute.';
-      try {
-        const { jobs } = await ai.searchEverywhere(p, { onText: (t) => onText(t), signal });
-        session.results = jobs;
-        session.scores = {};
-        session.examples = false;
-        session.filter = '';
-        session.errors = jobs.length ? [] : ['No open postings found for this search'];
-        aiStream.hidden = true;
-        drawResults();
-        return '';
-      } catch (err) {
-        drawResults();
-        throw err;
-      }
-    },
-  });
-
-  const boardsBtn = inArtifact ? '' : h('button', { class: 'btn', type: 'button' }, 'Free job boards');
-  if (boardsBtn) boardsBtn.addEventListener('click', runBoardSearch);
-
-  const scoreBtn = aiButton('Score matches', {
-    variant: '',
-    task: async (_onText, signal) => {
-      if (!store.get().profile.cv.trim()) throw new Error('Add your CV in Profile so matches can be scored.');
-      if (!session.results.length) throw new Error('Search first, then score the results.');
-      status.textContent = 'Scoring how well each job fits your CV…';
-      session.scores = await ai.scoreJobs(session.results, { signal });
-      session.results.sort((a, b) => (session.scores[b.id]?.score ?? -1) - (session.scores[a.id]?.score ?? -1));
-      drawResults();
-      return '';
-    },
-  });
 
   function drawResults() {
     const all = session.results;
@@ -524,94 +591,142 @@ function renderFind() {
 
     const n = all.length;
     status.textContent = session.examples
-      ? 'These are example listings. Press Search all portals to find live openings.'
-      : `${n} job${n === 1 ? '' : 's'} found` + (counts.size > 1 ? ` on ${counts.size} sites` : '') + (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
+      ? 'Example listings. Search to see live openings near you.'
+      : session.errors.length && !n
+        ? session.errors.join(' · ')
+        : `${n} job${n === 1 ? '' : 's'}${counts.size > 1 ? ` from ${counts.size} sites` : ''}${Object.keys(session.scores).length ? ', best match first' : ''}` +
+          (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
 
-    const chip = (label, value, count) => {
-      const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(session.filter === value) }, label, h('span', { class: 'chip-count' }, String(count)));
+    const chip = (label, value, c) => {
+      const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(session.filter === value) }, label, h('span', { class: 'chip-count' }, String(c)));
       b.addEventListener('click', () => {
         session.filter = value;
         drawResults();
       });
       return b;
     };
-    filters.replaceChildren(...(counts.size > 1 && !session.examples ? [chip('All', '', n), ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => chip(k, k, c))] : []));
+    filters.replaceChildren(
+      remoteChip,
+      ...(counts.size > 1 && !session.examples ? [chip('All sites', '', n), ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => chip(k, k, c))] : []),
+    );
 
     if (!shown.length) {
-      results.replaceChildren(
-        h('div', { class: 'empty' }, h('p', {}, 'No jobs to show. Try broader keywords, open a portal above, or '), h('a', { href: '#/add' }, 'add a job you found elsewhere.')),
-      );
+      results.replaceChildren(h('div', { class: 'empty card' }, h('p', {}, 'No jobs to show. Try broader keywords, or open one of the job sites below.')));
+      detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Pick a job to see the details here.'));
       return;
     }
+    if (!shown.some((j) => j.id === session.selected)) session.selected = shown[0].id;
     results.replaceChildren(...shown.map(jobCard));
+    drawDetail();
+  }
+
+  function select(job) {
+    session.selected = job.id;
+    for (const c of results.children) c.classList.toggle('selected', c.dataset.id === job.id);
+    drawDetail();
+    detail.scrollTop = 0;
+  }
+
+  function saveToggle(job, small = true) {
+    const saved = () => Boolean(store.get().jobs[job.id]);
+    const b = h('button', { class: `btn ${small ? 'small' : ''}`, type: 'button', 'aria-pressed': String(saved()) }, saved() ? 'Saved' : 'Save');
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (saved()) return go(`/job/${encodeURIComponent(job.id)}`);
+      store.saveJob({ ...job, match: session.scores[job.id] || job.match });
+      b.textContent = 'Saved';
+      b.setAttribute('aria-pressed', 'true');
+      toast('Saved to your applications');
+    });
+    return b;
+  }
+
+  function meta(job) {
+    return h(
+      'div',
+      { class: 'meta' },
+      job.location ? h('span', {}, job.location) : '',
+      job.salary ? h('span', { class: 'salary' }, job.salary) : '',
+      job.remote && !/remote/i.test(job.location || '') ? h('span', {}, 'Remote') : '',
+      job.posted ? h('span', {}, job.posted) : '',
+    );
   }
 
   function jobCard(job) {
-    const saved = Boolean(store.get().jobs[job.id]);
-    const saveBtn = h('button', { class: 'btn small', type: 'button', disabled: saved }, saved ? 'Saved' : 'Save');
-    saveBtn.addEventListener('click', () => {
-      store.saveJob({ ...job, match: session.scores[job.id] });
-      saveBtn.textContent = 'Saved';
-      saveBtn.disabled = true;
-      toast('Saved to your tracker');
-    });
-    return h(
+    const href = `#/job/${encodeURIComponent(job.id)}`;
+    const card = h(
       'article',
-      { class: 'job-card' },
+      { class: `job-card ${job.id === session.selected && wide() ? 'selected' : ''}`, 'data-id': job.id, role: 'listitem' },
+      h('div', { class: 'job-card-head' }, h('div', {}, h('h3', {}, h('a', { href }, job.title)), h('p', { class: 'company' }, job.company || '')), scorePill(session.scores[job.id])),
+      meta(job),
+      session.scores[job.id]?.reason ? h('p', { class: 'reason' }, session.scores[job.id].reason) : h('p', { class: 'snippet' }, job.description || ''),
+      h('div', { class: 'job-card-foot' }, h('span', { class: 'tag source' }, job.source), saveToggle(job)),
+    );
+    // On wide screens a click opens the job beside the list; on phones it opens the job page.
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      if (wide()) {
+        e.preventDefault();
+        select(job);
+      } else if (!e.target.closest('a')) go(`/job/${encodeURIComponent(job.id)}`);
+    });
+    return card;
+  }
+
+  function drawDetail() {
+    const job = session.results.find((j) => j.id === session.selected);
+    if (!job) return detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Pick a job to see the details here.'));
+    const score = session.scores[job.id];
+    const open = (tab) => () => {
+      try {
+        sessionStorage.setItem('ajh:tab', tab);
+      } catch {}
+      go(`/job/${encodeURIComponent(job.id)}`);
+    };
+    const tailor = h('button', { class: 'btn primary', type: 'button' }, 'Tailor my CV');
+    tailor.addEventListener('click', open('docs'));
+    const prep = h('button', { class: 'btn', type: 'button' }, 'Practise interview');
+    prep.addEventListener('click', open('prep'));
+    detail.replaceChildren(
       h(
         'div',
-        { class: 'job-card-head' },
-        h('div', {}, h('h3', {}, h('a', { href: `#/job/${encodeURIComponent(job.id)}` }, job.title)), h('p', { class: 'muted' }, [job.company, job.location].filter(Boolean).join(' · '))),
-        scorePill(session.scores[job.id]),
-      ),
-      session.scores[job.id] && h('p', { class: 'small reason' }, session.scores[job.id].reason),
-      h('p', { class: 'snippet' }, (job.description || '').slice(0, 260) + ((job.description || '').length > 260 ? '…' : '')),
-      h(
-        'div',
-        { class: 'job-card-foot' },
-        h('div', { class: 'tags' }, h('span', { class: 'tag source' }, job.source), ...[job.salary, ...(job.tags || [])].filter(Boolean).map((t) => h('span', { class: 'tag' }, t))),
+        { class: 'detail-head' },
+        h('h2', {}, job.title),
+        h('p', { class: 'company' }, [job.company, job.source].filter(Boolean).join(' · ')),
+        meta(job),
         h(
           'div',
-          { class: 'row' },
-          job.url ? h('a', { class: 'btn small', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'Posting ↗') : '',
-          saveBtn,
-          h('a', { class: 'btn small primary', href: `#/job/${encodeURIComponent(job.id)}` }, 'Open'),
+          { class: 'detail-actions' },
+          tailor,
+          job.url ? h('a', { class: 'btn', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'View posting ↗') : '',
+          saveToggle(job, false),
+          prep,
         ),
+      ),
+      h(
+        'div',
+        { class: 'detail-body' },
+        score ? h('div', { class: 'match-box' }, scorePill(score), h('p', {}, score.reason || 'Ranked against your CV.')) : '',
+        h('h3', {}, 'About the role'),
+        h('div', { class: 'description' }, job.description || 'No description provided. Open the posting for the full details.'),
       ),
     );
   }
 
-  const form = h(
-    'form',
-    { class: 'card search-form' },
-    h('div', { class: 'search-row' }, q, loc, searchBtn),
-    h('div', { class: 'row wrap' }, h('label', { class: 'check' }, remote, 'Remote only'), h('span', { class: 'spacer' }), boardsBtn, scoreBtn),
-  );
-  form.addEventListener('submit', (e) => e.preventDefault());
-  for (const el of [q, loc]) {
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (ai.hasKey()) searchBtn.click();
-        else if (boardsBtn) runBoardSearch();
-      }
-    });
-  }
-
   view.append(
-    pageHeader('Find jobs', 'Claude searches the job portals for your location, plus LinkedIn and company careers pages, and gathers the openings here.'),
-    profileNotice() || '',
-    !ai.hasKey() && !inArtifact ? h('div', { class: 'notice' }, 'Add an API key in ', h('a', { href: '#/settings' }, 'Settings'), ' to search every portal. Until then, use the free job boards or the portal links below.') : '',
-    form,
-    portalBox,
+    h('div', { class: 'find-top' }, bar.form, h('div', { class: 'find-tools' }, filters, h('span', { class: 'spacer' }), boardsBtn, scoreBtn)),
+    !ai.hasKey() && !inArtifact ? h('div', { class: 'notice' }, 'Add an API key in ', h('a', { href: '#/settings' }, 'Settings'), ' to search every job site at once. Until then, use the free job boards or the site links below.') : '',
     aiStream,
     status,
-    filters,
-    results,
+    h('div', { class: 'split' }, h('div', {}, results, portalBox), detail),
   );
   drawPortals();
+  filters.replaceChildren(remoteChip);
 
-  if (session.results.length) drawResults();
+  if (session.autoSearch) {
+    session.autoSearch = false;
+    search();
+  } else if (session.results.length) drawResults();
   else if (inArtifact || ai.hasKey()) showExamples();
   else runBoardSearch();
 }
@@ -1251,17 +1366,36 @@ function renderJob(id) {
     renderInterviewGame(root, job, { ensureSaved });
   }
 
+  const match = job.match || store.get().jobs[id]?.match;
+  const applyBtn = job.url ? h('a', { class: 'btn primary', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'Apply on company site ↗') : '';
+  const saveBtn = h('button', { class: 'btn', type: 'button' }, saved() ? 'Saved' : 'Save job');
+  saveBtn.disabled = saved();
+  saveBtn.addEventListener('click', () => {
+    ensureSaved();
+    saveBtn.textContent = 'Saved';
+    saveBtn.disabled = true;
+    toast('Saved to your applications');
+  });
   const header = h(
-    'header',
-    { class: 'page-header' },
+    'div',
+    {},
+    h('a', { class: 'back', href: saved() ? '#/tracker' : '#/find' }, '← Back'),
     h(
-      'div',
-      {},
-      h('a', { class: 'back', href: saved() ? '#/tracker' : '#/find' }, '← Back'),
-      h('h1', {}, job.title),
-      h('p', { class: 'muted' }, [job.company, job.location, job.salary].filter(Boolean).join(' · ')),
+      'header',
+      { class: 'job-hero' },
+      h('div', { class: 'row space wrap', style: 'align-items:flex-start' }, h('h1', {}, job.title), scorePill(match)),
+      h('p', { class: 'company' }, job.company || ''),
+      h(
+        'div',
+        { class: 'meta' },
+        job.location ? h('span', {}, job.location) : '',
+        job.salary ? h('span', { class: 'salary' }, job.salary) : '',
+        job.source ? h('span', {}, `via ${job.source}`) : '',
+        saved() ? statusBadge(store.get().jobs[id].status) : '',
+      ),
+      match?.reason ? h('p', { class: 'small', style: 'margin:var(--sp-3) 0 0;color:var(--text-2)' }, match.reason) : '',
+      h('div', { class: 'detail-actions' }, applyBtn, saveBtn),
     ),
-    h('div', { class: 'row' }, job.url ? h('a', { class: 'btn', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'View posting ↗') : ''),
   );
 
   view.append(header, tabBar, panel);
