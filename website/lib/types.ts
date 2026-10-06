@@ -1,4 +1,4 @@
-export type CategoryId = "ready-to-wear" | "bags" | "shoes";
+export type CategoryId = "ready-to-wear" | "bags" | "shoes" | "kids";
 
 export type Silhouette =
   | "sweater" | "coat" | "skirt" | "shirt" | "trousers"

@@ -74,6 +74,16 @@ export const sizeChart = {
       ["XL", "42", "14", "10", "97–101", "79–83", "105–109"],
     ],
   },
+  kids: {
+    head: ["Size", "Height", "Chest"],
+    rows: [
+      ["12–18M", "80–86", "50"],
+      ["18–24M", "86–92", "52"],
+      ["2–3Y", "92–98", "54"],
+      ["3–4Y", "98–104", "56"],
+      ["4–5Y", "104–110", "58"],
+    ],
+  },
   shoes: {
     head: ["EU", "UK", "US", "Foot length"],
     rows: [
@@ -358,6 +368,7 @@ export const footerLinks = {
     { href: "/shop/ready-to-wear", label: "Ready-to-Wear" },
     { href: "/shop/bags", label: "Bags" },
     { href: "/shop/shoes", label: "Shoes" },
+    { href: "/shop/kids", label: "Kids" },
   ],
   Legal: [
     { href: "/pages/terms", label: "Terms and conditions" },

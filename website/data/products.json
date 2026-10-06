@@ -67,69 +67,64 @@
     "compareAtCents": 29900
   },
   {
-    "id": "alma-chunky-rib-knit",
-    "slug": "alma-chunky-rib-knit",
-    "name": "Alma Chunky Rib Knit",
-    "category": "ready-to-wear",
+    "id": "soft-knit-cable-cardigan",
+    "slug": "soft-knit-cable-cardigan",
+    "name": "Soft Knit Cable Cardigan",
+    "category": "kids",
     "silhouette": "sweater",
-    "priceCents": 12900,
-    "colour": "Burgundy",
-    "description": "A generous crew-neck sweater in a deep, chunky rib, with dropped shoulders and a slightly longer body.",
+    "priceCents": 7900,
+    "colour": "Cream",
+    "description": "Wrap your little one in timeless comfort with our Soft Knit Cable Cardigan. Crafted with a cozy, chunky knit texture, this elegant cream-colored cardigan features beautiful cable-knit detailing, natural wooden buttons, ribbed cuffs and hem, and two practical front pockets. The soft neutral tone makes it easy to pair with everyday outfits while giving any look a sweet, premium and timeless aesthetic. Perfect for chilly days, family outings, photoshoots, or special occasions.",
     "details": [
-      "Wool-blend chunky knit",
-      "Length in size M: 66 cm",
-      "Relaxed fit, true to size"
+      "Chunky cable knit with diamond and twist patterns",
+      "Natural wooden buttons",
+      "Ribbed cuffs and hem with a soft taupe tipping",
+      "Two front patch pockets",
+      "Colour: cream"
     ],
     "care": [
-      "Hand wash cold or dry clean",
-      "Dry flat, do not hang"
+      "Hand wash cold or machine wash on a wool cycle",
+      "Dry flat to keep its shape",
+      "Do not tumble dry"
     ],
-    "images": [],
-    "swatch": "#5e1f2b",
+    "images": [
+      "/images/products/soft-knit-cable-cardigan/1.jpg",
+      "/images/products/soft-knit-cable-cardigan/2.jpg",
+      "/images/products/soft-knit-cable-cardigan/3.jpg",
+      "/images/products/soft-knit-cable-cardigan/4.jpg",
+      "/images/products/soft-knit-cable-cardigan/5.jpg"
+    ],
+    "swatch": "#efe7da",
     "variantLabel": "Size",
     "variants": [
       {
-        "id": "alma-chunky-rib-knit-xs",
-        "label": "XS",
+        "id": "soft-knit-cable-cardigan-12-18m",
+        "label": "12–18M",
         "supplierVid": null
       },
       {
-        "id": "alma-chunky-rib-knit-s",
-        "label": "S",
+        "id": "soft-knit-cable-cardigan-18-24m",
+        "label": "18–24M",
         "supplierVid": null
       },
       {
-        "id": "alma-chunky-rib-knit-m",
-        "label": "M",
+        "id": "soft-knit-cable-cardigan-2-3y",
+        "label": "2–3Y",
         "supplierVid": null
       },
       {
-        "id": "alma-chunky-rib-knit-l",
-        "label": "L",
+        "id": "soft-knit-cable-cardigan-3-4y",
+        "label": "3–4Y",
         "supplierVid": null
       },
       {
-        "id": "alma-chunky-rib-knit-xl",
-        "label": "XL",
+        "id": "soft-knit-cable-cardigan-4-5y",
+        "label": "4–5Y",
         "supplierVid": null
       }
     ],
     "deliveryDays": "8–15 business days",
     "supplier": "cj",
-    "sourcing": {
-      "keyword": "women oversized chunky rib knit sweater",
-      "why": "Knitwear is the most invested AW26 category; burgundy is the colour of the season.",
-      "cjCandidates": [
-        {
-          "title": "Women's Thick Knitted Pullover Sweater Loose Fit Round Neck Casual All-Match Top For Autumn Winter",
-          "pid": "2510310557511655500",
-          "options": "light gray, dark green, brown, pink · S–XL",
-          "url": "https://cjdropshipping.com/product/womens-thick-knitted-pullover-sweater-loose-fit-round-neck-casual-all-match-top-for-autumn-winter-p-2510310557511655500.html",
-          "cjPrice": "$5.31–8.33"
-        }
-      ]
-    },
-    "example": true,
     "published": true
   },
   {

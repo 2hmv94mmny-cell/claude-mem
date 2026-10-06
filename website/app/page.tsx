@@ -10,6 +10,7 @@ const categoryArt: Record<CategoryId, { tone: string; silhouette: Silhouette }> 
   "ready-to-wear": { tone: "#a79d8e", silhouette: "coat" },
   bags: { tone: "#7a4f33", silhouette: "tote" },
   shoes: { tone: "#2a2725", silhouette: "boot" },
+  kids: { tone: "#e9e1d4", silhouette: "sweater" },
 };
 
 export default function Home() {
@@ -37,7 +38,7 @@ export default function Home() {
 
       <section className="section wrap" aria-label="Collections">
         <div className="triptych">
-          {categories.map((c) => (
+          {categories.filter((c) => c.id !== "kids").map((c) => (
             <Link key={c.id} href={`/shop/${c.id}`}>
               <div className="frame">
                 <Placeholder tone={categoryArt[c.id].tone} silhouette={categoryArt[c.id].silhouette} />

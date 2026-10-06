@@ -26,8 +26,11 @@ function routeId(path) {
   return clean === "" || clean === "index" ? "home" : clean.replace(/\//g, "-");
 }
 
+// Page links become hash routes; images from public/ become relative paths published alongside the page.
 function rewriteLinks(html) {
-  return html.replace(/href="(\/[^"#?]*)"/g, (_, path) => `href="#${routeId(path)}"`);
+  return html
+    .replace(/href="(\/[^"#?]*)"/g, (_, path) => `href="#${routeId(path)}"`)
+    .replace(/src="\/images\//g, 'src="images/');
 }
 
 function clean(html) {

@@ -988,7 +988,7 @@ body.menu-open {
 
 .options {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
   gap: 6px;
   border: 0;
   padding: 0;
@@ -1016,6 +1016,7 @@ body.menu-open {
   cursor: pointer;
   transition: border-color 150ms ease;
   text-align: center;
+  white-space: nowrap;
 }
 
 .option input {

@@ -86,7 +86,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {categories.map((c) => (
               <Link key={c.id} href={`/shop/${c.id}`}>
                 <span className="menu-link-name">{c.name}</span>
-                <span className="menu-link-meta label">{getProductsByCategory(c.id).length} pieces</span>
+                <span className="menu-link-meta label">
+                  {getProductsByCategory(c.id).length} {getProductsByCategory(c.id).length === 1 ? "piece" : "pieces"}
+                </span>
               </Link>
             ))}
             <Link href="/pages/about">
