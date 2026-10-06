@@ -1,0 +1,340 @@
+<title>Jarvis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+  /* Layout: one-screen HUD — status strip, arc-reactor core, transcript, input dock. Single deliberate dark theme. */
+  :root {
+    color-scheme: dark;
+    --bg: #070d16;
+    --panel: #0d1726;
+    --line: #1b2d44;
+    --fg: #dbe7f3;
+    --muted: #7d93ab;
+    --arc: #5fd4ff;
+    --arc-dim: rgba(95, 212, 255, 0.18);
+    --hot: #ff6b4a;
+    --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 0%, #0f2238 0%, var(--bg) 60%) fixed, var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 15px;
+  }
+  .app {
+    height: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    padding-inline: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding-block: 14px 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 20px;
+    letter-spacing: 0.32em;
+    color: var(--arc);
+  }
+  .status {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 10px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--arc); box-shadow: 0 0 8px var(--arc); }
+  .status.busy .dot { background: #ffc857; box-shadow: 0 0 8px #ffc857; }
+  .status.listen .dot { background: var(--hot); box-shadow: 0 0 8px var(--hot); }
+  h1 { padding-bottom: 10px; }
+
+  .log {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-block: 8px;
+  }
+  .msg { display: flex; flex-direction: column; gap: 4px; max-width: 88%; min-width: 0; }
+  .msg .who {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .msg .body { line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.you { align-self: flex-end; text-align: right; }
+  .msg.you .body { background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; border-radius: 14px 14px 4px 14px; text-align: left; }
+  .msg.jarvis { align-self: flex-start; padding-left: 12px; border-left: 2px solid var(--arc); }
+  .msg.jarvis .who { color: var(--arc); }
+  .msg.error .body { color: var(--hot); }
+
+  .dock {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-block: 10px 16px;
+    border-top: 1px solid var(--line);
+  }
+  .dock input {
+    flex: 1;
+    min-width: 0;
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 13px 18px;
+    font: inherit;
+  }
+  .dock input:focus-visible { outline: 2px solid var(--arc); outline-offset: 1px; }
+
+  /* The arc reactor: the mic button */
+  .reactor {
+    flex: none;
+    width: 54px; height: 54px;
+    border-radius: 50%;
+    border: 2px solid var(--arc);
+    background: radial-gradient(circle, var(--arc) 0 18%, var(--arc-dim) 19% 46%, transparent 47%), var(--panel);
+    box-shadow: 0 0 14px var(--arc-dim), inset 0 0 10px var(--arc-dim);
+    cursor: pointer;
+    position: relative;
+  }
+  .reactor::after {
+    content: "";
+    position: absolute; inset: 6px;
+    border-radius: 50%;
+    border: 1px dashed rgba(95, 212, 255, 0.55);
+  }
+  .reactor.on { border-color: var(--hot); background: radial-gradient(circle, var(--hot) 0 18%, rgba(255,107,74,.2) 19% 46%, transparent 47%), var(--panel); }
+  .reactor.on::after { border-color: rgba(255,107,74,.6); animation: spin 2.4s linear infinite; }
+  .reactor:focus-visible, .send:focus-visible, .toggle:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+  .reactor[disabled] { opacity: 0.35; cursor: not-allowed; }
+  .send {
+    flex: none;
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 13px;
+    background: transparent;
+    color: var(--arc);
+    border: 1px solid var(--arc);
+    border-radius: 999px;
+    padding: 12px 16px;
+    cursor: pointer;
+  }
+  .send:hover { background: var(--arc-dim); }
+  .send[disabled] { opacity: 0.4; cursor: default; }
+  .toggle {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 5px 8px;
+    cursor: pointer;
+    margin-bottom: 10px;
+  }
+  .toggle[aria-pressed="true"] { color: var(--arc); border-color: var(--arc); }
+  .note { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: center; margin: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .reactor.on::after { animation: none; } }
+  @media (max-width: 440px) { .send { padding: 12px 12px; } h1 { font-size: 17px; letter-spacing: 0.24em; } }
+</style>
+
+<div class="app">
+  <header>
+    <h1>J.A.R.V.I.S.</h1>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Online</span></div>
+    <button class="toggle" id="voiceToggle" aria-pressed="true" type="button">Voice on</button>
+  </header>
+
+  <main class="log" id="log" aria-live="polite">
+    <div class="msg jarvis">
+      <span class="who">Jarvis</span>
+      <div class="body">Good day. All systems are online. Speak by tapping the reactor, or type below. What can I do for you?</div>
+    </div>
+  </main>
+
+  <p class="note" id="note" hidden></p>
+  <form class="dock" id="form">
+    <input id="input" type="text" placeholder="Ask Jarvis…" autocomplete="off" aria-label="Message to Jarvis">
+    <button class="reactor" id="mic" type="button" aria-label="Talk to Jarvis"></button>
+    <button class="send" id="send" type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+  const RULES = `You are JARVIS, a witty, calm, highly capable personal AI assistant in the style of Tony Stark's butler AI.
+Your replies are read aloud, so keep them short and conversational (1-3 sentences unless asked for more).
+Use plain sentences: no markdown, lists, headings or code blocks. Address the user as "sir" or "ma'am" sparingly, only if it fits.`;
+
+  const $ = (id) => document.getElementById(id);
+  const log = $("log"), input = $("input"), form = $("form"), mic = $("mic"), send = $("send");
+  const statusEl = $("status"), statusText = $("statusText"), note = $("note"), voiceToggle = $("voiceToggle");
+
+  const turns = [];
+  let samplePromise = window.claude?.use ? window.claude.use("sample") : Promise.resolve(null);
+  let busy = false, ctl = null;
+  let voiceOn = true;
+  try { voiceOn = localStorage.getItem("jarvis-voice") !== "off"; } catch {}
+  syncVoice();
+
+  function setStatus(text, mode) {
+    statusText.textContent = text;
+    statusEl.className = "status" + (mode ? " " + mode : "");
+  }
+  function showNote(text) { note.textContent = text; note.hidden = !text; }
+
+  function addMsg(role, text) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg " + (role === "user" ? "you" : "jarvis");
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = role === "user" ? "You" : "Jarvis";
+    const body = document.createElement("div");
+    body.className = "body";
+    body.textContent = text;
+    wrap.append(who, body);
+    log.append(wrap);
+    log.scrollTop = log.scrollHeight;
+    return { wrap, body };
+  }
+
+  function speak(text) {
+    if (!voiceOn || !("speechSynthesis" in window)) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      const voices = speechSynthesis.getVoices();
+      const v = voices.find(v => /en-GB/i.test(v.lang) && /male|daniel|george|arthur/i.test(v.name))
+             || voices.find(v => /en-GB/i.test(v.lang)) || voices.find(v => /^en/i.test(v.lang));
+      if (v) u.voice = v;
+      u.rate = 1.02; u.pitch = 0.9;
+      speechSynthesis.speak(u);
+    } catch {}
+  }
+
+  const ERR = {
+    not_granted: "Jarvis needs your permission to use Claude. Reload the page and choose Allow.",
+    sampling_disabled: "Claude isn't available for this account.",
+    rate_limited: "Too many requests right now. Wait a moment, then send again.",
+    session_expired: "Your session expired. Sign in to claude.ai again.",
+    refused: "I can't help with that one. Try asking something else.",
+  };
+
+  async function ask(text) {
+    text = text.trim();
+    if (!text || busy) return;
+    const sample = await samplePromise;
+    if (!sample) {
+      showNote("Open this page on claude.ai to talk to Jarvis.");
+      return;
+    }
+    busy = true; send.disabled = true; showNote("");
+    try { speechSynthesis?.cancel(); } catch {}
+    addMsg("user", text);
+    turns.push({ role: "user", content: text });
+    input.value = "";
+    const { wrap, body } = addMsg("assistant", "Thinking…");
+    setStatus("Thinking", "busy");
+    ctl = new AbortController();
+    try {
+      // keep the last 20 turns plus the standing rules
+      const history = turns.slice(-20);
+      const { text: reply } = await sample([{ role: "user", content: RULES }, ...history], {
+        cache: false,
+        modelTier: "quick",
+        signal: ctl.signal,
+        onText: ({ text }) => { body.textContent = text; log.scrollTop = log.scrollHeight; },
+      });
+      turns.push({ role: "assistant", content: reply });
+      body.textContent = reply;
+      speak(reply);
+    } catch (e) {
+      turns.pop();
+      body.textContent = e?.text || ERR[e?.code] || "I lost the connection. Send your message again.";
+      if (!e?.text) wrap.classList.add("error");
+      if (e?.code === "not_granted" || e?.code === "sampling_disabled") mic.disabled = true;
+    } finally {
+      busy = false; send.disabled = false; setStatus("Online");
+    }
+  }
+
+  form.addEventListener("submit", (e) => { e.preventDefault(); ask(input.value); });
+
+  // Voice input via the browser's speech recognition, where the browser allows it
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, listening = false;
+  if (!SR) { mic.disabled = true; mic.title = "Voice input isn't supported in this browser"; }
+  mic.addEventListener("click", () => {
+    if (!SR) return;
+    if (listening) { rec?.stop(); return; }
+    try {
+      rec = new SR();
+      rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false;
+      let finalText = "";
+      rec.onresult = (ev) => {
+        let t = "";
+        for (const r of ev.results) t += r[0].transcript;
+        input.value = t;
+        if (ev.results[ev.results.length - 1].isFinal) finalText = t;
+      };
+      rec.onerror = (ev) => {
+        if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+          showNote("This view blocks the microphone. Type your message instead.");
+          mic.disabled = true;
+        }
+      };
+      rec.onend = () => {
+        listening = false; mic.classList.remove("on"); setStatus("Online");
+        const t = (finalText || input.value).trim();
+        if (t) ask(t);
+      };
+      rec.start();
+      listening = true; mic.classList.add("on"); setStatus("Listening", "listen");
+      try { speechSynthesis?.cancel(); } catch {}
+    } catch {
+      showNote("Voice input isn't available here. Type your message instead.");
+      mic.disabled = true;
+    }
+  });
+
+  voiceToggle.addEventListener("click", () => {
+    voiceOn = !voiceOn;
+    try { localStorage.setItem("jarvis-voice", voiceOn ? "on" : "off"); } catch {}
+    if (!voiceOn) try { speechSynthesis.cancel(); } catch {}
+    syncVoice();
+  });
+  function syncVoice() {
+    voiceToggle.setAttribute("aria-pressed", String(voiceOn));
+    voiceToggle.textContent = voiceOn ? "Voice on" : "Voice off";
+  }
+  if ("speechSynthesis" in window) speechSynthesis.getVoices();
+
+  samplePromise.then((s) => { if (!s) { showNote("Open this page on claude.ai to talk to Jarvis."); send.disabled = true; } });
+</script>
