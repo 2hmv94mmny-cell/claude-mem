@@ -1499,6 +1499,12 @@ function initials(name) {
   return ((parts[0]?.[0] || '') + (parts.length > 1 ? parts.at(-1)[0] : '')).toUpperCase() || '?';
 }
 
+// Which profile section is unfolded; kept across redraws.
+let pfOpen = null;
+
+const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+const CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+
 function renderProfile() {
   const p = store.get().profile;
   const prefs = p.prefs;
@@ -1513,7 +1519,8 @@ function renderProfile() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveState.textContent = 'All changes saved';
-      drawHeader();
+      if (!editing) drawHeader();
+      drawSummaries();
       drawSide();
     }, 500);
   }
@@ -1524,31 +1531,91 @@ function renderProfile() {
 
   // ----- Header -----
   const header = h('section', { class: 'profile-hero' });
+  let editing = false;
+
+  // The header doubles as the quickest way to edit who you are: tap any
+  // detail (or "Edit") and it turns into a small form in place.
+  const HERO_FIELDS = [
+    ['name', 'Full name', { autocomplete: 'name', placeholder: 'Your name' }],
+    ['headline', 'Headline', { maxlength: 120, placeholder: 'e.g. Full stack developer who ships fast, tested web apps' }],
+    ['location', 'Location', { autocomplete: 'address-level2', placeholder: 'City, country' }],
+    ['email', 'Email', { type: 'email', autocomplete: 'email', inputmode: 'email' }],
+    ['phone', 'Phone', { type: 'tel', autocomplete: 'tel', inputmode: 'tel' }],
+  ];
+  function editHeader(focusKey = 'name') {
+    editing = true;
+    const pr = store.get().profile;
+    const inputs = HERO_FIELDS.map(([key, label, attrs]) => {
+      const el = h('input', { id: `hero-${key}`, value: pr[key] || '', ...attrs });
+      el.addEventListener('input', debounce(() => {
+        save((x) => (x[key] = el.value.trim()));
+        const twin = document.getElementById(`pf-${key}`);
+        if (twin) twin.value = el.value;
+        if (key === 'headline') headCount.textContent = `${el.value.length}/120`;
+      }, 300));
+      return [key, label, el];
+    });
+    const done = h('button', { class: 'btn primary small', type: 'button' }, 'Done');
+    const close = () => {
+      editing = false;
+      drawHeader();
+      header.querySelector('.hero-edit')?.focus();
+    };
+    done.addEventListener('click', close);
+    const form = h(
+      'form',
+      { class: 'hero-form', 'aria-label': 'Edit your details' },
+      ...inputs.map(([key, label, el]) => h('label', { class: `field hero-f-${key}` }, h('span', {}, label), el)),
+      h('div', { class: 'hero-form-actions' }, h('span', { class: 'small muted' }, 'Changes save as you type.'), done),
+    );
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      close();
+    });
+    form.addEventListener('keydown', (e) => e.key === 'Escape' && close());
+    header.classList.add('editing');
+    header.replaceChildren(h('div', { class: 'avatar', 'aria-hidden': 'true' }, initials(pr.name)), form);
+    const target = inputs.find(([k]) => k === focusKey)?.[2] || inputs[0][2];
+    target.focus();
+    target.select?.();
+  }
+
   function drawHeader() {
     const pr = store.get().profile;
     const { score } = profileStrength(pr);
-    const contact = [pr.location, pr.email, pr.phone].filter(Boolean);
     const links = [
       ['LinkedIn', pr.linkedin],
       ['Portfolio', pr.portfolio],
       ['GitHub', pr.github],
     ].filter(([, u]) => u);
+    // Each detail is a button that opens the editor on that field.
+    const tap = (key, cls, text, label) => {
+      const b = h('button', { type: 'button', class: `hero-tap ${cls}`, 'aria-label': `Edit ${label}` }, text);
+      b.addEventListener('click', () => editHeader(key));
+      return b;
+    };
+    const editBtn = h('button', { type: 'button', class: 'btn small hero-edit' }, svgIcon(PENCIL), 'Edit');
+    editBtn.addEventListener('click', () => editHeader());
+    header.classList.remove('editing');
     header.replaceChildren(
       h('div', { class: 'avatar', 'aria-hidden': 'true' }, initials(pr.name)),
       h(
         'div',
         { class: 'profile-id' },
-        h('h1', {}, pr.name || 'Your profile'),
-        h('p', { class: 'profile-headline' }, pr.headline || 'Add a headline so employers and Claude know what you do.'),
-        contact.length || links.length
-          ? h(
-              'div',
-              { class: 'profile-meta' },
-              ...contact.map((c) => h('span', {}, c)),
-              ...links.map(([label, url]) => h('a', { href: safeUrl(/^https?:/i.test(url) ? url : `https://${url}`), target: '_blank', rel: 'noopener noreferrer' }, `${label} ↗`)),
-            )
-          : '',
+        h('h1', {}, tap('name', 'hero-name', pr.name || 'Add your name', 'name')),
+        h('p', { class: 'profile-headline' }, tap('headline', pr.headline ? '' : 'empty', pr.headline || 'Add a headline so employers and Claude know what you do.', 'headline')),
+        h(
+          'div',
+          { class: 'profile-meta' },
+          ...[
+            ['location', 'location', 'Add location'],
+            ['email', 'email', 'Add email'],
+            ['phone', 'phone', 'Add phone'],
+          ].map(([key, label, empty]) => tap(key, pr[key] ? '' : 'empty', pr[key] || `+ ${empty}`, label)),
+          ...links.map(([label, url]) => h('a', { href: safeUrl(/^https?:/i.test(url) ? url : `https://${url}`), target: '_blank', rel: 'noopener noreferrer' }, `${label} ↗`)),
+        ),
       ),
+      editBtn,
       h(
         'div',
         { class: 'profile-score' },
@@ -1694,8 +1761,54 @@ function renderProfile() {
   const skills = tagInput({ id: 'pf-skills', values: splitList(p.skills), placeholder: 'e.g. SQL, then press Enter', onChange: (v) => save((pr) => (pr.skills = v.join(', '))) });
   const langs = tagInput({ id: 'pf-langs', values: splitList(p.languages), placeholder: 'e.g. Dutch (native), then press Enter', onChange: (v) => save((pr) => (pr.languages = v.join(', '))), max: 10 });
 
-  const section = (id, title, intro, ...body) =>
-    h('section', { class: 'card pf-section', id }, h('div', { class: 'pf-section-head' }, h('h2', {}, title), intro ? h('p', { class: 'muted small' }, intro) : ''), ...body);
+  // Sections fold: the title row is a button, one section is open at a time,
+  // and the closed rows show a one-line summary so you rarely need to open them.
+  const summaries = {};
+  const section = (id, title, intro, ...body) => {
+    const bodyId = `${id}-body`;
+    const summary = h('span', { class: 'pf-summary' });
+    summaries[id] = summary;
+    const toggle = h(
+      'button',
+      { type: 'button', class: 'pf-toggle', 'aria-expanded': 'false', 'aria-controls': bodyId },
+      h('span', { class: 'pf-toggle-text' }, h('h2', {}, title), summary),
+      svgIcon(CHEVRON),
+    );
+    const el = h(
+      'section',
+      { class: 'card pf-section', id },
+      toggle,
+      h('div', { class: 'pf-body', id: bodyId, role: 'region', 'aria-label': title, hidden: true }, intro ? h('p', { class: 'muted small pf-intro' }, intro) : '', ...body),
+    );
+    toggle.addEventListener('click', () => openSection(pfOpen === id ? null : id, { scroll: pfOpen !== id }));
+    return el;
+  };
+  function openSection(id, { scroll = false } = {}) {
+    pfOpen = id;
+    for (const sec of sections) {
+      const open = sec.id === id;
+      sec.classList.toggle('open', open);
+      sec.querySelector('.pf-toggle').setAttribute('aria-expanded', String(open));
+      sec.querySelector('.pf-body').hidden = !open;
+    }
+    for (const b of nav.querySelectorAll('button[data-sec]')) b.classList.toggle('active', b.dataset.sec === id);
+    if (scroll && id) requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+  function drawSummaries() {
+    const pr = store.get().profile;
+    const pf = pr.prefs || {};
+    const count = (list) => splitList(list).length;
+    const filled = (keys) => keys.filter((k) => String(pr[k] || '').trim()).length;
+    const a = pr.cvAnalysis;
+    const text = {
+      'pf-sec-cv': pr.cv.trim() ? [pr.cvFile || 'CV added', a ? `score ${Math.round(Number(a.score) || 0)}/100` : 'not reviewed yet'].join(' · ') : 'Upload your CV to get started',
+      'pf-sec-about': `${filled(['name', 'headline', 'location', 'email', 'phone'])} of 5 filled`,
+      'pf-sec-prefs': [splitList(pr.targetRoles).slice(0, 2).join(', ') || 'No roles yet', ...(pf.workModes || []).slice(0, 2)].join(' · '),
+      'pf-sec-skills': `${count(pr.skills)} skills · ${count(pr.languages || '')} languages`,
+      'pf-sec-links': [pr.linkedin && 'LinkedIn', pr.portfolio && 'Website', pr.github && 'GitHub'].filter(Boolean).join(' · ') || 'None added',
+    };
+    for (const [id, el] of Object.entries(summaries)) el.textContent = text[id] || '';
+  }
 
   const sections = [
     section(
@@ -1759,8 +1872,8 @@ function renderProfile() {
       ['pf-sec-skills', 'Skills and languages'],
       ['pf-sec-links', 'Links'],
     ].map(([id, label]) => {
-      const b = h('button', { type: 'button' }, label);
-      b.addEventListener('click', () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      const b = h('button', { type: 'button', 'data-sec': id }, label);
+      b.addEventListener('click', () => openSection(id, { scroll: true }));
       return b;
     }),
     saveState,
@@ -1789,9 +1902,8 @@ function renderProfile() {
             a.addEventListener('click', (e) => {
               e.preventDefault();
               e.stopPropagation();
-              const target = document.getElementById(x.section);
-              target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              target?.querySelector(x.focus || 'input, textarea, button')?.focus({ preventScroll: true });
+              openSection(x.section, { scroll: true });
+              document.getElementById(x.section)?.querySelector(x.focus || 'input, textarea, button')?.focus({ preventScroll: true });
             });
             return h('li', { class: x.done ? 'done' : '' }, a);
           }),
@@ -1829,8 +1941,10 @@ function renderProfile() {
   }
 
   drawHeader();
+  drawSummaries();
   drawSide();
   view.append(header, h('div', { class: 'pf-layout' }, nav, h('div', { class: 'pf-main' }, ...sections), side));
+  openSection(pfOpen);
 }
 
 function profileChecklist(pr) {

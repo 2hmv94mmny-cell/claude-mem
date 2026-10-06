@@ -24,9 +24,14 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CSS = ROOT / "styles.css"
 
-# Brand: a calm, trustworthy blue in the family of the hiring leaders
-# (Indeed L.47 C.14 h260, LinkedIn L.52 C.16 h255) but our own.
-BRAND_HUE = 260
+# Brand: "Hunter", a deep evergreen. The hiring leaders all own blue
+# (Indeed h260, LinkedIn h255, StepStone h250), so a blue button reads as
+# "someone else's job board". A pine green between forest and teal is ours:
+# it says growth and "go", sits apart from the blues, and stays calm enough
+# for a tool people trust with their career. Like Stripe or Spotify, the
+# brand colour is used sparingly (primary actions, focus, selection) on
+# neutral surfaces, so it carries meaning when it appears.
+BRAND_HUE = 168
 
 # Lightness per step. Light: near-white backgrounds down to near-black text.
 # Dark: deep backgrounds up to near-white text. Step 9 is set per hue.
@@ -39,9 +44,10 @@ C_DARK = [0.14, 0.18, 0.26, 0.32, 0.38, 0.45, 0.54, 0.66, 1.00, 1.00, 0.62, 0.28
 
 # name: (hue, peak chroma, step-9 L light, step-9 L dark, text on solid)
 HUES = {
-    "gray":   (BRAND_HUE, 0.022, 0.560, 0.560, "light"),
-    "blue":   (BRAND_HUE, 0.170, 0.500, 0.540, "light"),
-    "green":  (152,       0.130, 0.540, 0.580, "light"),
+    "gray":   (BRAND_HUE, 0.012, 0.560, 0.560, "light"),
+    "brand":  (BRAND_HUE, 0.110, 0.470, 0.540, "light"),
+    # success leans yellow-green so it does not read as the brand
+    "green":  (140,       0.140, 0.540, 0.600, "light"),
     "amber":  (72,        0.150, 0.800, 0.800, "dark"),
     "red":    (27,        0.190, 0.555, 0.600, "light"),
     # category / status hues (game categories, tracker stages)
@@ -138,15 +144,15 @@ SEMANTIC_LIGHT = {
     "--text": "var(--gray-12)",
     "--text-2": "var(--gray-11)",
     "--muted": "var(--gray-11)",
-    "--accent": "var(--blue-9)",
-    "--accent-hover": "var(--blue-10)",
-    "--accent-text": "var(--blue-11)",
-    "--accent-soft": "var(--blue-3)",
-    "--accent-soft-2": "var(--blue-5)",
-    "--accent-border": "var(--blue-7)",
-    "--accent-2": "var(--blue-12)",
+    "--accent": "var(--brand-9)",
+    "--accent-hover": "var(--brand-10)",
+    "--accent-text": "var(--brand-11)",
+    "--accent-soft": "var(--brand-3)",
+    "--accent-soft-2": "var(--brand-5)",
+    "--accent-border": "var(--brand-7)",
+    "--accent-2": "var(--brand-12)",
     "--on-accent": "#ffffff",
-    "--focus": "var(--blue-9)",
+    "--focus": "var(--brand-9)",
     "--ok": "var(--green-11)",
     "--ok-solid": "var(--green-9)",
     "--ok-soft": "var(--green-3)",
@@ -168,7 +174,7 @@ SEMANTIC_LIGHT = {
     "--cat-fit": "var(--teal-11)",
     "--cat-curve": "var(--amber-11)",
     "--stage": "var(--gray-5)",
-    "--shadow-color": "220 30% 20%",
+    "--shadow-color": "170 25% 15%",
 }
 SEMANTIC_DARK = {
     **SEMANTIC_LIGHT,
@@ -181,7 +187,7 @@ SEMANTIC_DARK = {
     "--border": "var(--gray-5)",
     "--border-strong": "var(--gray-8)",
     "--stage": "var(--gray-1)",
-    "--shadow-color": "220 40% 2%",
+    "--shadow-color": "170 30% 2%",
 }
 
 
