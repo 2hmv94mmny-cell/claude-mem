@@ -6,6 +6,7 @@ import { inArtifact, ready as runtimeReady } from './runtime.js';
 import { portalsFor } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
+import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
 import { TEMPLATES, getTemplate, accentFor, renderCV, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
@@ -1916,8 +1917,23 @@ function renderSettings() {
     go('/');
   });
 
+  const acctBtn = h('button', { class: 'btn', type: 'button' }, account.status === 'signed-in' ? 'Manage account' : 'Create account or sign in');
+  acctBtn.addEventListener('click', openAccount);
   view.append(
     pageHeader('Settings'),
+    h(
+      'section',
+      { class: 'card' },
+      h('h2', {}, 'Account and sync'),
+      h(
+        'p',
+        { class: 'muted' },
+        account.status === 'signed-in'
+          ? `Signed in${account.me?.name ? ` as ${account.me.name}` : ''}. Your profile, applications and documents sync to your account.`
+          : 'Sign in to keep your profile, applications and documents in your account and use them on every device.',
+      ),
+      acctBtn,
+    ),
     form,
     h(
       'section',
@@ -1929,6 +1945,153 @@ function renderSettings() {
     inArtifact ? '' : installCard(),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Account: header button and panel
+// ---------------------------------------------------------------------------
+
+const ICON_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const accountBtn = document.getElementById('account-btn');
+
+function syncedLabel() {
+  if (account.error) return account.error;
+  if (!account.lastSync) return 'Syncing…';
+  return `Synced ${timeAgo(account.lastSync)}`;
+}
+
+function drawAccountButton() {
+  if (!accountBtn) return;
+  accountBtn.classList.toggle('signed-in', account.status === 'signed-in');
+  if (account.status === 'signed-in' && account.me) {
+    const img = h('img', { src: account.me.avatarUrl, alt: '', width: 32, height: 32 });
+    accountBtn.replaceChildren(img, h('span', { class: 'account-name' }, account.me.name ? account.me.name.split(' ')[0] : 'Account'));
+    accountBtn.setAttribute('aria-label', `Your account${account.me.name ? `, ${account.me.name}` : ''}`);
+  } else {
+    accountBtn.replaceChildren(account.status === 'working' ? 'Signing in…' : 'Sign in');
+    accountBtn.setAttribute('aria-label', 'Create account or sign in');
+  }
+}
+
+let panel = null;
+function openAccount() {
+  if (panel) return;
+  const returnFocus = document.activeElement;
+  const body = h('div', { class: 'sheet-body' });
+  const close = h('button', { class: 'icon-btn sheet-close', type: 'button', 'aria-label': 'Close' }, '×');
+  const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'account-title' }, close, body);
+  const backdrop = h('div', { class: 'sheet-backdrop' }, sheet);
+  const prevOverflow = document.body.style.overflow;
+
+  function draw() {
+    const benefit = (text) => h('li', {}, svgIcon(ICON_CHECK), text);
+    if (account.status === 'signed-in' && account.me) {
+      const jobs = Object.keys(store.get().jobs).length;
+      const cvs = Object.values(store.get().docs).filter((d) => d?.cvData).length;
+      const sync = h('button', { class: 'btn', type: 'button' }, 'Sync now');
+      sync.addEventListener('click', async () => {
+        sync.disabled = true;
+        sync.textContent = 'Syncing…';
+        const received = await syncNow();
+        if (received) route();
+        draw();
+      });
+      const out = h('button', { class: 'btn', type: 'button' }, 'Sign out');
+      out.addEventListener('click', () => {
+        signOut();
+        toast('Signed out. Your data stays on this device.');
+        draw();
+      });
+      const wipe = confirmButton('Sign out and remove data from this device', 'Tap again to remove it from this device', () => {
+        signOut({ wipe: true });
+        toast('Signed out and removed from this device');
+        shut();
+        route();
+      }, 'btn danger small');
+      body.replaceChildren(
+        h(
+          'div',
+          { class: 'account-head' },
+          h('img', { class: 'account-avatar', src: account.me.avatarUrl, alt: '' }),
+          h('div', {}, h('h2', { id: 'account-title' }, account.me.name || 'Your account'), account.me.email ? h('p', { class: 'muted small' }, account.me.email) : '', h('p', { class: `sync-state ${account.error ? 'error' : ''}` }, syncedLabel())),
+        ),
+        h('div', { class: 'account-stats' }, h('div', {}, h('strong', {}, String(jobs)), h('span', {}, 'saved jobs')), h('div', {}, h('strong', {}, String(cvs)), h('span', {}, 'tailored CVs')), h('div', {}, h('strong', {}, `${profileStrength(store.get().profile).score}%`), h('span', {}, 'profile'))),
+        h('p', { class: 'small muted' }, 'Your account is your Claude account. Everything is stored privately for you; nobody else can read it, including whoever shared this app with you. Your API key never leaves this device.'),
+        h('div', { class: 'row wrap' }, sync, out),
+        h('div', { class: 'sheet-danger' }, wipe),
+      );
+    } else if (!accountsAvailable()) {
+      body.replaceChildren(
+        h('h2', { id: 'account-title' }, 'Accounts'),
+        h(
+          'p',
+          { class: 'muted' },
+          inArtifact
+            ? 'Accounts are not available in this view. Open AI Job Hunter from your own Claude app to sign in.'
+            : 'Accounts work when you open AI Job Hunter in the Claude app, where you sign in with your Claude account. Here, your data is saved on this device.',
+        ),
+        h('a', { class: 'btn', href: '#/settings' }, 'Back up my data'),
+      );
+      body.querySelector('a').addEventListener('click', shut);
+    } else {
+      const go = h('button', { class: 'btn primary big account-cta', type: 'button' }, 'Continue with your Claude account');
+      const status = h('p', { class: 'small error', role: 'status' }, account.error || '');
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        go.textContent = 'Signing in…';
+        status.textContent = '';
+        try {
+          const received = await signIn();
+          toast(received ? 'Signed in. Your progress was loaded from your account.' : 'Account ready. Your progress now syncs.');
+          route();
+          draw();
+        } catch (err) {
+          go.disabled = false;
+          go.textContent = 'Continue with your Claude account';
+          status.textContent = err.message || 'Could not sign in. Try again.';
+        }
+      });
+      body.replaceChildren(
+        h('div', { class: 'account-mark', 'aria-hidden': 'true' }, h('img', { src: 'icons/icon.svg', alt: '', width: 48, height: 48 })),
+        h('h2', { id: 'account-title' }, 'Create your account'),
+        h('p', { class: 'muted' }, 'Save your profile, CV, applications and interview progress, and pick up where you left off on any device.'),
+        h(
+          'ul',
+          { class: 'benefits' },
+          benefit('Your phone and computer stay in sync'),
+          benefit('Tailored CVs, cover letters and interview games are never lost'),
+          benefit('Private to you. Nobody else can read your data'),
+        ),
+        go,
+        status,
+        h('p', { class: 'small muted center' }, 'No new password. You sign in with the Claude account you already use. Already have an account? The same button signs you in.'),
+      );
+    }
+  }
+
+  function shut() {
+    unsubscribe();
+    document.removeEventListener('keydown', onKey);
+    document.body.style.overflow = prevOverflow;
+    backdrop.remove();
+    panel = null;
+    returnFocus?.focus?.();
+  }
+  const onKey = (e) => e.key === 'Escape' && shut();
+  const unsubscribe = onAccountChange(() => panel && draw());
+  close.addEventListener('click', shut);
+  backdrop.addEventListener('click', (e) => e.target === backdrop && shut());
+  document.addEventListener('keydown', onKey);
+  document.body.style.overflow = 'hidden';
+  draw();
+  document.body.append(backdrop);
+  panel = backdrop;
+  (sheet.querySelector('.account-cta') || close).focus();
+}
+
+accountBtn?.addEventListener('click', openAccount);
+onAccountChange(drawAccountButton);
+drawAccountButton();
+initAccount(() => route());
 
 // ---------------------------------------------------------------------------
 // Install as an app (PWA)
