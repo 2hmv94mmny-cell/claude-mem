@@ -1223,3 +1223,7 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .lang-option:hover { background: var(--surface-hover); }
 .lang-option[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent); }
 @media (max-width: 560px) { .lang-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.feed-chips { margin: 0; }
+.feed-more { justify-self: start; }
+.feed-portals { border-top: 1px solid var(--border); padding-top: var(--sp-4); display: grid; gap: var(--sp-2); }
+.feed-portals p { margin: 0; }

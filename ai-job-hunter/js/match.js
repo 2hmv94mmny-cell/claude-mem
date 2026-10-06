@@ -319,8 +319,10 @@ function payloadText(v) {
   return JSON.stringify(v?.payload ?? v ?? '');
 }
 
-const LIST_TITLE = /^\d[\d.,']*\+?\s.*\b(jobs?|stellen|stellenangebote|vacancies|offres|emplois)\b|\bjobs? in\b|\bstellenangebote in\b|\bjobs?, employment\b|\boffres d'emploi\b|\bjob search\b/i;
-const LIST_URL = /[?&](term|q|keywords?|query|search|was|k)=|\/(jobs|vacancies|stellenangebote|stellen|search|jobsuche|emplois|careers|karriere)\/?$/i;
+const LIST_TITLE = /^\d[\d.,']*\+?\s.*\b(jobs?|stellen|stellenangebote|vacancies|offres|emplois)\b|\bjobs? in\b|\bstellenangebote in\b|\bjobs?, employment\b|\boffres d'emploi\b|\bjob search\b|\bjobs\s*(\||–|-)|\bstellen(angebote)?\s*(\||–|-)/i;
+const LIST_URL = /[?&](term|q|keywords?|query|search|was|k)=|\/(jobs|vacancies|stellenangebote|stellen|search|jobsuche|emplois|careers|karriere)\/?$|browsejobs|\/q-[^/]*-jobs\.html|-jobs\.html$|\/jobs\/?\?/i;
+// LinkedIn and company posts: "We are hiring! We are looking for a Full Stack Engineer (AI Products) to join…"
+const HIRING_POST = /(?:looking for|hiring:?|is hiring|sucht|suchen|recherche|cerchiamo)\s+(?:an?\s+|eine?n?\s+|un(?:e)?\s+)?(.{4,80}?)(?:\s+to join|\s+in\s+[A-ZÄÖÜ]|\s+für\s|\s+pour\s|[.!:]|\s*$)/i;
 const POSTING_URL = /detail|\/job\/|\/jobs\/view|viewjob|[?&]jk=|\/stellenangebot|\/stelle\/|\/vacanc(y|ies)\/[^?]+|\/position|greenhouse\.io|lever\.co|myworkdayjobs|smartrecruiters|ashbyhq|personio|recruitee|teamtailor|workable|\/offre|\/job-|\/jobs\/\d|\/jobs\/[a-z0-9-]{12,}/i;
 
 /** Split a page title into the job title and company. */
@@ -338,12 +340,30 @@ function splitTitle(raw, url) {
     host = new URL(url).hostname.replace(/^www\./, '');
   } catch {}
   const site = host.split('.')[0];
-  while (parts.length > 1 && (/\.(com|ch|de|at|fr|co|net|org|io)\b|indeed|linkedin|glassdoor|careers?|karriere|jobs?$/i.test(parts.at(-1)) || norm(parts.at(-1)).includes(site))) parts.pop();
+  // Drop the site name at the end: a domain, a known portal, or (after the
+  // title and at least one more part) a single word like "Jobijoba".
+  const isSite = (x, i) =>
+    /\.(com|ch|de|at|fr|co|net|org|io)\b|indeed|linkedin|glassdoor|xing|careers?$|karriere$|jobs?$/i.test(x) || (i >= 2 && !/\s/.test(x.trim())) || (i >= 2 && norm(x).includes(site));
+  while (parts.length > 1 && isSite(parts.at(-1), parts.length - 1)) parts.pop();
   if (parts.length === 1) {
-    const at = parts[0].match(/^(.+?) at (.+)$/i);
-    if (at) return { title: at[1], company: at[2] };
+    const at = parts[0].match(/^(.+?) at (.+?)(?: in (.+))?$/i);
+    if (at) return { title: at[1], company: at[2], location: at[3] || '' };
+    const inPlace = parts[0].match(/^(.+?) in ([A-ZÄÖÜ][\wäöüéè. -]+)$/);
+    if (inPlace) return { title: inPlace[1], company: '', location: inPlace[2] };
   }
-  return { title: parts[0] || t, company: parts[1] || '', location: parts[2] || '' };
+  // Sort the remaining parts into company and location; drop ad noise.
+  const noise = /stellenanzeige|stelleninserat|job offer|job ad|stellenangebot|offre d'emploi|\b20\d\d\b/i;
+  let company = '';
+  let location = '';
+  for (const x of parts.slice(1)) {
+    if (noise.test(x)) continue;
+    if (!location && (/\b\d{4,5}\b|,\s*[A-Z]{2}$|-Stadt$|-Land$/.test(x) || /^(basel|bern|zurich|zürich|geneva|genf|geneve|lausanne|luzern|lugano|winterthur|st\. gallen|berlin|hamburg|munich|münchen|vienna|wien|london|paris|amsterdam|madrid|lisbon|lisboa|remote)$/i.test(x.trim()))) {
+      location = x;
+      continue;
+    }
+    if (!company) company = x;
+  }
+  return { title: parts[0] || t, company, location: location.replace(/[.,;]+$/, '') };
 }
 
 const DATE_LINE = /^(?:[-*•]\s*)?(\d{1,2}\.?\s+[A-Za-zäéû]+\s+20\d{2}|20\d{2}-\d{2}-\d{2})\s*$/;
@@ -363,6 +383,19 @@ export function parseSearchResults(text, { city = '' } = {}) {
 
     const parts = splitTitle(title, url);
     const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
+    // The page's own main heading is usually the cleanest job title.
+    const heading = lines.find((l) => /^#\s+\S/.test(l))?.replace(/^#\s+/, '').replace(/\s+·\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
+    if (heading && heading.length <= 120 && find(ROLES, heading).size) {
+      parts.title = heading.replace(/\s*[|–-]\s*([^|–-]+)$/, (m, x) => (city && norm(x).trim() === norm(city) ? '' : m));
+      if (parts.company && norm(heading).includes(norm(parts.company))) parts.company = '';
+    }
+    if (/hiring|looking for|wir suchen|nous recrutons/i.test(parts.title)) {
+      const role = parts.title.match(HIRING_POST)?.[1] || body.match(HIRING_POST)?.[1];
+      if (!role || !find(ROLES, role).size) continue; // a post, not a job
+      parts.title = role.replace(/^(?:an?|the)\s+/i, '').trim();
+      if (/^(?:🚀|we are|we're)/i.test(parts.company)) parts.company = '';
+      parts.location = String(parts.location || '').replace(/[.,;]+$/, '');
+    }
     const published = block.match(/^Published:\s*(\d{4}-\d{2}-\d{2})/m)?.[1] || '';
     let posted = published;
     let workload = '';
@@ -405,19 +438,52 @@ export function parseSearchResults(text, { city = '' } = {}) {
   return jobs;
 }
 
-async function searchPortals(roles, location, remote, signal) {
+// Run tasks with at most `limit` in flight, so a big search does not flood the connector.
+async function pool(tasks, limit) {
+  const results = new Array(tasks.length);
+  let next = 0;
+  async function worker() {
+    while (next < tasks.length) {
+      const i = next++;
+      try {
+        results[i] = { status: 'fulfilled', value: await tasks[i]() };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
+/**
+ * Search every job portal for the user's country (plus LinkedIn, Glassdoor and
+ * the open web) for each role, and once more with the CV's strongest skills.
+ */
+async function searchPortals(me, location, remote, signal) {
   const where = remote ? 'remote' : location;
-  const { portals, country } = portalsFor(roles[0], where, { remote });
-  const live = portals.filter((x) => x.live).slice(0, 4);
+  const { portals, country } = portalsFor(me.roles[0], where, { remote });
+  const live = portals.filter((x) => x.live);
   const place = where ? ` in ${where}` : '';
-  const queries = roles.flatMap((role) => [
-    { query: `open job posting ${role}${place}`, objective: `Find currently open job postings for "${role}"${place}. Direct posting pages only; exclude articles, salary guides and lists of jobs.` },
+  const skills = [...me.skills].slice(0, 4).join(', ');
+  const queries = me.roles.flatMap((role) => [
+    { query: `open job posting ${role}${place}`, objective: `Find currently open job postings for "${role}"${place} on any job portal, recruiter or company careers page. Direct posting pages only; exclude articles, salary guides and lists of jobs.` },
+    { query: `${role} job${place} company careers page apply`, objective: `Find open "${role}" positions${place} listed directly on employers' own careers pages (Greenhouse, Lever, Workday, Personio, SmartRecruiters and similar). Single postings only.` },
     ...live.map((x) => ({
       query: `${role} job${place} site ${x.domain}`,
       objective: `Find currently open job postings for "${role}"${place} on ${x.name} (${x.domain}). Only return single posting pages hosted on ${x.domain}.`,
     })),
   ]);
-  const settled = await Promise.allSettled(queries.map((q) => caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { ...q, numResults: 10 }, { signal })));
+  if (skills) {
+    queries.push({
+      query: `${me.roles[0]} job${place} ${skills}`,
+      objective: `Find currently open job postings${place} for someone with experience in ${skills} working as ${me.roles[0]}. Single postings only.`,
+    });
+  }
+  const settled = await pool(
+    queries.map((q) => () => caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { ...q, numResults: 15 }, { signal })),
+    6,
+  );
   const city = location.split(',')[0].trim();
   const jobs = [];
   let error = null;
@@ -426,7 +492,7 @@ async function searchPortals(roles, location, remote, signal) {
     else error ??= r.reason;
   }
   if (!jobs.length && error) throw error;
-  return { jobs, country };
+  return { jobs, country, searched: live.map((x) => x.name) };
 }
 
 async function searchBoards(roles, location, remote) {
@@ -574,7 +640,9 @@ export async function jobsForYou(profile, { signal } = {}) {
   let via = 'job boards';
   if (inArtifact && caps.mcp) {
     try {
-      found = await searchPortals(me.roles, location, remote, signal);
+      // The free job boards run alongside; they add listings the portals miss.
+      const [portals, boards] = await Promise.all([searchPortals(me, location, remote, signal), searchBoards(me.roles, location, remote).catch(() => ({ jobs: [] }))]);
+      found = { ...portals, jobs: [...portals.jobs, ...boards.jobs] };
       via = 'job portals';
     } catch (err) {
       if (err?.code === 'cancelled') throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
@@ -599,10 +667,10 @@ export async function jobsForYou(profile, { signal } = {}) {
       void _text;
       return { ...job, match };
     })
-    .filter((j) => j.match.score >= 35)
+    .filter((j) => j.match.score >= 30)
     .sort((a, b) => b.match.score - a.match.score);
 
-  return { jobs: ranked, roles: me.roles, country: found.country, via };
+  return { jobs: ranked, roles: me.roles, country: found.country, via, searched: found.searched || [] };
 }
 
 // ---------------------------------------------------------------------------

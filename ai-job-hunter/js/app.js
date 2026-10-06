@@ -34,6 +34,9 @@ function findJob(id) {
 const FEED_TTL = 24 * 60 * 60 * 1000;
 let feedRun = null; // in-flight refresh
 let feedError = null; // { key, message } from the last failed refresh
+const FEED_PAGE = 12;
+let feedFilter = ''; // show one portal only ('' = all)
+let feedShown = FEED_PAGE; // how many cards are visible
 
 function feedInputs() {
   const p = store.get().profile;
@@ -42,7 +45,7 @@ function feedInputs() {
   const remote = Boolean(p.remoteOnly);
   const hasExperience = Boolean(p.cv.trim() || roles.length || p.headline.trim());
   // Changes to any of these mean the feed should be rebuilt.
-  const key = JSON.stringify(['rules-v1', currentLanguage(), roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300), p.prefs?.workModes, p.prefs?.types, p.prefs?.salaryMin]);
+  const key = JSON.stringify(['rules-v2', currentLanguage(), roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300), p.prefs?.workModes, p.prefs?.types, p.prefs?.salaryMin]);
   return { roles, location, remote, hasExperience, key };
 }
 
@@ -59,8 +62,12 @@ function runFeed() {
   feedRun = (async () => {
     // Plain matching rules on this device (js/match.js), no AI.
     void given;
-    const { jobs, roles, country } = await jobsForYou(store.get().profile);
-    store.update((s) => (s.feed = { key, at: Date.now(), jobs: jobs.slice(0, 12), roles, location: remote ? 'Remote' : location, country, noAI: true }));
+    const { jobs, roles, country, searched } = await jobsForYou(store.get().profile);
+    // Keep every match (trimmed so the feed stays small enough to sync).
+    const kept = jobs.slice(0, 80).map((j) => ({ ...j, description: String(j.description || '').slice(0, 1500) }));
+    feedFilter = '';
+    feedShown = FEED_PAGE;
+    store.update((s) => (s.feed = { key, at: Date.now(), jobs: kept, roles, location: remote ? 'Remote' : location, country, searched, noAI: true }));
   })()
     .catch((err) => {
       if (err?.name !== 'AbortError') feedError = { key, message: err.message || 'Could not load jobs.' };
@@ -127,12 +134,57 @@ function feedSection() {
     go('/find');
   });
 
+  // Filter chips: one per portal the matches came from.
+  const counts = new Map();
+  for (const j of feed.jobs) counts.set(j.source, (counts.get(j.source) || 0) + 1);
+  if (feedFilter && !counts.has(feedFilter)) feedFilter = '';
+  const list = feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs;
+  const grid = h('div', { class: 'feed-grid' });
+  const more = h('button', { class: 'btn feed-more', type: 'button' });
+  const chips = h('div', { class: 'chip-row feed-chips', role: 'group', 'aria-label': 'Filter by job site' });
+  function drawChips() {
+    const chip = (label, value, c) => {
+      const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(feedFilter === value) }, label, h('span', { class: 'chip-count' }, String(c)));
+      b.addEventListener('click', () => {
+        feedFilter = value;
+        feedShown = FEED_PAGE;
+        route();
+      });
+      return b;
+    };
+    chips.replaceChildren(chip('All sites', '', feed.jobs.length), ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => chip(k, k, c)));
+  }
+  function drawGrid() {
+    grid.replaceChildren(...list.slice(0, feedShown).map(feedCard));
+    const left = list.length - feedShown;
+    more.hidden = left <= 0;
+    more.textContent = `Show ${Math.min(left, FEED_PAGE)} more`;
+  }
+  more.addEventListener('click', () => {
+    feedShown += FEED_PAGE;
+    drawGrid();
+  });
+  drawChips();
+  drawGrid();
+
+  // Every portal's own full results for the same search, one tap away.
+  const { portals } = portalsFor(feed.roles[0] || '', feed.location === 'Remote' ? '' : feed.location, { remote: feed.location === 'Remote' });
+  const portalLinks = h(
+    'div',
+    { class: 'feed-portals' },
+    h('p', { class: 'small strong' }, 'See every listing on each job site'),
+    h('div', { class: 'row wrap' }, ...portals.map((x) => h('a', { class: 'btn small', href: safeUrl(x.url), target: '_blank', rel: 'noopener noreferrer' }, `${x.name} ↗`))),
+  );
+
   return h(
     'section',
     { class: 'card feed' },
-    head(`Based on your experience as ${feed.roles.join(' or ')}${feedRun ? ' · updating…' : ` · updated ${timeAgo(feed.at)}`}`, refresh, seeAll),
-    h('div', { class: 'feed-grid' }, ...feed.jobs.slice(0, 6).map(feedCard)),
-    h('p', { class: 'small muted feed-note' }, 'Matched on this device by job title, skills, location and experience. No AI is used for these picks.'),
+    head(`${feed.jobs.length} matches · based on your experience as ${feed.roles.join(' or ')}${feedRun ? ' · updating…' : ` · updated ${timeAgo(feed.at)}`}`, refresh, seeAll),
+    counts.size > 1 ? chips : '',
+    grid,
+    more,
+    portalLinks,
+    h('p', { class: 'small muted feed-note' }, `Searched ${feed.searched?.length ? `${feed.searched.join(', ')}, ` : ''}the open web and free job boards, then matched on this device by job title, skills, location and experience. No AI is used for these picks.`),
   );
 }
 
