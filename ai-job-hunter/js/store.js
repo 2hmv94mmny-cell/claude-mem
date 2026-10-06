@@ -21,6 +21,21 @@ const DEFAULT_STATE = {
     cv: '',
     cvFile: '',
     cvAnalysis: null,
+    languages: '',
+    linkedin: '',
+    portfolio: '',
+    github: '',
+    // Job preferences used for search, ranking and cover letters.
+    prefs: {
+      workModes: [],
+      types: [],
+      salaryMin: '',
+      currency: 'EUR',
+      salaryPeriod: 'year',
+      availability: '',
+      relocate: false,
+      authorization: '',
+    },
   },
   // Jobs the user has saved, keyed by id. Each carries its tracker status.
   jobs: {},

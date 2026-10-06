@@ -39,7 +39,7 @@ function feedInputs() {
   const remote = Boolean(p.remoteOnly);
   const hasExperience = Boolean(p.cv.trim() || roles.length || p.headline.trim());
   // Changes to any of these mean the feed should be rebuilt.
-  const key = JSON.stringify([roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300)]);
+  const key = JSON.stringify([roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300), p.prefs?.workModes, p.prefs?.types, p.prefs?.salaryMin]);
   return { roles, location, remote, hasExperience, key };
 }
 
@@ -359,17 +359,10 @@ function searchBar({ what = '', where = '', onSubmit, button = 'Search jobs', id
 }
 
 function profileStrength(p) {
-  const parts = [
-    [Boolean(p.cv.trim()), 40, 'Upload your CV'],
-    [Boolean(p.location.trim()), 15, 'Add your location'],
-    [Boolean(p.targetRoles.trim()), 15, 'Add the roles you want'],
-    [Boolean(p.skills.trim()), 10, 'List your key skills'],
-    [Boolean(p.headline.trim()), 10, 'Write a one-line headline'],
-    [Boolean(p.email.trim() || p.phone.trim()), 10, 'Add contact details'],
-  ];
-  const score = parts.reduce((s, [ok, w]) => s + (ok ? w : 0), 0);
-  const next = parts.find(([ok]) => !ok)?.[2] || '';
-  return { score, next };
+  const weights = [30, 10, 10, 10, 10, 10, 10, 5, 5];
+  const items = profileChecklist(p);
+  const score = items.reduce((sum, x, i) => sum + (x.done ? weights[i] : 0), 0);
+  return { score, next: items.find((x) => !x.done)?.label || '' };
 }
 
 function renderHome() {
@@ -1419,29 +1412,168 @@ function safeUrl(u) {
 // Profile
 // ---------------------------------------------------------------------------
 
+const WORK_MODES = ['Remote', 'Hybrid', 'On-site'];
+const JOB_TYPES = ['Full-time', 'Part-time', 'Contract', 'Freelance', 'Internship'];
+const AVAILABILITY = ['', 'Immediately', 'Within 2 weeks', 'Within 1 month', 'Within 2 months', 'In 3 months or more'];
+const CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'CAD', 'AUD', 'INR', 'SEK', 'NOK', 'DKK', 'PLN', 'ZAR', 'AED', 'SGD', 'BRL', 'MXN'];
+
+const splitList = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+
+/** Tag input: chips you can add with Enter or comma and remove with ×. */
+function tagInput({ id, values, placeholder, onChange, max = 30 }) {
+  let tags = [...values];
+  const list = h('div', { class: 'tag-list' });
+  const input = h('input', { id, type: 'text', placeholder, autocomplete: 'off', class: 'tag-entry' });
+  const wrap = h('div', { class: 'tag-input' }, list, input);
+  wrap.addEventListener('click', (e) => e.target === wrap && input.focus());
+  const commit = () => onChange(tags);
+  function draw() {
+    list.replaceChildren(
+      ...tags.map((t, i) => {
+        const x = h('button', { type: 'button', class: 'tag-x', 'aria-label': `Remove ${t}` }, '×');
+        x.addEventListener('click', () => {
+          tags.splice(i, 1);
+          draw();
+          commit();
+          input.focus();
+        });
+        return h('span', { class: 'tag-chip' }, t, x);
+      }),
+    );
+    input.placeholder = tags.length ? 'Add more' : placeholder;
+  }
+  function add(raw) {
+    const parts = raw.split(',').map((x) => x.trim()).filter(Boolean);
+    let added = false;
+    for (const part of parts) {
+      if (tags.length < max && !tags.some((t) => t.toLowerCase() === part.toLowerCase())) {
+        tags.push(part);
+        added = true;
+      }
+    }
+    if (added) {
+      draw();
+      commit();
+    }
+  }
+  input.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ',') && input.value.trim()) {
+      e.preventDefault();
+      add(input.value);
+      input.value = '';
+    } else if (e.key === 'Backspace' && !input.value && tags.length) {
+      tags.pop();
+      draw();
+      commit();
+    }
+  });
+  input.addEventListener('blur', () => {
+    if (input.value.trim()) {
+      add(input.value);
+      input.value = '';
+    }
+  });
+  draw();
+  return { el: wrap, set(v) { tags = [...v]; draw(); } };
+}
+
+/** Multi-select pill group. */
+function pillGroup({ label, options, values, onChange }) {
+  const chosen = new Set(values);
+  const group = h('div', { class: 'pill-group', role: 'group', 'aria-label': label });
+  for (const o of options) {
+    const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(chosen.has(o)) }, o);
+    b.addEventListener('click', () => {
+      chosen.has(o) ? chosen.delete(o) : chosen.add(o);
+      b.setAttribute('aria-pressed', String(chosen.has(o)));
+      onChange(options.filter((x) => chosen.has(x)));
+    });
+    group.append(b);
+  }
+  return group;
+}
+
+function initials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || '') + (parts.length > 1 ? parts.at(-1)[0] : '')).toUpperCase() || '?';
+}
+
 function renderProfile() {
   const p = store.get().profile;
-  const inputs = {
-    name: h('input', { id: 'pf-name', value: p.name, autocomplete: 'name' }),
-    email: h('input', { id: 'pf-email', type: 'email', value: p.email, autocomplete: 'email' }),
-    phone: h('input', { id: 'pf-phone', type: 'tel', value: p.phone, autocomplete: 'tel' }),
-    location: h('input', { id: 'pf-location', value: p.location, placeholder: 'City, country' }),
-    headline: h('input', { id: 'pf-headline', value: p.headline, placeholder: 'e.g. Full-stack engineer with 6 years in fintech' }),
-    targetRoles: h('input', { id: 'pf-roles', value: p.targetRoles, placeholder: 'e.g. Frontend Engineer, UI Engineer' }),
-    skills: h('input', { id: 'pf-skills', value: p.skills, placeholder: 'e.g. React, TypeScript, Node, AWS' }),
-    remoteOnly: h('input', { id: 'pf-remote', type: 'checkbox', checked: p.remoteOnly }),
-    cv: h('textarea', { id: 'pf-cv', rows: 16, placeholder: 'Upload your CV above, or paste it here as plain text.' }, p.cv),
+  const prefs = p.prefs;
+
+  // ----- Autosave -----
+  const saveState = h('span', { class: 'save-state', role: 'status' }, 'All changes saved');
+  let saveTimer;
+  function save(mutate, { quiet = false } = {}) {
+    store.update((s) => mutate(s.profile));
+    if (quiet) return;
+    saveState.textContent = 'Saving…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveState.textContent = 'All changes saved';
+      drawHeader();
+      drawSide();
+    }, 500);
+  }
+  const bind = (el, key, transform = (v) => v.trim()) => {
+    el.addEventListener('input', debounce(() => save((pr) => (pr[key] = transform(el.value))), 350));
+    return el;
   };
 
-  // ----- Upload + analysis -----
+  // ----- Header -----
+  const header = h('section', { class: 'profile-hero' });
+  function drawHeader() {
+    const pr = store.get().profile;
+    const { score } = profileStrength(pr);
+    const contact = [pr.location, pr.email, pr.phone].filter(Boolean);
+    const links = [
+      ['LinkedIn', pr.linkedin],
+      ['Portfolio', pr.portfolio],
+      ['GitHub', pr.github],
+    ].filter(([, u]) => u);
+    header.replaceChildren(
+      h('div', { class: 'avatar', 'aria-hidden': 'true' }, initials(pr.name)),
+      h(
+        'div',
+        { class: 'profile-id' },
+        h('h1', {}, pr.name || 'Your profile'),
+        h('p', { class: 'profile-headline' }, pr.headline || 'Add a headline so employers and Claude know what you do.'),
+        contact.length || links.length
+          ? h(
+              'div',
+              { class: 'profile-meta' },
+              ...contact.map((c) => h('span', {}, c)),
+              ...links.map(([label, url]) => h('a', { href: safeUrl(/^https?:/i.test(url) ? url : `https://${url}`), target: '_blank', rel: 'noopener noreferrer' }, `${label} ↗`)),
+            )
+          : '',
+      ),
+      h(
+        'div',
+        { class: 'profile-score' },
+        h('div', { class: 'ring', style: `--p:${score}`, role: 'img', 'aria-label': `Profile ${score}% complete` }, h('strong', {}, `${score}%`)),
+        h('span', { class: 'small muted' }, 'Profile strength'),
+      ),
+    );
+  }
+
+  // ----- CV upload + review -----
+  const cvText = h('textarea', { id: 'pf-cv', rows: 14, placeholder: 'Upload your CV above, or paste it here as plain text.' }, p.cv);
+  const words = h('span', { class: 'small muted' });
+  const countWords = () => (words.textContent = `${cvText.value.trim() ? cvText.value.trim().split(/\s+/).length : 0} words`);
+  countWords();
+  cvText.addEventListener('input', countWords);
+  bind(cvText, 'cv', (v) => v);
+
   const fileInput = h('input', { id: 'cv-file', type: 'file', accept: ACCEPT, hidden: true });
-  const fileStatus = h('p', { class: 'small muted', role: 'status' }, p.cvFile ? `Current CV: ${p.cvFile}` : 'PDF, Word (.docx), text, or a photo of your CV.');
+  const fileStatus = h('p', { class: 'small muted file-status', role: 'status' }, p.cvFile ? `Current file: ${p.cvFile}` : 'PDF, Word (.docx), text, or a photo of your CV. Read on this device.');
   const analysisBox = h('div', { class: 'analysis' });
   const drop = h(
     'div',
     { class: 'dropzone', tabindex: '0', role: 'button', 'aria-label': 'Upload your CV' },
+    svgIcon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>'),
     h('strong', {}, p.cvFile ? 'Upload a new version' : 'Upload your CV'),
-    h('span', { class: 'muted small' }, 'Drop a file here or tap to choose'),
+    h('span', { class: 'muted small' }, 'Drag a file here or click to choose'),
   );
   drop.addEventListener('click', () => fileInput.click());
   drop.addEventListener('keydown', (e) => {
@@ -1463,22 +1595,24 @@ function renderProfile() {
   fileInput.addEventListener('change', () => fileInput.files[0] && handleFile(fileInput.files[0]));
 
   let pendingImages = [];
-
   async function handleFile(file) {
     if (file.size > 15 * 1024 * 1024) return toast('That file is over 15 MB. Upload a smaller one.');
     fileStatus.textContent = `Reading ${file.name}…`;
     try {
       const { text, images } = await readCVFile(file);
       pendingImages = images;
-      if (text) inputs.cv.value = text;
-      store.update((s) => {
-        s.profile.cvFile = file.name;
-        if (text) s.profile.cv = text;
+      if (text) {
+        cvText.value = text;
+        countWords();
+      }
+      save((pr) => {
+        pr.cvFile = file.name;
+        if (text) pr.cv = text;
       });
       fileStatus.textContent = text
-        ? `Read ${file.name} (${text.split(/\s+/).length} words). Check the text below and fix anything that came out wrong.`
+        ? `Read ${file.name} (${text.split(/\s+/).length} words). Check the CV text below and fix anything that came out wrong.`
         : `${file.name} is an image or a scan, so Claude will read it.`;
-      if (ai.hasKey()) runAnalysis();
+      if (ai.hasKey()) analyzeBtn.click();
       else if (!text) fileStatus.textContent += ' Add an API key in Settings so Claude can read it.';
     } catch (err) {
       console.error(err);
@@ -1486,91 +1620,230 @@ function renderProfile() {
     }
   }
 
-  const analyzeBtn = aiButton(p.cvAnalysis ? 'Analyse again' : 'Analyse my CV', {
-    variant: '',
-    task: async (onText, signal) => {
-      await analyse(signal);
+  const analyzeBtn = aiButton(p.cvAnalysis ? 'Review again' : 'Review my CV', {
+    variant: 'small',
+    task: async (_t, signal) => {
+      const text = cvText.value.trim();
+      if (!text && !pendingImages.length) throw new Error('Upload or paste your CV first.');
+      analysisBox.replaceChildren(h('p', { class: 'muted' }, 'Claude is reading your CV…'));
+      const result = await ai.analyzeCV({ text: pendingImages.length ? '' : text, images: pendingImages }, { signal });
+      let filled = 0;
+      store.update((s) => {
+        const pr = s.profile;
+        if (result.cvText && !text) pr.cv = String(result.cvText);
+        for (const [k, v] of Object.entries(result.profile || {})) {
+          if (['name', 'email', 'phone', 'location', 'headline', 'targetRoles', 'skills'].includes(k) && typeof v === 'string' && v.trim() && !String(pr[k] || '').trim()) {
+            pr[k] = v.trim();
+            filled++;
+          }
+        }
+        pr.cvAnalysis = { ...result, cvText: undefined, at: Date.now() };
+      });
+      pendingImages = [];
+      if (filled) toast('Filled in your profile from the CV');
+      route(); // redraw every section with the new details
       return '';
     },
   });
 
-  function runAnalysis() {
-    analyzeBtn.click();
-  }
-
-  async function analyse(signal) {
-    const text = inputs.cv.value.trim();
-    if (!text && !pendingImages.length) throw new Error('Upload or paste your CV first.');
-    analysisBox.replaceChildren(h('p', { class: 'muted' }, 'Claude is reading your CV…'));
-    const result = await ai.analyzeCV({ text: pendingImages.length ? '' : text, images: pendingImages }, { signal });
-    const filled = [];
-    store.update((s) => {
-      if (result.cvText && !text) {
-        s.profile.cv = String(result.cvText);
-        inputs.cv.value = s.profile.cv;
-      }
-      for (const [k, v] of Object.entries(result.profile || {})) {
-        if (k in inputs && v && !String(s.profile[k] || '').trim() && typeof v === 'string') {
-          s.profile[k] = v.trim();
-          inputs[k].value = v.trim();
-          filled.push(k);
-        }
-      }
-      s.profile.cvAnalysis = { ...result, cvText: undefined, at: Date.now() };
-    });
-    pendingImages = [];
-    drawAnalysis();
-    if (filled.length) toast('Filled in your profile from the CV');
-  }
-
   function drawAnalysis() {
     const a = store.get().profile.cvAnalysis;
-    if (!a) {
-      analysisBox.replaceChildren();
-      return;
-    }
-    const list = (title, items, cls) =>
-      items?.length ? h('div', { class: `analysis-list ${cls}` }, h('h3', {}, title), h('ul', {}, ...items.map((x) => h('li', {}, String(x))))) : '';
+    if (!a) return analysisBox.replaceChildren();
     const score = Math.max(0, Math.min(100, Number(a.score) || 0));
     const level = score >= 75 ? 'high' : score >= 50 ? 'mid' : 'low';
+    const list = (title, items, cls) =>
+      items?.length ? h('div', { class: `review-col ${cls}` }, h('h3', {}, title), h('ul', {}, ...items.map((x) => h('li', {}, String(x))))) : '';
     analysisBox.replaceChildren(
       h(
         'div',
-        { class: 'analysis-head' },
-        h('div', { class: `score-big score-${level}` }, h('strong', {}, String(score)), h('span', {}, '/100')),
-        h('div', {}, h('h3', {}, 'CV review'), h('p', {}, a.verdict || '')),
+        { class: 'review-head' },
+        h('div', { class: `ring ring-${level}`, style: `--p:${score}`, role: 'img', 'aria-label': `CV score ${score} out of 100` }, h('strong', {}, String(score))),
+        h('div', {}, h('h3', {}, 'CV review'), h('p', {}, a.verdict || ''), a.at ? h('p', { class: 'small muted' }, `Reviewed ${fmtDate(a.at)}`) : ''),
       ),
-      h('div', { class: 'analysis-grid' }, list('Strengths', a.strengths, 'good'), list('Improve', a.improvements, 'fix'), list('Applicant tracking systems', a.atsIssues, 'warn')),
-      h('p', { class: 'muted small' }, 'When you apply, open the job and use "CV & cover letter" to get a redesigned CV written for that role.'),
+      h('div', { class: 'review-grid' }, list('What works', a.strengths, 'good'), list('What to fix first', a.improvements, 'fix'), list('Screening software', a.atsIssues, 'warn')),
     );
   }
   drawAnalysis();
 
-  const form = h(
-    'form',
-    { class: 'card form' },
-    h('h2', {}, 'Details'),
-    h('div', { class: 'grid-2' }, field('Full name', inputs.name), field('Location', inputs.location, 'Used to find jobs near you.'), field('Email', inputs.email), field('Phone', inputs.phone)),
-    field('Headline', inputs.headline),
-    h('div', { class: 'grid-2' }, field('Target roles', inputs.targetRoles, 'Comma-separated; the first one pre-fills job search.'), field('Key skills', inputs.skills)),
-    h('label', { class: 'check' }, inputs.remoteOnly, 'I only want remote roles'),
-    h('h2', {}, 'CV text'),
-    inputs.cv,
-    h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, 'Save profile')),
-  );
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    store.update((s) => {
-      for (const [k, el] of Object.entries(inputs)) s.profile[k] = el.type === 'checkbox' ? el.checked : el.value.trim();
-    });
-    toast('Profile saved');
-  });
+  // ----- About you -----
+  const inp = (id, key, attrs = {}) => bind(h('input', { id, value: store.get().profile[key] || '', ...attrs }), key);
+  const headline = inp('pf-headline', 'headline', { maxlength: 120, placeholder: 'e.g. Data analyst who turns logistics data into decisions' });
+  const headCount = h('small', { class: 'muted' }, `${headline.value.length}/120`);
+  headline.addEventListener('input', () => (headCount.textContent = `${headline.value.length}/120`));
 
-  view.append(
-    pageHeader('Your profile', 'Upload your CV and Claude reviews it, fills in your details, and uses it to tailor every application. It stays on this device.'),
-    h('section', { class: 'card' }, h('div', { class: 'row space wrap' }, h('h2', {}, 'Your CV'), analyzeBtn), drop, fileInput, fileStatus, analysisBox),
-    form,
+  // ----- Preferences -----
+  const savePrefs = (patch) => save((pr) => {
+    pr.prefs = { ...pr.prefs, ...patch };
+    if ('workModes' in patch) pr.remoteOnly = patch.workModes.length === 1 && patch.workModes[0] === 'Remote';
+  });
+  const salary = h('input', { id: 'pf-salary', type: 'number', min: 0, step: 1000, inputmode: 'numeric', value: prefs.salaryMin || '', placeholder: 'e.g. 55000' });
+  salary.addEventListener('input', debounce(() => savePrefs({ salaryMin: salary.value }), 350));
+  const currency = h('select', { id: 'pf-currency', 'aria-label': 'Currency' }, ...CURRENCIES.map((c) => h('option', { value: c, selected: c === prefs.currency }, c)));
+  currency.addEventListener('change', () => savePrefs({ currency: currency.value }));
+  const period = h('select', { id: 'pf-period', 'aria-label': 'Per' }, ...[['year', 'per year'], ['month', 'per month'], ['hour', 'per hour']].map(([v, l]) => h('option', { value: v, selected: v === prefs.salaryPeriod }, l)));
+  period.addEventListener('change', () => savePrefs({ salaryPeriod: period.value }));
+  const availability = h('select', { id: 'pf-avail' }, ...AVAILABILITY.map((v) => h('option', { value: v, selected: v === prefs.availability }, v || 'Choose…')));
+  availability.addEventListener('change', () => savePrefs({ availability: availability.value }));
+  const relocate = h('input', { id: 'pf-relocate', type: 'checkbox', checked: Boolean(prefs.relocate) });
+  relocate.addEventListener('change', () => savePrefs({ relocate: relocate.checked }));
+  const authorization = h('input', { id: 'pf-auth', value: prefs.authorization || '', placeholder: 'e.g. EU citizen, or: need visa sponsorship for the UK' });
+  authorization.addEventListener('input', debounce(() => savePrefs({ authorization: authorization.value.trim() }), 350));
+
+  const roles = tagInput({ id: 'pf-roles', values: splitList(p.targetRoles), placeholder: 'e.g. Data Analyst, then press Enter', onChange: (v) => save((pr) => (pr.targetRoles = v.join(', '))), max: 6 });
+  const skills = tagInput({ id: 'pf-skills', values: splitList(p.skills), placeholder: 'e.g. SQL, then press Enter', onChange: (v) => save((pr) => (pr.skills = v.join(', '))) });
+  const langs = tagInput({ id: 'pf-langs', values: splitList(p.languages), placeholder: 'e.g. Dutch (native), then press Enter', onChange: (v) => save((pr) => (pr.languages = v.join(', '))), max: 10 });
+
+  const section = (id, title, intro, ...body) =>
+    h('section', { class: 'card pf-section', id }, h('div', { class: 'pf-section-head' }, h('h2', {}, title), intro ? h('p', { class: 'muted small' }, intro) : ''), ...body);
+
+  const sections = [
+    section(
+      'pf-sec-cv',
+      'CV',
+      'Your master CV. Claude reviews it and rewrites it for every job you apply to.',
+      h('div', { class: 'row space wrap' }, fileStatus, analyzeBtn),
+      drop,
+      fileInput,
+      analysisBox,
+      h(
+        'details',
+        { class: 'cv-raw' },
+        h('summary', {}, 'Edit CV text ', words),
+        h('p', { class: 'small muted' }, 'This is the text Claude works from. Fix anything the file reader got wrong.'),
+        cvText,
+      ),
+    ),
+    section(
+      'pf-sec-about',
+      'About you',
+      'Shown at the top of every CV and cover letter Claude writes.',
+      h('div', { class: 'grid-2' }, field('Full name', inp('pf-name', 'name', { autocomplete: 'name' })), field('Location', inp('pf-location', 'location', { placeholder: 'City, country', autocomplete: 'address-level2' }), 'Used to find jobs near you.')),
+      h('label', { class: 'field' }, h('span', {}, 'Headline'), headline, h('small', { class: 'row space' }, h('span', { class: 'muted' }, 'One line about what you do and what you are good at.'), headCount)),
+      h('div', { class: 'grid-2' }, field('Email', inp('pf-email', 'email', { type: 'email', autocomplete: 'email' })), field('Phone', inp('pf-phone', 'phone', { type: 'tel', autocomplete: 'tel' }))),
+    ),
+    section(
+      'pf-sec-prefs',
+      'Job preferences',
+      'Claude uses these to search, rank matches and write your cover letters.',
+      h('div', { class: 'field' }, h('span', {}, 'Roles you want'), roles.el, h('small', { class: 'muted' }, 'Up to 6. The first one is used for your daily "Jobs for you".')),
+      h('div', { class: 'grid-2' }, h('div', { class: 'field' }, h('span', {}, 'Work mode'), pillGroup({ label: 'Work mode', options: WORK_MODES, values: prefs.workModes, onChange: (v) => savePrefs({ workModes: v }) })), h('div', { class: 'field' }, h('span', {}, 'Employment type'), pillGroup({ label: 'Employment type', options: JOB_TYPES, values: prefs.types, onChange: (v) => savePrefs({ types: v }) }))),
+      h('div', { class: 'field' }, h('span', {}, 'Minimum salary'), h('div', { class: 'salary-row' }, salary, currency, period), h('small', { class: 'muted' }, 'Private. Used to flag roles that pay below what you want.')),
+      h('div', { class: 'grid-2' }, field('Available to start', availability), field('Work authorisation', authorization)),
+      h('label', { class: 'check' }, relocate, 'I am open to relocating for the right role'),
+    ),
+    section(
+      'pf-sec-skills',
+      'Skills and languages',
+      'Add skills as tags. Claude matches them against job postings.',
+      h('div', { class: 'field' }, h('span', {}, 'Skills'), skills.el),
+      h('div', { class: 'field' }, h('span', {}, 'Languages'), langs.el),
+    ),
+    section(
+      'pf-sec-links',
+      'Links',
+      'Added to the contact line of your tailored CVs.',
+      h('div', { class: 'grid-2' }, field('LinkedIn', inp('pf-linkedin', 'linkedin', { type: 'url', placeholder: 'linkedin.com/in/your-name' })), field('Portfolio or website', inp('pf-portfolio', 'portfolio', { type: 'url', placeholder: 'your-site.com' }))),
+      field('GitHub', inp('pf-github', 'github', { type: 'url', placeholder: 'github.com/your-name' })),
+    ),
+  ];
+
+  // ----- Section navigation (desktop) -----
+  const nav = h(
+    'nav',
+    { class: 'pf-nav', 'aria-label': 'Profile sections' },
+    ...[
+      ['pf-sec-cv', 'CV'],
+      ['pf-sec-about', 'About you'],
+      ['pf-sec-prefs', 'Job preferences'],
+      ['pf-sec-skills', 'Skills and languages'],
+      ['pf-sec-links', 'Links'],
+    ].map(([id, label]) => {
+      const b = h('button', { type: 'button' }, label);
+      b.addEventListener('click', () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      return b;
+    }),
+    saveState,
   );
+
+  // ----- Side column -----
+  const side = h('aside', { class: 'pf-side' });
+  function drawSide() {
+    const pr = store.get().profile;
+    const items = profileChecklist(pr);
+    const docs = store.get().docs;
+    const tailored = Object.entries(docs)
+      .filter(([id, d]) => d?.cvData && store.get().jobs[id])
+      .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))
+      .slice(0, 6);
+    side.replaceChildren(
+      h(
+        'section',
+        { class: 'card' },
+        h('div', { class: 'section-title' }, h('h2', {}, 'Complete your profile')),
+        h(
+          'ol',
+          { class: 'checklist' },
+          ...items.map((x) => {
+            const a = h('a', { href: '#/profile' }, x.label);
+            a.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const target = document.getElementById(x.section);
+              target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              target?.querySelector(x.focus || 'input, textarea, button')?.focus({ preventScroll: true });
+            });
+            return h('li', { class: x.done ? 'done' : '' }, a);
+          }),
+        ),
+      ),
+      h(
+        'section',
+        { class: 'card' },
+        h('div', { class: 'section-title' }, h('h2', {}, 'Your tailored CVs')),
+        tailored.length
+          ? h(
+              'ul',
+              { class: 'plain-list' },
+              ...tailored.map(([id, d]) => {
+                const job = store.get().jobs[id];
+                const a = h('a', { href: `#/job/${encodeURIComponent(id)}` }, job.title);
+                a.addEventListener('click', () => {
+                  try {
+                    sessionStorage.setItem('ajh:tab', 'docs');
+                  } catch {}
+                });
+                return h('li', {}, h('div', {}, a, h('div', { class: 'small muted' }, `${job.company} · ${fmtDate(d.updatedAt)}`)));
+              }),
+            )
+          : h('p', { class: 'small muted', style: 'margin:0' }, 'When you tailor your CV for a job it shows up here, ready to download again.'),
+      ),
+      h(
+        'section',
+        { class: 'card privacy' },
+        h('h2', {}, 'Your data'),
+        h('p', { class: 'small muted' }, 'Your profile and CV stay on this device. They are only sent to Claude when you ask it to search, review or write something.'),
+        h('a', { class: 'btn small', href: '#/settings' }, 'Back up or delete data'),
+      ),
+    );
+  }
+
+  drawHeader();
+  drawSide();
+  view.append(header, h('div', { class: 'pf-layout' }, nav, h('div', { class: 'pf-main' }, ...sections), side));
+}
+
+function profileChecklist(pr) {
+  return [
+    { done: Boolean(pr.cv.trim()), label: 'Upload your CV', section: 'pf-sec-cv', focus: '.dropzone' },
+    { done: Boolean(pr.headline.trim()), label: 'Write a headline', section: 'pf-sec-about', focus: '#pf-headline' },
+    { done: Boolean(pr.location.trim()), label: 'Add your location', section: 'pf-sec-about', focus: '#pf-location' },
+    { done: Boolean(pr.email.trim() || pr.phone.trim()), label: 'Add contact details', section: 'pf-sec-about', focus: '#pf-email' },
+    { done: Boolean(pr.targetRoles.trim()), label: 'Choose the roles you want', section: 'pf-sec-prefs', focus: '#pf-roles' },
+    { done: Boolean(pr.prefs?.workModes?.length || pr.prefs?.types?.length), label: 'Set work mode and type', section: 'pf-sec-prefs', focus: '.pill-group .chip' },
+    { done: Boolean(pr.skills.trim()), label: 'Add your skills', section: 'pf-sec-skills', focus: '#pf-skills' },
+    { done: Boolean(pr.languages?.trim()), label: 'Add languages', section: 'pf-sec-skills', focus: '#pf-langs' },
+    { done: Boolean(pr.linkedin || pr.portfolio || pr.github), label: 'Add a link', section: 'pf-sec-links', focus: '#pf-linkedin' },
+  ];
 }
 
 // ---------------------------------------------------------------------------

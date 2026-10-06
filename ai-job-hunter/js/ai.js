@@ -192,19 +192,29 @@ export function extractJSON(text) {
 
 function profileBlock() {
   const p = store.get().profile;
+  const pr = p.prefs || {};
+  const links = [p.linkedin, p.portfolio, p.github].filter(Boolean);
+  const salary = pr.salaryMin ? `${Number(pr.salaryMin).toLocaleString('en')} ${pr.currency || ''} per ${pr.salaryPeriod || 'year'}` : '';
   return [
     `Name: ${p.name || '(not given)'}`,
     p.location && `Location: ${p.location}`,
     p.headline && `Headline: ${p.headline}`,
     p.targetRoles && `Target roles: ${p.targetRoles}`,
     p.skills && `Key skills: ${p.skills}`,
-    p.remoteOnly && 'Prefers remote-only roles',
+    p.languages && `Languages: ${p.languages}`,
+    links.length && `Links: ${links.join(', ')}`,
+    pr.workModes?.length ? `Wants to work: ${pr.workModes.join(' or ')}` : p.remoteOnly && 'Prefers remote-only roles',
+    pr.types?.length && `Employment type: ${pr.types.join(', ')}`,
+    salary && `Minimum salary: ${salary}`,
+    pr.availability && `Available to start: ${pr.availability}`,
+    pr.relocate && 'Open to relocating',
+    pr.authorization && `Work authorisation: ${pr.authorization}`,
     '',
     '<master_cv>',
     p.cv || '(The candidate has not pasted a CV yet.)',
     '</master_cv>',
   ]
-    .filter((l) => l !== false && l !== undefined && l !== null)
+    .filter((l) => l !== false && l !== undefined && l !== null && l !== 0)
     .join('\n');
 }
 
@@ -280,7 +290,8 @@ const RANKED_FORMAT =
   '"salary": string, "description": string (2-4 sentences: the role and key requirements), "posted": string, ' +
   '"match": number (0-100, how well the candidate\'s actual experience and seniority fit; be honest), ' +
   '"why": string (max 14 words, the concrete reason it fits or what is missing, no dashes)}. ' +
-  'Leave out roles that are clearly far too senior, too junior or in another field.';
+  'Leave out roles that are clearly far too senior, too junior or in another field. Lower the match for roles that clash with ' +
+  'the candidate\'s work mode, employment type or minimum salary, and say so in "why".';
 
 function placeRule(where, remoteOnly) {
   if (remoteOnly) return 'Only include remote roles.';
@@ -470,7 +481,8 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
           '- Rewrite bullets so each one says what the person actually did and, where the CV supports it, what came of it. Vary how bullets are built. 3-5 bullets for recent roles, fewer for older ones.\n' +
           '- Use the job posting\'s own terms for skills and tools the CV genuinely shows. Group skills under short labels.\n' +
           '- Keep it to what fits on one or two A4 pages.\n' +
-          `- Contact details: name "${p.name}", email "${p.email}", phone "${p.phone}", location "${p.location}" unless the CV says otherwise.` +
+          `- Contact details: name "${p.name}", email "${p.email}", phone "${p.phone}", location "${p.location}"` +
+          `${[p.linkedin, p.portfolio, p.github].filter(Boolean).length ? `, links ${JSON.stringify([p.linkedin, p.portfolio, p.github].filter(Boolean))}` : ''} unless the CV says otherwise.` +
           draft +
           `\n\nReply with only a JSON object: ${CV_SHAPE}, ` +
           '"changes": [string] (3-6 short notes on what you changed for this job and why), "keywords": [string] (posting keywords the CV now covers)}. ' +
