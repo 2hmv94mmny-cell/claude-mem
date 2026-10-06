@@ -9,6 +9,7 @@ import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
 import { jobsForYou, aboutFromPosting, norm } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage } from './i18n.js';
+import { attachSuggest, rememberSearch } from './suggest.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
 import { TEMPLATES, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
@@ -410,8 +411,12 @@ function searchBar({ what = '', where = '', onSubmit, button = 'Search jobs', id
     h('label', { for: l.id }, svgIcon(ICON_PIN), l),
     submit,
   );
+  // Suggestions as you type; picking a job title moves on to the place.
+  attachSuggest(q, 'what', () => l.focus());
+  attachSuggest(l, 'where');
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    rememberSearch({ query: q.value, location: l.value });
     onSubmit({ query: q.value.trim(), location: l.value.trim() });
   });
   return { form, q, l, submit };
@@ -1988,6 +1993,12 @@ function pillGroup({ label, options, values, onChange }) {
   return group;
 }
 
+/** Attach place or job-title suggestions to an input once it is in the page. */
+function withSuggest(input, kind) {
+  queueMicrotask(() => input.parentNode && attachSuggest(input, kind));
+  return input;
+}
+
 function initials(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   return ((parts[0]?.[0] || '') + (parts.length > 1 ? parts.at(-1)[0] : '')).toUpperCase() || '?';
@@ -2041,6 +2052,7 @@ function renderProfile() {
     const pr = store.get().profile;
     const inputs = HERO_FIELDS.map(([key, label, attrs]) => {
       const el = h('input', { id: `hero-${key}`, value: pr[key] || '', ...attrs });
+      if (key === 'location') queueMicrotask(() => attachSuggest(el, 'where'));
       el.addEventListener('input', debounce(() => {
         save((x) => (x[key] = el.value.trim()));
         const twin = document.getElementById(`pf-${key}`);
@@ -2325,7 +2337,7 @@ function renderProfile() {
       'pf-sec-about',
       'About you',
       'Shown at the top of every CV and cover letter Claude writes.',
-      h('div', { class: 'grid-2' }, field('Full name', inp('pf-name', 'name', { autocomplete: 'name' })), field('Location', inp('pf-location', 'location', { placeholder: 'City, country', autocomplete: 'address-level2' }), 'Used to find jobs near you.')),
+      h('div', { class: 'grid-2' }, field('Full name', inp('pf-name', 'name', { autocomplete: 'name' })), field('Location', withSuggest(inp('pf-location', 'location', { placeholder: 'City, country', autocomplete: 'off' }), 'where'), 'Used to find jobs near you.')),
       h('label', { class: 'field' }, h('span', {}, 'Headline'), headline, h('small', { class: 'row space' }, h('span', { class: 'muted' }, 'One line about what you do and what you are good at.'), headCount)),
       h('div', { class: 'grid-2' }, field('Email', inp('pf-email', 'email', { type: 'email', autocomplete: 'email' })), field('Phone', inp('pf-phone', 'phone', { type: 'tel', autocomplete: 'tel' }))),
     ),
