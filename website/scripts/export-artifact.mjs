@@ -336,6 +336,7 @@ ${beforeMain}
 ${afterMain}
 ${templates}
 <script>${script}</script>
+<script>${readFileSync(join(root, "public/lightbox.js"), "utf8")}</script>
 `;
 
 writeFileSync(target, html);

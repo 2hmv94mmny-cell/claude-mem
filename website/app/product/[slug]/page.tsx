@@ -42,11 +42,17 @@ export default async function ProductPage({ params }: Props) {
 
       <section className="wrap pdp">
         <div className="gallery">
-          {Array.from({ length: views }, (_, i) => (
-            <div key={i} className="frame">
-              <ProductImage product={product} view={i} priority={i === 0} />
-            </div>
-          ))}
+          {Array.from({ length: views }, (_, i) =>
+            product.images[i] ? (
+              <button key={i} type="button" className="frame zoomable" data-zoom aria-label={`Enlarge image ${i + 1}`}>
+                <ProductImage product={product} view={i} priority={i === 0} />
+              </button>
+            ) : (
+              <div key={i} className="frame">
+                <ProductImage product={product} view={i} priority={i === 0} />
+              </div>
+            ),
+          )}
         </div>
 
         <div className="pdp-info">

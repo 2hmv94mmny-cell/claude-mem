@@ -1185,6 +1185,126 @@ body.menu-open {
   aspect-ratio: 4 / 5;
 }
 
+/* ---------- Image zoom ---------- */
+.frame.zoomable {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.frame.zoomable:focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  animation: menu-in 300ms ease;
+}
+
+.zoom[hidden] {
+  display: none;
+}
+
+.zoom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+  padding: env(safe-area-inset-top, 0px) var(--gutter) 0;
+  flex-shrink: 0;
+}
+
+.zoom-hint {
+  color: var(--muted);
+  text-align: center;
+}
+
+.zoom-close {
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.zoom-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  cursor: zoom-in;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.zoom.is-zoomed .zoom-stage {
+  cursor: zoom-out;
+}
+
+.zoom-img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.zoom-nav {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-top: -24px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  color: var(--ink);
+  cursor: pointer;
+  transition: opacity 200ms ease;
+}
+
+.zoom-prev {
+  left: var(--gutter);
+}
+
+.zoom-next {
+  right: var(--gutter);
+}
+
+.zoom.single .zoom-nav,
+.zoom.single .zoom-count,
+.zoom.is-zoomed .zoom-nav {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 520px) {
+  .zoom-hint {
+    display: none;
+  }
+}
+
 .pdp-info {
   position: sticky;
   top: calc(env(safe-area-inset-top, 0px) + 100px);

@@ -191,6 +191,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </footer>
+        <script src="/lightbox.js" defer />
       </body>
     </html>
   );
