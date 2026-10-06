@@ -12,11 +12,11 @@ export function ProductCard({ product }: { product: Product }) {
       </div>
       <div className="product-card-info">
         <span className="name">{product.name}</span>
+        {product.colour && <span className="colour">{product.colour}</span>}
         <span className="price">
           {formatChf(product.priceCents)}
           {product.compareAtCents && <s>{formatChf(product.compareAtCents)}</s>}
         </span>
-        {product.colour && <span className="colour">{product.colour}</span>}
       </div>
     </Link>
   );

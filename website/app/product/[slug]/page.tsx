@@ -89,6 +89,34 @@ export default async function ProductPage({ params }: Props) {
                 </ul>
               </div>
             </details>
+            {product.sizeChart && (
+              <details>
+                <summary className="label">Size and fit</summary>
+                <div className="panel">
+                  <div className="table-wrap">
+                    <table className="size-table">
+                      <thead>
+                        <tr>
+                          {product.sizeChart.head.map((h) => (
+                            <th key={h} scope="col">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {product.sizeChart.rows.map((row) => (
+                          <tr key={row[0]}>
+                            {row.map((cell, i) => (i === 0 ? <th key={i} scope="row">{cell}</th> : <td key={i}>{cell}</td>))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {product.sizeChart.note && <p className="small">{product.sizeChart.note}</p>}
+                </div>
+              </details>
+            )}
             {product.care.length > 0 && (
               <details>
                 <summary className="label">Care</summary>

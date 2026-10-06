@@ -673,10 +673,10 @@ body.menu-open {
 }
 
 .product-card-info {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 12px;
-  align-items: baseline;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .product-card-info .name {
@@ -687,9 +687,17 @@ body.menu-open {
 }
 
 .product-card-info .colour {
-  grid-column: 1;
   color: var(--muted);
   font-size: 13px;
+}
+
+.product-card-info .price {
+  margin-top: 2px;
+  white-space: normal;
+}
+
+.product-card-info .price s {
+  white-space: nowrap;
 }
 
 .price {
@@ -904,6 +912,8 @@ body.menu-open {
 
 .collection-bar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
   justify-content: space-between;
   align-items: center;
   border-block: 1px solid var(--line);
@@ -915,6 +925,10 @@ body.menu-open {
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
+}
+
+.collection-bar > span {
+  white-space: nowrap;
 }
 
 .collection-tabs a[aria-current="page"] {
@@ -987,8 +1001,8 @@ body.menu-open {
 }
 
 .options {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   border: 0;
   padding: 0;
@@ -1007,8 +1021,10 @@ body.menu-open {
   position: relative;
   display: grid;
   place-items: center;
+  flex: 1 0 auto;
+  min-width: 64px;
   min-height: 46px;
-  padding: 0 10px;
+  padding: 0 14px;
   border: 1px solid var(--line);
   font-size: 13px;
   letter-spacing: 0.04em;

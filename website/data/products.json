@@ -80,7 +80,8 @@
       "Natural wooden buttons",
       "Ribbed cuffs and hem with a soft taupe tipping",
       "Two front patch pockets",
-      "Colour: cream"
+      "Colour: cream",
+      "Sizes 66–100 are the child's height in cm"
     ],
     "care": [
       "Hand wash cold or machine wash on a wool cycle",
@@ -98,34 +99,81 @@
     "variantLabel": "Size",
     "variants": [
       {
-        "id": "soft-knit-cable-cardigan-12-18m",
-        "label": "12–18M",
+        "id": "soft-knit-cable-cardigan-66",
+        "label": "66 · 3–6M",
         "supplierVid": null
       },
       {
-        "id": "soft-knit-cable-cardigan-18-24m",
-        "label": "18–24M",
+        "id": "soft-knit-cable-cardigan-73",
+        "label": "73 · 6–12M",
         "supplierVid": null
       },
       {
-        "id": "soft-knit-cable-cardigan-2-3y",
-        "label": "2–3Y",
+        "id": "soft-knit-cable-cardigan-80",
+        "label": "80 · 12–18M",
         "supplierVid": null
       },
       {
-        "id": "soft-knit-cable-cardigan-3-4y",
-        "label": "3–4Y",
+        "id": "soft-knit-cable-cardigan-90",
+        "label": "90 · 18–24M",
         "supplierVid": null
       },
       {
-        "id": "soft-knit-cable-cardigan-4-5y",
-        "label": "4–5Y",
+        "id": "soft-knit-cable-cardigan-100",
+        "label": "100 · 2–3Y",
         "supplierVid": null
       }
     ],
     "deliveryDays": "8–15 business days",
     "supplier": "cj",
-    "published": true
+    "published": true,
+    "sizeChart": {
+      "note": "Garment measurements in cm, as listed by the supplier. Please allow 2–3 cm difference due to manual measurement.",
+      "head": [
+        "Size",
+        "Age",
+        "Length",
+        "Chest",
+        "Sleeve"
+      ],
+      "rows": [
+        [
+          "66",
+          "3–6M",
+          "30",
+          "30",
+          "26"
+        ],
+        [
+          "73",
+          "6–12M",
+          "32",
+          "31.5",
+          "27.5"
+        ],
+        [
+          "80",
+          "12–18M",
+          "34",
+          "33",
+          "29"
+        ],
+        [
+          "90",
+          "18–24M",
+          "36",
+          "34.5",
+          "30.5"
+        ],
+        [
+          "100",
+          "2–3Y",
+          "38",
+          "36",
+          "32"
+        ]
+      ]
+    }
   },
   {
     "id": "ines-classic-trench",

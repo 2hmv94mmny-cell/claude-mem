@@ -31,6 +31,8 @@ export interface Product {
   description: string;
   details: string[];
   care: string[];
+  /** Product-specific garment measurements, shown on the product page. */
+  sizeChart?: { note?: string; head: string[]; rows: string[][] };
   /** Image URLs. Empty means the shop shows a colour placeholder. */
   images: string[];
   /** Placeholder colour for products without images. */

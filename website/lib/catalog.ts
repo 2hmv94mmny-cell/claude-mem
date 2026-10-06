@@ -5,7 +5,7 @@ export const categories: { id: CategoryId; name: string; intro: string }[] = [
   { id: "ready-to-wear", name: "Ready-to-Wear", intro: "Knitwear, shirts, tailoring and outerwear in sizes XS to XL." },
   { id: "bags", name: "Bags", intro: "Totes, shoulder bags, crossbodies and evening clutches." },
   { id: "shoes", name: "Shoes", intro: "Loafers, boots, flats and sneakers in EU sizes 36 to 41." },
-  { id: "kids", name: "Kids", intro: "Soft knits and little layers, in sizes 12 months to 5 years." },
+  { id: "kids", name: "Kids", intro: "Soft knits and little layers, in sizes 66 to 100 (3 months to 3 years)." },
 ];
 
 const allProducts = rawProducts as Product[];

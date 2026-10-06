@@ -45,7 +45,7 @@ export default function SizeGuidePage() {
       </section>
       <section>
         <h2>Kids</h2>
-        <SizeTable caption="Kids sizes, height and chest in cm" {...sizeChart.kids} />
+        <SizeTable caption="Kids sizes, height in cm" {...sizeChart.kids} />
       </section>
       <section>
         <h2>Shoes</h2>
