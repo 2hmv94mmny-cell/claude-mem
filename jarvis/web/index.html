@@ -160,6 +160,14 @@
     margin-bottom: 10px;
   }
   .toggle[aria-pressed="true"] { color: var(--arc); border-color: var(--arc); }
+  .replay {
+    align-self: flex-start;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    background: none; border: 1px solid var(--line); color: var(--arc);
+    border-radius: 6px; padding: 4px 8px; cursor: pointer; margin-top: 2px;
+  }
+  .replay:hover { background: var(--arc-dim); }
+  .replay:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
   .note { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: center; margin: 0; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .reactor.on::after { animation: none; } }
@@ -225,18 +233,49 @@ Use plain sentences: no markdown, lists, headings or code blocks. Address the us
     return { wrap, body };
   }
 
-  function speak(text) {
-    if (!voiceOn || !("speechSynthesis" in window)) return;
-    try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      const voices = speechSynthesis.getVoices();
-      const v = voices.find(v => /en-GB/i.test(v.lang) && /male|daniel|george|arthur/i.test(v.name))
-             || voices.find(v => /en-GB/i.test(v.lang)) || voices.find(v => /^en/i.test(v.lang));
-      if (v) u.voice = v;
+  // ---- Speech output ----
+  const TTS = "speechSynthesis" in window ? window.speechSynthesis : null;
+  let voice = null, unlocked = false;
+  function pickVoice() {
+    if (!TTS) return;
+    const vs = TTS.getVoices();
+    voice = vs.find(v => /en-GB/i.test(v.lang) && /daniel|george|arthur|male|ryan/i.test(v.name))
+         || vs.find(v => /en-GB/i.test(v.lang))
+         || vs.find(v => /^en/i.test(v.lang)) || vs[0] || null;
+  }
+  if (TTS) { pickVoice(); TTS.addEventListener?.("voiceschanged", pickVoice); }
+
+  // Browsers only allow speech that starts from a tap, so prime it on the first one.
+  function unlockSpeech() {
+    if (!TTS || unlocked) return;
+    unlocked = true;
+    try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; TTS.speak(u); } catch {}
+  }
+
+  function speak(text, force) {
+    if (!TTS) { showNote("This browser can't speak. Try Chrome, Edge or Safari."); return; }
+    if (!voiceOn && !force) return;
+    TTS.cancel();
+    // Speak sentence by sentence: Chrome cuts off long single utterances.
+    const parts = text.match(/[^.!?]+[.!?]*\s*/g) || [text];
+    parts.forEach((part, i) => {
+      const u = new SpeechSynthesisUtterance(part.trim());
+      if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-GB";
       u.rate = 1.02; u.pitch = 0.9;
-      speechSynthesis.speak(u);
-    } catch {}
+      if (i === 0) u.onstart = () => setStatus("Speaking", "busy");
+      if (i === parts.length - 1) { u.onend = () => setStatus("Online"); u.onerror = () => setStatus("Online"); }
+      TTS.speak(u);
+    });
+    // Chrome sometimes leaves the queue paused.
+    setTimeout(() => { try { if (TTS.paused) TTS.resume(); } catch {} }, 150);
+  }
+
+  function addSpeakButton(wrap, getText) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "replay"; b.textContent = "▶ Speak";
+    b.setAttribute("aria-label", "Read this reply aloud");
+    b.addEventListener("click", () => { unlocked = true; speak(getText(), true); });
+    wrap.append(b);
   }
 
   const ERR = {
@@ -274,6 +313,7 @@ Use plain sentences: no markdown, lists, headings or code blocks. Address the us
       });
       turns.push({ role: "assistant", content: reply });
       body.textContent = reply;
+      addSpeakButton(wrap, () => reply);
       speak(reply);
     } catch (e) {
       turns.pop();
@@ -285,7 +325,8 @@ Use plain sentences: no markdown, lists, headings or code blocks. Address the us
     }
   }
 
-  form.addEventListener("submit", (e) => { e.preventDefault(); ask(input.value); });
+  form.addEventListener("submit", (e) => { e.preventDefault(); unlockSpeech(); ask(input.value); });
+  document.querySelectorAll(".msg.jarvis").forEach(w => { const b = w.querySelector(".body"); addSpeakButton(w, () => b.textContent); });
 
   // Voice input via the browser's speech recognition, where the browser allows it
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -293,6 +334,7 @@ Use plain sentences: no markdown, lists, headings or code blocks. Address the us
   if (!SR) { mic.disabled = true; mic.title = "Voice input isn't supported in this browser"; }
   mic.addEventListener("click", () => {
     if (!SR) return;
+    unlockSpeech();
     if (listening) { rec?.stop(); return; }
     try {
       rec = new SR();
@@ -327,14 +369,13 @@ Use plain sentences: no markdown, lists, headings or code blocks. Address the us
   voiceToggle.addEventListener("click", () => {
     voiceOn = !voiceOn;
     try { localStorage.setItem("jarvis-voice", voiceOn ? "on" : "off"); } catch {}
-    if (!voiceOn) try { speechSynthesis.cancel(); } catch {}
+    if (voiceOn) { unlockSpeech(); speak("Voice enabled."); } else try { TTS?.cancel(); } catch {}
     syncVoice();
   });
   function syncVoice() {
     voiceToggle.setAttribute("aria-pressed", String(voiceOn));
     voiceToggle.textContent = voiceOn ? "Voice on" : "Voice off";
   }
-  if ("speechSynthesis" in window) speechSynthesis.getVoices();
 
   samplePromise.then((s) => { if (!s) { showNote("Open this page on claude.ai to talk to Jarvis."); send.disabled = true; } });
 </script>
