@@ -5,6 +5,7 @@ import { AddToCart } from "@/components/AddToCart";
 import { ProductCard } from "@/components/ProductCard";
 import { ProductImage } from "@/components/ProductImage";
 import { SHIPPING, getCategory, getColourVariants, getProductBySlug, getProducts, getProductsByCategory } from "@/lib/catalog";
+import { CurrencySelect } from "@/components/CurrencySelect";
 import { CurrencyNote, Money } from "@/components/Money";
 import { priceNote } from "@/content";
 
@@ -54,10 +55,13 @@ export default async function ProductPage({ params }: Props) {
             {product.colour && <span className="muted">{product.colour}</span>}
           </div>
           <div>
-            <p className="pdp-price">
-              <Money cents={product.priceCents} />
-              {product.compareAtCents && <s><Money cents={product.compareAtCents} /></s>}
-            </p>
+            <div className="pdp-price-row">
+              <p className="pdp-price">
+                <Money cents={product.priceCents} />
+                {product.compareAtCents && <s><Money cents={product.compareAtCents} /></s>}
+              </p>
+              <CurrencySelect className="currency-chip" label="Currency" />
+            </div>
             <p className="muted small">{priceNote}</p>
             <CurrencyNote />
           </div>

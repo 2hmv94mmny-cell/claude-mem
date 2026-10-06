@@ -159,7 +159,7 @@ const script = `
   const write = (lines) => { memory = lines; try { localStorage.setItem(KEY, JSON.stringify(lines)); } catch {} updateCount(); };
   const updateCount = () => {
     const n = read().reduce((s, l) => s + l.quantity, 0);
-    document.querySelectorAll(".bag-count").forEach((el) => (el.textContent = "(" + n + ")"));
+    document.querySelectorAll(".bag-count").forEach((el) => (el.innerHTML = '<span class="paren">(</span>' + n + '<span class="paren">)</span>'));
   };
   const current = () => location.hash.slice(1) || "home";
   const productForRoute = () => PRODUCTS.find((p) => "product-" + p.slug === current());

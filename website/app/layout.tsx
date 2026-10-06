@@ -103,9 +103,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link className="only-desktop" href="/pages/contact">
                 Client care
               </Link>
-              <CurrencySelect className="only-desktop" />
-              <Link href="/bag">
-                Bag <CartCount />
+              <CurrencySelect className="header-currency" />
+              <Link href="/bag" className="bag-link" aria-label="Shopping bag">
+                <span className="bag-word">Bag</span>
+                <svg className="bag-icon" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+                  <path d="M4 6.5h12l-1 11H5z M7.5 6.5V5a2.5 2.5 0 0 1 5 0v1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+                </svg>
+                <CartCount />
               </Link>
             </div>
           </div>

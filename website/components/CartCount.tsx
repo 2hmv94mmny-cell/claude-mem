@@ -4,5 +4,11 @@ import { useCart } from "@/lib/cart-store";
 
 export function CartCount() {
   const count = useCart().reduce((sum, l) => sum + l.quantity, 0);
-  return <span className="bag-count">({count})</span>;
+  return (
+    <span className="bag-count">
+      <span className="paren">(</span>
+      {count}
+      <span className="paren">)</span>
+    </span>
+  );
 }
