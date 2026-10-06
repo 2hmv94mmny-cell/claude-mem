@@ -1,199 +1,310 @@
 <title>Jarvis</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
-  /* Layout: Stark-lab HUD. Desktop = system panel | reactor core + transcript | memory panel. Phone = one column. Single deliberate dark theme. */
+  /* Layout: app shell — top bar, then sidebar (system) | main (hologram + conversation + composer) | inspector (memory).
+     Under 980px the sidebar and inspector become tabs. Single deliberate dark theme. */
   :root {
     color-scheme: dark;
-    --bg: #050a12;
-    --glass: rgba(14, 30, 48, 0.55);
-    --line: rgba(95, 212, 255, 0.22);
-    --fg: #dbe9f5;
-    --muted: #7a92ab;
-    --arc: #5fd4ff;
-    --arc-soft: rgba(95, 212, 255, 0.14);
+    --bg: #04070d;
+    --surface: rgba(16, 23, 36, 0.72);
+    --surface-2: rgba(24, 34, 52, 0.8);
+    --surface-3: #1a2436;
+    --border: rgba(140, 175, 215, 0.11);
+    --border-strong: rgba(140, 175, 215, 0.2);
+    --fg: #e9eff7;
+    --fg-2: #b5c2d3;
+    --muted: #7d8da3;
+    --accent: #5fd4ff;
+    --accent-ink: #04121c;
+    --accent-soft: rgba(95, 212, 255, 0.12);
+    --warn: #ffc85a;
     --hot: #ff7a4d;
-    --gold: #ffc85a;
-    --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
-    --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --ok: #4ade9a;
+    --radius: 14px;
+    --radius-sm: 9px;
+    --shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 20px 40px -24px rgba(0,0,0,0.8);
+    --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  html, body { height: 100%; }
   *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     background:
-      radial-gradient(circle at 50% 35%, rgba(40, 110, 170, 0.22), transparent 55%),
-      repeating-linear-gradient(0deg, rgba(95,212,255,0.035) 0 1px, transparent 1px 44px),
-      repeating-linear-gradient(90deg, rgba(95,212,255,0.035) 0 1px, transparent 1px 44px),
+      radial-gradient(1200px 600px at 50% -10%, rgba(56, 120, 190, 0.18), transparent 60%),
+      radial-gradient(800px 500px at 100% 100%, rgba(95, 212, 255, 0.05), transparent 60%),
       var(--bg);
     color: var(--fg);
-    font-family: var(--font-body);
-    font-size: 14.5px;
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
-  .hud {
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  .app {
     height: 100%;
-    display: grid;
-    grid-template-columns: 250px minmax(0, 1fr) 270px;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 14px;
-    padding-inline: 18px;
-    padding-block: 0 16px;
-    max-width: 1400px;
+    max-width: 1480px;
     margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 0 20px;
+    display: grid;
+    grid-template-columns: 264px minmax(0, 1fr) 292px;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    column-gap: 20px;
   }
 
-  /* Top bar */
+  /* ---------- Top bar ---------- */
   .topbar {
     grid-column: 1 / -1;
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
-    gap: 6px 16px;
-    padding-block: 14px 10px;
-    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px;
+    padding-block: 16px;
   }
-  .brand { font-family: var(--font-display); font-weight: 600; font-size: 20px; letter-spacing: 0.34em; color: var(--arc); margin: 0; text-shadow: 0 0 14px rgba(95,212,255,.45); }
-  .brand small { display: block; font-family: var(--font-mono); font-weight: 400; font-size: 10px; letter-spacing: 0.18em; color: var(--muted); text-shadow: none; }
-  .clock { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
-  .clock b { display: block; font-weight: 500; font-size: 22px; color: var(--fg); letter-spacing: 0.06em; }
-  .clock span { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--fg); }
+  .logo-mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+    background: radial-gradient(circle at 50% 50%, #c9f3ff 0 14%, var(--accent) 15% 30%, rgba(95,212,255,.15) 31% 100%);
+    box-shadow: 0 0 0 1px rgba(95,212,255,.35), 0 0 18px rgba(95,212,255,.35); }
+  .logo-name { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+  .logo-tag { font-family: var(--mono); font-size: 10.5px; color: var(--muted); border: 1px solid var(--border-strong); border-radius: 6px; padding: 1px 6px; }
+  .topbar .spacer { flex: 1; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 500; color: var(--fg-2);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px 6px 10px;
+  }
+  .status-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,154,.15); }
+  .status-pill.busy i { background: var(--warn); box-shadow: 0 0 0 3px rgba(255,200,90,.15); }
+  .status-pill.hot i { background: var(--hot); box-shadow: 0 0 0 3px rgba(255,122,77,.18); }
+  .status-pill.speak i { background: var(--accent); box-shadow: 0 0 0 3px rgba(95,212,255,.18); }
+  .clock { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--fg-2); text-align: right; line-height: 1.35; }
+  .clock b { font-weight: 500; color: var(--fg); }
 
-  /* Panels */
-  .panel {
-    background: var(--glass);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 14px;
+  /* ---------- Tabs (narrow screens) ---------- */
+  .tabs { grid-column: 1 / -1; display: none; }
+
+  /* ---------- Cards ---------- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     min-width: 0; min-height: 0;
-    display: flex; flex-direction: column; gap: 12px;
-    position: relative;
-    backdrop-filter: blur(6px);
   }
-  .panel::before, .panel::after { content: ""; position: absolute; width: 12px; height: 12px; border: 2px solid var(--arc); }
-  .panel::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
-  .panel::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
-  .panel h2 { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--arc); }
+  .side { display: flex; flex-direction: column; gap: 16px; min-height: 0; grid-row: 3; }
+  .section { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .section-title { margin: 0; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.02em; display: flex; align-items: center; gap: 8px; }
+  .badge { font-family: var(--mono); font-size: 11px; color: var(--fg-2); background: var(--surface-3); border-radius: 6px; padding: 1px 7px; }
 
-  .stats { display: grid; gap: 10px; margin: 0; }
-  .stat { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; border-bottom: 1px dashed var(--line); padding-bottom: 7px; }
-  .stat dt { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-  .stat dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; }
-  .pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--arc); box-shadow: 0 0 8px var(--arc); }
-  .pill.busy i { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
-  .pill.hot i { background: var(--hot); box-shadow: 0 0 8px var(--hot); }
-  .bars { display: flex; align-items: flex-end; gap: 3px; height: 34px; }
-  .bars span { flex: 1; background: linear-gradient(var(--arc), rgba(95,212,255,.2)); min-height: 3px; transition: height .15s; }
-  .switches { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip {
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-    background: none; border: 1px solid var(--line); color: var(--muted);
-    border-radius: 3px; padding: 6px 9px; cursor: pointer;
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+  .metric { background: rgba(255,255,255,0.025); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+  .metric dt { font-size: 11.5px; color: var(--muted); }
+  .metric dd { margin: 2px 0 0; font-family: var(--mono); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+
+  .viz { display: flex; align-items: center; gap: 3px; height: 40px; padding: 0 2px; }
+  .viz span { flex: 1; border-radius: 2px; background: linear-gradient(180deg, var(--accent), rgba(95,212,255,.25)); min-height: 3px; transition: height .12s ease; }
+
+  .setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
+  .setting-text { min-width: 0; }
+  .setting-text b { display: block; font-weight: 500; font-size: 13.5px; }
+  .setting-text span { display: block; font-size: 12px; color: var(--muted); }
+  .switch { flex: none; width: 38px; height: 22px; border-radius: 999px; border: 0; padding: 0; background: var(--surface-3); position: relative; cursor: pointer; transition: background .2s; box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #cfd9e6; transition: transform .2s ease, background .2s; }
+  .switch[aria-checked="true"] { background: var(--accent); box-shadow: none; }
+  .switch[aria-checked="true"]::after { transform: translateX(16px); background: #fff; }
+
+  /* ---------- Main ---------- */
+  .main { grid-row: 3; display: flex; flex-direction: column; min-height: 0; overflow: hidden; position: relative; }
+  .stage { position: relative; flex: none; height: clamp(220px, 40vh, 400px); border-bottom: 1px solid var(--border); }
+  #core { width: 100%; height: 100%; display: block; cursor: pointer; }
+  .stage-label {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    font-size: 12px; color: var(--fg-2); background: rgba(4,7,13,.55); border: 1px solid var(--border);
+    padding: 5px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap; backdrop-filter: blur(6px);
   }
-  .chip[aria-pressed="true"] { color: var(--arc); border-color: var(--arc); background: var(--arc-soft); }
-  .chip:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+  .thread { flex: 1; min-height: 0; overflow-y: auto; padding: 20px clamp(16px, 4vw, 40px); display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth; }
+  .row { display: flex; gap: 12px; max-width: 760px; width: 100%; margin: 0 auto; }
+  .row.user { justify-content: flex-end; }
+  .avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; margin-top: 2px;
+    background: radial-gradient(circle, #e6faff 0 16%, var(--accent) 17% 34%, rgba(95,212,255,.18) 35% 100%);
+    box-shadow: 0 0 0 1px rgba(95,212,255,.35); }
+  .bubble { min-width: 0; max-width: min(620px, 82%); }
+  .row.user .bubble { background: linear-gradient(180deg, #1f6f96, #185a7c); color: #f2fbff; padding: 10px 14px; border-radius: 16px 16px 4px 16px; box-shadow: 0 6px 18px -10px rgba(95,212,255,.5); }
+  .row.assistant .bubble { padding-top: 3px; }
+  .meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+  .meta b { font-size: 13px; font-weight: 600; }
+  .meta time { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; line-height: 1.6; color: var(--fg); }
+  .row.error .text { color: var(--hot); }
+  .actions { display: flex; gap: 2px; margin-top: 6px; opacity: 0.7; transition: opacity .15s; }
+  .row:hover .actions, .actions:focus-within { opacity: 1; }
+  .act { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--muted); font-size: 12px; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
+  .act:hover { background: var(--surface-2); color: var(--fg); }
+  .act .icon { width: 15px; height: 15px; }
+  .saved { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--warn); background: rgba(255,200,90,.08); border: 1px solid rgba(255,200,90,.2); padding: 4px 9px; border-radius: 7px; }
+  .saved .icon { width: 14px; height: 14px; }
+  .typing { display: inline-flex; gap: 4px; padding: 8px 0; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+
+  .suggest { display: flex; flex-wrap: wrap; gap: 8px; max-width: 760px; width: 100%; margin: 0 auto; padding-left: 40px; }
+  .suggest button { background: var(--surface-2); border: 1px solid var(--border); color: var(--fg-2); font-size: 13px; border-radius: 999px; padding: 7px 13px; cursor: pointer; transition: border-color .15s, color .15s; }
+  .suggest button:hover { border-color: var(--border-strong); color: var(--fg); }
+
+  /* Composer */
+  .composer-wrap { padding: 12px clamp(12px, 3vw, 28px) 16px; }
+  .composer {
+    max-width: 760px; margin: 0 auto;
+    display: flex; align-items: flex-end; gap: 8px;
+    background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 16px;
+    padding: 8px 8px 8px 16px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .composer:focus-within { border-color: rgba(95,212,255,.45); box-shadow: 0 0 0 4px rgba(95,212,255,.08); }
+  .composer textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 14.5px; line-height: 1.5; padding: 7px 0; max-height: 140px; }
+  .composer textarea::placeholder { color: var(--muted); }
+  .icon-btn { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; border: 0; cursor: pointer; background: none; color: var(--fg-2); transition: background .15s, color .15s; }
+  .icon-btn:hover { background: var(--surface-3); color: var(--fg); }
+  .icon-btn.mic.on { background: rgba(255,122,77,.15); color: var(--hot); }
+  .icon-btn.send { background: var(--accent); color: var(--accent-ink); }
+  .icon-btn.send:hover { background: #8be1ff; }
+  .icon-btn[disabled] { opacity: .35; cursor: default; }
+  .hint { max-width: 760px; margin: 8px auto 0; display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--muted); }
+  .hint kbd { font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 4px; }
+  .note { color: var(--warn); }
 
   /* Memory */
-  .mem-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; flex: 1; }
-  .mem-list li { display: flex; gap: 8px; align-items: flex-start; background: rgba(95,212,255,.05); border-left: 2px solid var(--arc); padding: 7px 8px; font-size: 13px; line-height: 1.4; }
+  .mem { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .mem .section { flex: 1; min-height: 0; }
+  .mem-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; flex: 1; }
+  .mem-list li { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.025); border: 1px solid var(--border); font-size: 13px; line-height: 1.45; color: var(--fg-2); }
+  .mem-list li .icon { width: 15px; height: 15px; color: var(--accent); margin-top: 2px; }
   .mem-list li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .mem-list li button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; }
+  .mem-list li button { flex: none; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px; border-radius: 5px; opacity: 0; transition: opacity .15s; }
+  .mem-list li:hover button, .mem-list li button:focus-visible { opacity: 1; }
   .mem-list li button:hover { color: var(--hot); }
-  .mem-empty { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: 0; }
+  .mem-list li button .icon { color: inherit; margin: 0; }
+  .empty { text-align: center; padding: 22px 12px; color: var(--muted); font-size: 12.5px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); }
+  .empty b { display: block; color: var(--fg-2); font-weight: 500; font-size: 13px; margin-bottom: 2px; }
   .mem-form { display: flex; gap: 6px; }
-  .mem-form input { flex: 1; min-width: 0; background: rgba(5,10,18,.6); border: 1px solid var(--line); color: var(--fg); border-radius: 3px; padding: 7px 9px; font: inherit; font-size: 13px; }
+  .mem-form input { flex: 1; min-width: 0; background: rgba(255,255,255,0.03); border: 1px solid var(--border-strong); color: var(--fg); border-radius: var(--radius-sm); padding: 8px 11px; font: inherit; font-size: 13px; }
+  .mem-form input:focus { outline: 0; border-color: rgba(95,212,255,.45); }
+  .btn-sm { flex: none; display: inline-flex; align-items: center; gap: 6px; background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 0 11px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .btn-sm:hover { border-color: rgba(95,212,255,.45); }
+  .btn-sm .icon { width: 15px; height: 15px; }
 
-  /* Center */
-  .center { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
-  .core-wrap { position: relative; flex: none; height: min(52vh, 460px); display: grid; place-items: center; }
-  #core { width: 100%; height: 100%; cursor: pointer; display: block; }
-  .core-label {
-    position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted);
-    pointer-events: none; white-space: nowrap;
-  }
-  .log { flex: 1; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
-  .msg { display: flex; flex-direction: column; gap: 4px; max-width: 86%; min-width: 0; }
-  .msg .who { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
-  .msg .body { line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .msg.you { align-self: flex-end; }
-  .msg.you .who { text-align: right; }
-  .msg.you .body { background: rgba(95,212,255,.08); border: 1px solid var(--line); padding: 9px 13px; border-radius: 3px; }
-  .msg.jarvis { align-self: flex-start; padding-left: 12px; border-left: 2px solid var(--arc); }
-  .msg.jarvis .who { color: var(--arc); }
-  .msg.error .body { color: var(--hot); }
-  .replay { align-self: flex-start; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; background: none; border: 1px solid var(--line); color: var(--arc); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
-  .saved { font-family: var(--font-mono); font-size: 10.5px; color: var(--gold); letter-spacing: .08em; }
+  @media (prefers-reduced-motion: reduce) { .typing i { animation: none; } .thread { scroll-behavior: auto; } }
 
-  .dock { display: flex; gap: 8px; align-items: center; }
-  .dock input { flex: 1; min-width: 0; background: var(--glass); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 13px 15px; font: inherit; }
-  .btn { flex: none; font-family: var(--font-display); font-weight: 500; letter-spacing: .14em; text-transform: uppercase; font-size: 12.5px; background: var(--arc-soft); color: var(--arc); border: 1px solid var(--arc); border-radius: 3px; padding: 12px 15px; cursor: pointer; }
-  .btn:hover { background: rgba(95,212,255,.25); }
-  .btn[disabled] { opacity: .4; cursor: default; }
-  .btn.mic.on { color: var(--hot); border-color: var(--hot); background: rgba(255,122,77,.12); }
-  .note { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin: 0; text-align: center; }
-
+  /* ---------- Narrow screens: tabs ---------- */
   @media (max-width: 980px) {
-    .hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; height: auto; min-height: 100%; padding-inline: 16px; }
-    .center { order: 1; height: calc(100svh - 130px); min-height: 520px; }
-    .clock { text-align: left; }
-    .topbar { flex-direction: column; align-items: flex-start; }
-    .sys { order: 2; } .mem { order: 3; }
-    .core-wrap { height: min(42vh, 340px); }
-    .mem-list { max-height: 260px; }
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); padding-inline: 16px; padding-block: 0 12px; }
+    .clock { display: none; }
+    .tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px; margin-bottom: 12px; }
+    .tabs button { flex: 1; background: none; border: 0; padding: 8px; border-radius: 9px; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; }
+    .tabs button[aria-selected="true"] { background: var(--surface-3); color: var(--fg); }
+    .side, .main { grid-column: 1; grid-row: 3; }
+    .app:not([data-tab="system"]) .sys, .app:not([data-tab="memory"]) .mem-side, .app[data-tab]:not([data-tab="chat"]) .main { display: none; }
+    .stage { height: clamp(180px, 30vh, 280px); }
+    .suggest { padding-left: 0; }
+    .hint .keys { display: none; }
   }
-  @media (max-width: 440px) { .brand { font-size: 17px; letter-spacing: .26em; } .clock b { font-size: 18px; } .btn { padding: 12px 11px; letter-spacing: .08em; } }
 </style>
 
-<div class="hud">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4z"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+</svg>
+
+<div class="app" id="app" data-tab="chat">
   <header class="topbar">
-    <h1 class="brand">J.A.R.V.I.S.<small>Just A Rather Very Intelligent System</small></h1>
-    <div class="clock"><b id="time">--:--:--</b><span id="date">—</span></div>
+    <div class="logo"><span class="logo-mark" aria-hidden="true"></span><span class="logo-name">Jarvis</span><span class="logo-tag">AI</span></div>
+    <span class="spacer"></span>
+    <span class="status-pill" id="statusPill"><i></i><span id="statusText">Online</span></span>
+    <div class="clock"><b id="time">--:--</b><br><span id="date">—</span></div>
   </header>
 
-  <aside class="panel sys" aria-label="System">
-    <h2>System</h2>
-    <dl class="stats">
-      <div class="stat"><dt>Status</dt><dd><span class="pill" id="statusPill"><i></i><span id="statusText">Online</span></span></dd></div>
-      <div class="stat"><dt>Uptime</dt><dd id="uptime">00:00:00</dd></div>
-      <div class="stat"><dt>Exchanges</dt><dd id="count">0</dd></div>
-      <div class="stat"><dt>Memories</dt><dd id="memCount">0</dd></div>
-      <div class="stat"><dt>Last reply</dt><dd id="latency">—</dd></div>
-    </dl>
-    <h2>Audio</h2>
-    <div class="bars" id="bars" aria-hidden="true"></div>
-    <div class="switches">
-      <button class="chip" id="voiceToggle" type="button" aria-pressed="true">Voice on</button>
-      <button class="chip" id="modeToggle" type="button" aria-pressed="false">Deep think off</button>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-chat" aria-selected="true" data-tab="chat">Chat</button>
+    <button role="tab" id="tab-system" aria-selected="false" data-tab="system">System</button>
+    <button role="tab" id="tab-memory" aria-selected="false" data-tab="memory">Memory</button>
+  </nav>
+
+  <!-- Sidebar: system -->
+  <aside class="side sys" aria-label="System">
+    <div class="card section">
+      <div class="section-head"><h2 class="section-title"><svg class="icon"><use href="#i-cpu"/></svg>Overview</h2></div>
+      <dl class="metrics">
+        <div class="metric"><dt>Uptime</dt><dd id="uptime">0:00:00</dd></div>
+        <div class="metric"><dt>Exchanges</dt><dd id="count">0</dd></div>
+        <div class="metric"><dt>Memories</dt><dd id="memCount">0</dd></div>
+        <div class="metric"><dt>Last reply</dt><dd id="latency">—</dd></div>
+      </dl>
+    </div>
+    <div class="card section">
+      <div class="section-head"><h2 class="section-title"><svg class="icon"><use href="#i-wave"/></svg>Voice activity</h2></div>
+      <div class="viz" id="bars" aria-hidden="true"></div>
+    </div>
+    <div class="card section">
+      <div class="section-head"><h2 class="section-title"><svg class="icon"><use href="#i-sliders"/></svg>Preferences</h2></div>
+      <div class="setting">
+        <div class="setting-text"><b>Spoken replies</b><span>Jarvis reads answers aloud</span></div>
+        <button class="switch" id="voiceToggle" role="switch" aria-checked="true" aria-label="Spoken replies"></button>
+      </div>
+      <div class="setting">
+        <div class="setting-text"><b>Deep thinking</b><span>Slower, more thorough answers</span></div>
+        <button class="switch" id="modeToggle" role="switch" aria-checked="false" aria-label="Deep thinking"></button>
+      </div>
     </div>
   </aside>
 
-  <main class="center">
-    <div class="core-wrap">
-      <canvas id="core" aria-label="Tap to talk to Jarvis" role="button" tabindex="0"></canvas>
-      <div class="core-label" id="coreLabel">Tap the core to speak</div>
+  <!-- Main: hologram + conversation -->
+  <main class="card main">
+    <div class="stage">
+      <canvas id="core" role="button" tabindex="0" aria-label="Talk to Jarvis"></canvas>
+      <div class="stage-label" id="coreLabel">Tap the core to talk</div>
     </div>
-    <div class="log" id="log" aria-live="polite">
-      <div class="msg jarvis">
-        <span class="who">Jarvis</span>
-        <div class="body">Good day. All systems are online. Tap the core to speak, or type below. Tell me anything you'd like me to remember.</div>
-      </div>
+    <div class="thread" id="log" aria-live="polite"></div>
+    <div class="composer-wrap">
+      <form class="composer" id="form">
+        <label class="sr" for="input">Message Jarvis</label>
+        <textarea id="input" rows="1" placeholder="Message Jarvis…" autocomplete="off"></textarea>
+        <button class="icon-btn mic" id="mic" type="button" aria-label="Talk"><svg class="icon"><use href="#i-mic"/></svg></button>
+        <button class="icon-btn send" id="send" type="submit" aria-label="Send"><svg class="icon"><use href="#i-send"/></svg></button>
+      </form>
+      <div class="hint"><span class="note" id="note" hidden></span><span class="keys" id="keys"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</span></div>
     </div>
-    <p class="note" id="note" hidden></p>
-    <form class="dock" id="form">
-      <input id="input" type="text" placeholder="Ask Jarvis…" autocomplete="off" aria-label="Message to Jarvis">
-      <button class="btn mic" id="mic" type="button">Talk</button>
-      <button class="btn" id="send" type="submit">Send</button>
-    </form>
   </main>
 
-  <aside class="panel mem" aria-label="Memory">
-    <h2>Memory bank</h2>
-    <ul class="mem-list" id="memList"></ul>
-    <p class="mem-empty" id="memEmpty">No memories yet. Say "remember that…" or add one below.</p>
-    <form class="mem-form" id="memForm">
-      <input id="memInput" type="text" placeholder="Add a memory" aria-label="Add a memory" autocomplete="off">
-      <button class="chip" type="submit">Save</button>
-    </form>
+  <!-- Inspector: memory -->
+  <aside class="side mem-side" aria-label="Memory">
+    <div class="card mem">
+      <div class="section">
+        <div class="section-head"><h2 class="section-title"><svg class="icon"><use href="#i-bookmark"/></svg>Memory</h2><span class="badge" id="memBadge">0</span></div>
+        <ul class="mem-list" id="memList"></ul>
+        <div class="empty" id="memEmpty"><b>Nothing remembered yet</b>Say "remember that…" in chat, or add a note below.</div>
+        <form class="mem-form" id="memForm">
+          <input id="memInput" type="text" placeholder="Add something to remember" aria-label="Add a memory" autocomplete="off">
+          <button class="btn-sm" type="submit"><svg class="icon"><use href="#i-plus"/></svg>Add</button>
+        </form>
+      </div>
+    </div>
   </aside>
 </div>
 
@@ -202,6 +313,7 @@
   const log = $("log"), input = $("input"), form = $("form"), mic = $("mic"), send = $("send"), note = $("note");
   const C = window.claude;
   const samplePromise = C?.use ? C.use("sample") : Promise.resolve(null);
+  const icon = (id) => `<svg class="icon"><use href="#i-${id}"/></svg>`;
 
   // ---------- State ----------
   let state = "idle";           // idle | listening | thinking | speaking
@@ -209,39 +321,47 @@
   let voiceOn = true, deep = false;
   try { voiceOn = localStorage.getItem("jarvis-voice") !== "off"; deep = localStorage.getItem("jarvis-deep") === "on"; } catch {}
   const turns = [];
-  let memories = [];           // [{id, text, at}]
+  let memories = [];
   const started = Date.now();
 
   function setState(s) {
     state = s;
-    const map = { idle: ["Online", ""], listening: ["Listening", "hot"], thinking: ["Thinking", "busy"], speaking: ["Speaking", ""] };
+    const map = { idle: ["Online", ""], listening: ["Listening", "hot"], thinking: ["Thinking", "busy"], speaking: ["Speaking", "speak"] };
     const [t, cls] = map[s];
     $("statusText").textContent = t;
-    $("statusPill").className = "pill " + cls;
-    $("coreLabel").textContent = s === "idle" ? "Tap the core to speak" : t + "…";
+    $("statusPill").className = "status-pill " + cls;
+    $("coreLabel").textContent = s === "idle" ? "Tap the core to talk" : s === "listening" ? "Listening… tap to stop" : t + "…";
   }
-  function showNote(t) { note.textContent = t || ""; note.hidden = !t; }
+  function showNote(t) { note.textContent = t || ""; note.hidden = !t; $("keys").hidden = !!t; }
+
+  // ---------- Tabs (narrow screens) ----------
+  document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+    $("app").dataset.tab = b.dataset.tab;
+    document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+    dispatchEvent(new Event("resize"));
+  }));
 
   // ---------- Clock & stats ----------
   const pad = (n) => String(n).padStart(2, "0");
+  const hhmm = (d) => d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   function tick() {
     const d = new Date();
-    $("time").textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    $("date").textContent = d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    $("time").textContent = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    $("date").textContent = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
     const up = Math.floor((Date.now() - started) / 1000);
-    $("uptime").textContent = `${pad(Math.floor(up / 3600))}:${pad(Math.floor(up / 60) % 60)}:${pad(up % 60)}`;
+    $("uptime").textContent = `${Math.floor(up / 3600)}:${pad(Math.floor(up / 60) % 60)}:${pad(up % 60)}`;
   }
   tick(); setInterval(tick, 1000);
 
-  // ---------- Audio bars ----------
+  // ---------- Voice activity ----------
   const bars = $("bars");
-  for (let i = 0; i < 18; i++) bars.append(document.createElement("span"));
+  for (let i = 0; i < 28; i++) bars.append(document.createElement("span"));
   setInterval(() => {
     [...bars.children].forEach((b, i) => {
-      const base = state === "speaking" ? 0.25 + level * 0.75 : state === "listening" ? 0.3 + Math.random() * 0.5 : 0.06;
-      b.style.height = Math.max(3, 34 * base * (0.45 + Math.random() * 0.55) * (1 - Math.abs(i - 8.5) / 14)) + "px";
+      const base = state === "speaking" ? 0.25 + level * 0.75 : state === "listening" ? 0.3 + Math.random() * 0.5 : 0.05;
+      b.style.height = Math.max(3, 40 * base * (0.45 + Math.random() * 0.55) * (1 - Math.abs(i - 13.5) / 20)) + "px";
     });
-  }, 120);
+  }, 110);
 
   // ---------- Holographic core ----------
   const cv = $("core");
@@ -333,6 +453,7 @@
 
     function size() {
       const w = cv.clientWidth, h = cv.clientHeight;
+      if (!w || !h) return;
       renderer.setSize(w, h, false); camera.aspect = w / h;
       camera.position.z = w / h < 1 ? 9.6 / Math.max(w / h, 0.6) : 9.6;
       camera.updateProjectionMatrix();
@@ -479,29 +600,53 @@
       if (i === parts.length - 1) u.onend = u.onerror = () => { if (state === "speaking") setState("idle"); };
       TTS.speak(u);
     });
-    // keep the core lively on browsers that never fire boundary events
     clearInterval(speakTimer);
     speakTimer = setInterval(() => { if (state === "speaking") level = Math.max(level, 0.35 + Math.random() * 0.5); else clearInterval(speakTimer); }, 180);
     setTimeout(() => { try { if (TTS.paused) TTS.resume(); } catch {} }, 150);
   }
 
-  // ---------- Transcript ----------
-  function addMsg(role, text) {
-    const wrap = document.createElement("div");
-    wrap.className = "msg " + (role === "user" ? "you" : "jarvis");
-    const who = document.createElement("span"); who.className = "who"; who.textContent = role === "user" ? "You" : "Jarvis";
-    const body = document.createElement("div"); body.className = "body"; body.textContent = text;
-    wrap.append(who, body); log.append(wrap); log.scrollTop = log.scrollHeight;
-    return { wrap, body };
+  // ---------- Conversation ----------
+  function addRow(role, text) {
+    const row = document.createElement("div");
+    row.className = "row " + role;
+    const bubble = document.createElement("div"); bubble.className = "bubble";
+    const body = document.createElement("div"); body.className = "text";
+    if (role === "assistant") {
+      const av = document.createElement("div"); av.className = "avatar"; av.setAttribute("aria-hidden", "true");
+      const meta = document.createElement("div"); meta.className = "meta";
+      const name = document.createElement("b"); name.textContent = "Jarvis";
+      const time = document.createElement("time"); time.textContent = hhmm(new Date());
+      meta.append(name, time); bubble.append(meta);
+      row.append(av);
+    }
+    if (text === null) body.innerHTML = '<span class="typing" aria-label="Jarvis is typing"><i></i><i></i><i></i></span>';
+    else body.textContent = text;
+    bubble.append(body); row.append(bubble);
+    log.append(row); log.scrollTop = log.scrollHeight;
+    return { row, bubble, body };
   }
-  function addSpeakButton(wrap, text) {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "replay"; b.textContent = "▶ Speak";
-    b.setAttribute("aria-label", "Read this reply aloud");
-    b.addEventListener("click", () => { unlocked = true; speak(text, true); });
-    wrap.append(b);
+  function addActions(bubble, text) {
+    const bar = document.createElement("div"); bar.className = "actions";
+    const sp = document.createElement("button"); sp.type = "button"; sp.className = "act"; sp.innerHTML = icon("speaker") + "Read aloud";
+    sp.addEventListener("click", () => { unlocked = true; speak(text, true); });
+    const cp = document.createElement("button"); cp.type = "button"; cp.className = "act"; cp.innerHTML = icon("copy") + "<span>Copy</span>";
+    cp.addEventListener("click", () => {
+      const done = () => { cp.querySelector("span").textContent = "Copied"; setTimeout(() => cp.querySelector("span").textContent = "Copy", 1500); };
+      try { navigator.clipboard.writeText(text).then(done, () => {}); } catch {}
+    });
+    bar.append(sp, cp); bubble.append(bar);
   }
-  document.querySelectorAll(".msg.jarvis").forEach(w => addSpeakButton(w, w.querySelector(".body").textContent));
+
+  // Welcome + suggestions
+  const welcome = "Good day. All systems are online. Ask me anything, tap the core to talk, or tell me something you'd like me to remember.";
+  const w = addRow("assistant", welcome); addActions(w.bubble, welcome);
+  const suggest = document.createElement("div"); suggest.className = "suggest";
+  ["Give me a quick briefing for today", "Help me plan my week", "Remember that I prefer short answers", "Tell me something fascinating"].forEach(q => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = q;
+    b.addEventListener("click", () => { unlockSpeech(); ask(q); });
+    suggest.append(b);
+  });
+  log.append(suggest);
 
   // ---------- Memory (private per person, kept across visits) ----------
   let memCol = null;
@@ -510,13 +655,16 @@
     const list = $("memList"); list.textContent = "";
     memories.forEach(m => {
       const li = document.createElement("li");
+      li.innerHTML = icon("bookmark");
       const s = document.createElement("span"); s.textContent = m.text;
-      const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Forget: " + m.text);
+      const del = document.createElement("button"); del.type = "button"; del.innerHTML = icon("x"); del.setAttribute("aria-label", "Forget: " + m.text);
       del.addEventListener("click", () => forget(m));
       li.append(s, del); list.append(li);
     });
     $("memEmpty").hidden = memories.length > 0;
+    $("memList").hidden = memories.length === 0;
     $("memCount").textContent = memories.length;
+    $("memBadge").textContent = memories.length;
   }
   function saveLocal() { try { localStorage.setItem(localKey, JSON.stringify(memories)); } catch {} }
   async function remember(text) {
@@ -568,38 +716,44 @@ Never mention this line in your spoken reply.`;
     refused: "I can't help with that one. Try asking something else.",
   };
 
+  function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; }
+  input.addEventListener("input", autosize);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
+
   async function ask(text) {
     text = text.trim();
     if (!text || busy) return;
     const sample = await samplePromise;
     if (!sample) { showNote("Open this page on claude.ai to talk to Jarvis."); return; }
     busy = true; send.disabled = true; showNote("");
+    suggest.remove();
     try { TTS?.cancel(); } catch {}
-    addMsg("user", text); turns.push({ role: "user", content: text }); input.value = "";
-    const { wrap, body } = addMsg("assistant", "Thinking…");
+    addRow("user", text); turns.push({ role: "user", content: text }); input.value = ""; autosize();
+    const { row, bubble, body } = addRow("assistant", null);
     setState("thinking");
     const t1 = performance.now();
     try {
       const { text: raw } = await sample([{ role: "user", content: rules() }, ...turns.slice(-20)], {
         cache: false, modelTier: deep ? "default" : "quick",
-        onText: ({ text }) => { body.textContent = stripMem(text) || "…"; log.scrollTop = log.scrollHeight; },
+        onText: ({ text }) => { const v = stripMem(text); if (v) body.textContent = v; log.scrollTop = log.scrollHeight; },
       });
       const reply = stripMem(raw);
       body.textContent = reply;
       turns.push({ role: "assistant", content: reply });
       $("count").textContent = ++exchanges;
-      $("latency").textContent = ((performance.now() - t1) / 1000).toFixed(1) + " s";
+      $("latency").textContent = ((performance.now() - t1) / 1000).toFixed(1) + "s";
       for (const line of raw.split("\n")) {
         const m = line.match(/^\s*MEMORY:\s*(.+)$/i);
-        if (m && await remember(m[1])) { const s = document.createElement("span"); s.className = "saved"; s.textContent = "◆ Saved to memory: " + m[1].trim(); wrap.append(s); }
+        if (m && await remember(m[1])) { const s = document.createElement("div"); s.className = "saved"; s.innerHTML = icon("bookmark"); s.append("Saved to memory: " + m[1].trim()); bubble.append(s); }
       }
-      addSpeakButton(wrap, reply);
+      addActions(bubble, reply);
+      log.scrollTop = log.scrollHeight;
       setState("idle");
       speak(reply);
     } catch (e) {
       turns.pop();
       body.textContent = e?.text ? stripMem(e.text) : (ERR[e?.code] || "I lost the connection. Send your message again.");
-      if (!e?.text) wrap.classList.add("error");
+      if (!e?.text) row.classList.add("error");
       setState("idle");
     } finally {
       busy = false; send.disabled = false;
@@ -610,6 +764,7 @@ Never mention this line in your spoken reply.`;
   // ---------- Voice input ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null, listening = false;
+  function setMic(on) { mic.classList.toggle("on", on); mic.innerHTML = icon(on ? "stop" : "mic"); mic.setAttribute("aria-label", on ? "Stop listening" : "Talk"); }
   function toggleListen() {
     unlockSpeech();
     if (!SR) { showNote("Voice input isn't supported in this browser. Type your message instead."); return; }
@@ -619,30 +774,30 @@ Never mention this line in your spoken reply.`;
       let finalText = "";
       rec.onresult = (ev) => {
         let t = ""; for (const r of ev.results) t += r[0].transcript;
-        input.value = t; level = 0.6;
+        input.value = t; autosize(); level = 0.6;
         if (ev.results[ev.results.length - 1].isFinal) finalText = t;
       };
       rec.onerror = (ev) => {
         if (ev.error === "not-allowed" || ev.error === "service-not-allowed") showNote("The microphone is blocked here. Type your message instead.");
       };
       rec.onend = () => {
-        listening = false; mic.classList.remove("on"); mic.textContent = "Talk";
+        listening = false; setMic(false);
         if (state === "listening") setState("idle");
         const t = (finalText || input.value).trim(); if (t) ask(t);
       };
       try { TTS?.cancel(); } catch {}
-      rec.start(); listening = true; mic.classList.add("on"); mic.textContent = "Stop"; setState("listening");
+      rec.start(); listening = true; setMic(true); setState("listening");
     } catch { showNote("Voice input isn't available here. Type your message instead."); }
   }
   mic.addEventListener("click", toggleListen);
   cv.addEventListener("click", toggleListen);
   cv.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleListen(); } });
 
-  // ---------- Switches ----------
+  // ---------- Preferences ----------
   const voiceBtn = $("voiceToggle"), modeBtn = $("modeToggle");
   function syncSwitches() {
-    voiceBtn.setAttribute("aria-pressed", String(voiceOn)); voiceBtn.textContent = voiceOn ? "Voice on" : "Voice off";
-    modeBtn.setAttribute("aria-pressed", String(deep)); modeBtn.textContent = deep ? "Deep think on" : "Deep think off";
+    voiceBtn.setAttribute("aria-checked", String(voiceOn));
+    modeBtn.setAttribute("aria-checked", String(deep));
   }
   voiceBtn.addEventListener("click", () => {
     voiceOn = !voiceOn; try { localStorage.setItem("jarvis-voice", voiceOn ? "on" : "off"); } catch {}
