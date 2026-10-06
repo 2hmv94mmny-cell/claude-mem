@@ -176,6 +176,114 @@
     }
   },
   {
+    "id": "soft-ruffle-knit-cardigan",
+    "slug": "soft-ruffle-knit-cardigan",
+    "name": "Soft Ruffle Knit Cardigan",
+    "category": "kids",
+    "silhouette": "sweater",
+    "priceCents": 6900,
+    "colour": "Apricot White",
+    "description": "A sweet everyday layer with a romantic touch. Our Soft Ruffle Knit Cardigan is knitted from soft cotton in a warm apricot white, with a V-neck, natural wooden buttons and a delicate ruffle that frames the button placket. Ribbed cuffs and hem keep its shape, while the gentle neutral tone pairs with everything from leggings to dresses. Lovely for everyday wear, family occasions and photoshoots.",
+    "details": [
+      "Soft cotton knit",
+      "Ruffle trim along the button placket",
+      "V-neck with natural wooden buttons",
+      "Ribbed cuffs and hem",
+      "Colour: apricot white",
+      "Sizes 66–100 are the child's height in cm"
+    ],
+    "care": [
+      "Machine wash at 30 °C on a gentle cycle",
+      "Dry flat to keep its shape",
+      "Do not tumble dry"
+    ],
+    "sizeChart": {
+      "note": "Garment measurements in cm, as listed by the supplier. Please allow 2–3 cm difference due to manual measurement.",
+      "head": [
+        "Size",
+        "Age",
+        "Length",
+        "Chest",
+        "Sleeve"
+      ],
+      "rows": [
+        [
+          "66",
+          "3–6M",
+          "30",
+          "29",
+          "25.5"
+        ],
+        [
+          "73",
+          "6–12M",
+          "32",
+          "30.5",
+          "27"
+        ],
+        [
+          "80",
+          "12–18M",
+          "34",
+          "32",
+          "28.5"
+        ],
+        [
+          "90",
+          "18–24M",
+          "36",
+          "33.5",
+          "30"
+        ],
+        [
+          "100",
+          "2–3Y",
+          "38",
+          "35",
+          "31.5"
+        ]
+      ]
+    },
+    "images": [
+      "/images/products/soft-ruffle-knit-cardigan/1.jpg",
+      "/images/products/soft-ruffle-knit-cardigan/2.jpg",
+      "/images/products/soft-ruffle-knit-cardigan/3.jpg",
+      "/images/products/soft-ruffle-knit-cardigan/4.jpg"
+    ],
+    "swatch": "#f1e8d6",
+    "variantLabel": "Size",
+    "variants": [
+      {
+        "id": "soft-ruffle-knit-cardigan-66",
+        "label": "66 · 3–6M",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-ruffle-knit-cardigan-73",
+        "label": "73 · 6–12M",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-ruffle-knit-cardigan-80",
+        "label": "80 · 12–18M",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-ruffle-knit-cardigan-90",
+        "label": "90 · 18–24M",
+        "supplierVid": null
+      },
+      {
+        "id": "soft-ruffle-knit-cardigan-100",
+        "label": "100 · 2–3Y",
+        "supplierVid": null
+      }
+    ],
+    "deliveryDays": "8–15 business days",
+    "supplier": "cj",
+    "published": true
+  },
+  {
     "id": "ines-classic-trench",
     "slug": "ines-classic-trench",
     "name": "Ines Classic Trench",
