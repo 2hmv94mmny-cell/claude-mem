@@ -412,6 +412,8 @@ export function parseSearchResults(text, { city = '' } = {}) {
       }
     }
     if (!location && city && norm(`${title} ${body}`).includes(norm(city))) location = city;
+    // A place name taken for the company ("Developer | Muttenz - Jobbasel").
+    if (parts.company && location && norm(location).includes(norm(parts.company))) parts.company = '';
     const remote = /\b(remote|home ?office|homeoffice|telearbeit|teletravail|work from home)\b/i.test(`${title}\n${body}`);
 
     const description = lines
@@ -629,10 +631,12 @@ export function scoreJob(job, me, prefs = {}, location = '') {
  * Find and rank jobs near the user from their CV and profile. No AI involved.
  * @returns {Promise<{jobs: object[], roles: string[], country: string|null, via: string}>}
  */
-export async function jobsForYou(profile, { signal } = {}) {
+export async function jobsForYou(profile, { signal, roles: searchRoles, exclude = [] } = {}) {
   await ready;
   const me = readProfile(profile);
   if (!me.roles.length) throw new Error('Add your CV or the roles you want in Profile first.');
+  // Scoring always uses the real profile; the search can look under other roles.
+  const searchMe = searchRoles?.length ? { ...me, roles: searchRoles } : me;
   const location = String(profile.location || '').trim();
   const remote = Boolean(profile.remoteOnly);
 
@@ -641,7 +645,7 @@ export async function jobsForYou(profile, { signal } = {}) {
   if (inArtifact && caps.mcp) {
     try {
       // The free job boards run alongside; they add listings the portals miss.
-      const [portals, boards] = await Promise.all([searchPortals(me, location, remote, signal), searchBoards(me.roles, location, remote).catch(() => ({ jobs: [] }))]);
+      const [portals, boards] = await Promise.all([searchPortals(searchMe, location, remote, signal), searchBoards(searchMe.roles, location, remote).catch(() => ({ jobs: [] }))]);
       found = { ...portals, jobs: [...portals.jobs, ...boards.jobs] };
       via = 'job portals';
     } catch (err) {
@@ -649,10 +653,10 @@ export async function jobsForYou(profile, { signal } = {}) {
       found = null;
     }
   }
-  found ??= await searchBoards(me.roles, location, remote);
+  found ??= await searchBoards(searchMe.roles, location, remote);
 
-  // De-duplicate: same link, or same title at the same company.
-  const seen = new Set();
+  // De-duplicate: same link, or same title at the same company (and skip jobs already shown elsewhere).
+  const seen = new Set(exclude.flatMap((j) => [j.url, `${norm(j.title)}|${norm(j.company)}`]).filter((k) => k && k !== '|'));
   const unique = found.jobs.filter((j) => {
     const keys = [j.url, `${norm(j.title)}|${norm(j.company)}`].filter((k) => k && k !== '|');
     if (keys.some((k) => seen.has(k))) return false;
@@ -671,6 +675,21 @@ export async function jobsForYou(profile, { signal } = {}) {
     .sort((a, b) => b.match.score - a.match.score);
 
   return { jobs: ranked, roles: me.roles, country: found.country, via, searched: found.searched || [] };
+}
+
+/**
+ * More jobs that fit the CV near the user, beyond the home page: searched
+ * under the CV's other role families and its strongest skills, scored against
+ * the full profile, and never repeating a job in `exclude`.
+ */
+export async function moreJobsForYou(profile, { signal, exclude = [] } = {}) {
+  const me = readProfile(profile);
+  const shown = new Set(me.roles.map(norm));
+  const other = me.families.filter((f) => !shown.has(norm(f)));
+  const skills = [...me.skills].slice(0, 3).filter((s) => !other.some((o) => norm(o).includes(norm(s))));
+  // Two search terms keep it quick: other role families first, then the strongest skills.
+  const roles = [...other, ...skills].slice(0, 2);
+  return jobsForYou(profile, { signal, roles: roles.length ? roles : me.roles, exclude });
 }
 
 // ---------------------------------------------------------------------------

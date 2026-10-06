@@ -1286,3 +1286,4 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .suggest-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggest-tag { flex: none; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); background: var(--surface-2); border-radius: 999px; padding: 2px 8px; }
 @media (max-width: 760px) { .searchbar label + label .suggest, .searchbar label .suggest { left: -1px; right: -1px; } }
+.chip { white-space: nowrap; flex: none; }

@@ -7,7 +7,7 @@ import { portalsFor } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
-import { jobsForYou, aboutFromPosting, norm } from './match.js';
+import { jobsForYou, moreJobsForYou, aboutFromPosting, norm } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage } from './i18n.js';
 import { attachSuggest, rememberSearch } from './suggest.js';
 import { readCVFile, ACCEPT } from './files.js';
@@ -131,6 +131,7 @@ function feedSection() {
     session.results = feed.jobs;
     session.scores = Object.fromEntries(feed.jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
     session.examples = false;
+    session.more = false;
     session.errors = [];
     session.filter = '';
     session.query = { query: feed.roles[0] || '', location: feed.location === 'Remote' ? '' : feed.location, remoteOnly: feed.location === 'Remote', sources: [...SOURCE_IDS] };
@@ -601,6 +602,7 @@ function renderFind() {
       session.results = jobs;
       session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
       session.examples = false;
+      session.more = false;
       session.filter = '';
       session.selected = jobs[0]?.id;
       session.errors = jobs.length ? [] : ['No open postings found for this search'];
@@ -621,6 +623,7 @@ function renderFind() {
     results.replaceChildren(skeleton());
     const { jobs, errors } = await searchJobs(p);
     session.examples = false;
+    session.more = false;
     session.results = jobs;
     session.scores = {};
     session.errors = errors;
@@ -629,14 +632,50 @@ function renderFind() {
     drawResults();
   }
 
-  async function showExamples() {
-    const { jobs } = await searchJobs({ sources: [] });
-    session.results = jobs;
-    session.scores = {};
-    session.errors = [];
-    session.examples = true;
-    session.selected = jobs[0]?.id;
-    drawResults();
+  // Before a search: more jobs that fit the CV near the user, beyond the ones
+  // already on the home page (matched on the device, no AI).
+  const MORE_TTL = 24 * 60 * 60 * 1000;
+  async function showMore() {
+    const p = store.get().profile;
+    const where = p.remoteOnly ? 'remote' : p.location.trim();
+    if (!(p.cv.trim() || p.targetRoles.trim() || p.headline.trim()) || !where) {
+      session.results = [];
+      session.more = false;
+      status.textContent = '';
+      results.replaceChildren(
+        h('div', { class: 'empty card' }, h('p', {}, 'Search above, or add your CV and city in your profile to see jobs picked for you here.'), h('a', { class: 'btn', href: '#/profile' }, 'Open profile')),
+      );
+      detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Pick a job to see the details here.'));
+      return;
+    }
+    const feed = store.get().feed;
+    const key = JSON.stringify(['more-v1', currentLanguage(), feed?.key || '', where.toLowerCase()]);
+    const show = (jobs) => {
+      session.results = jobs;
+      session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
+      session.examples = false;
+      session.more = where;
+      session.errors = jobs.length ? [] : ['No other matching jobs found right now. Search above to look for something else.'];
+      session.filter = '';
+      session.selected = jobs[0]?.id;
+      if (results.isConnected) drawResults();
+    };
+    const cached = store.get().more;
+    if (cached?.key === key && Date.now() - cached.at < MORE_TTL) return show(cached.jobs);
+    status.textContent = `Finding more jobs near ${where} that fit your CV…`;
+    results.replaceChildren(skeleton());
+    try {
+      const { jobs } = await moreJobsForYou(p, { exclude: feed?.jobs || [] });
+      const kept = jobs.slice(0, 60).map((j) => ({ ...j, description: String(j.description || '').slice(0, 1500) }));
+      store.update((st) => (st.more = { key, at: Date.now(), jobs: kept }));
+      show(kept);
+    } catch (err) {
+      session.more = false;
+      if (results.isConnected) {
+        status.textContent = err.message || 'Could not load jobs.';
+        results.replaceChildren();
+      }
+    }
   }
 
   function drawResults() {
@@ -649,6 +688,8 @@ function renderFind() {
     const n = all.length;
     status.textContent = session.examples
       ? 'Example listings. Search to see live openings near you.'
+      : session.more && n
+        ? `${n} more jobs for you near ${session.more} that are not on your home page, best match first`
       : session.errors.length && !n
         ? session.errors.join(' · ')
         : `${n} job${n === 1 ? '' : 's'}${counts.size > 1 ? ` from ${counts.size} sites` : ''}${Object.keys(session.scores).length ? ', best match first' : ''}` +
@@ -784,8 +825,7 @@ function renderFind() {
     session.autoSearch = false;
     search();
   } else if (session.results.length) drawResults();
-  else if (inArtifact || ai.hasKey()) showExamples();
-  else runBoardSearch();
+  else showMore();
 }
 
 function skeleton() {
