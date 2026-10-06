@@ -750,93 +750,8 @@ function renderJob(id) {
 
   // Tailored CV: structured data, laid out with a template, exported as PDF.
   function cvSection() {
-    const preview = h('div', { class: 'cv-preview' });
-    const notes = h('div', { class: 'cv-notes' });
     const status = h('div', { class: 'ai-output compact-status', role: 'status' });
-    // Template gallery: a live thumbnail of this CV in every template.
-    const gallery = h('div', { class: 'tpl-gallery', role: 'group', 'aria-label': 'CV template' });
-    const tplInfo = h('p', { class: 'tpl-info' });
-    const swatches = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Colour' });
-    const picker = h('div', { class: 'tpl-picker' }, h('h3', { class: 'small strong' }, 'Choose a template'), gallery, tplInfo, swatches);
-    let thumbsFor = null;
-
-    function drawPicker(cv) {
-      if (thumbsFor !== cv) {
-        thumbsFor = cv;
-        gallery.replaceChildren(
-          ...TEMPLATES.map((t) => {
-            const b = h(
-              'button',
-              { type: 'button', class: 'tpl-card', 'data-id': t.id, 'aria-label': `${t.name} template` },
-              h('div', { class: 'tpl-thumb', 'aria-hidden': 'true' }, renderCV(cv, t.id, t.accent)),
-              h('strong', {}, t.name),
-              h('span', { class: `tpl-badge ${t.ats ? '' : 'warn'}` }, t.ats ? 'ATS friendly' : 'Less ATS friendly'),
-            );
-            b.addEventListener('click', () => {
-              saveDoc({ template: t.id });
-              draw();
-            });
-            return b;
-          }),
-        );
-      }
-      const t = getTemplate(template());
-      for (const b of gallery.children) b.setAttribute('aria-pressed', String(b.dataset.id === t.id));
-      tplInfo.textContent = t.blurb;
-      swatches.replaceChildren(
-        ...(t.accents
-          ? [
-              h('span', { class: 'muted small' }, 'Colour'),
-              ...t.accents.map((c) => {
-                const sw = h('button', { type: 'button', class: 'swatch', style: `background:${c}`, 'aria-label': `Colour ${c}`, 'aria-pressed': String(accent() === c) });
-                sw.addEventListener('click', () => {
-                  saveDoc({ accent: c });
-                  draw();
-                });
-                return sw;
-              }),
-            ]
-          : []),
-      );
-      pdfBtn.textContent = `Download PDF · ${t.name}`;
-    }
-
-    function draw() {
-      const d = docs();
-      picker.hidden = !d.cvData;
-      if (d.cvData) drawPicker(d.cvData);
-      if (d.cvData) preview.replaceChildren(h('div', { class: 'cv-scroll' }, renderCV(d.cvData, template(), accent())));
-      else if (d.cv) preview.replaceChildren(h('div', { class: 'ai-output doc' }, md(d.cv)));
-      else {
-        preview.replaceChildren(
-          h(
-            'div',
-            { class: 'empty-doc' },
-            h('strong', {}, 'Your CV, rewritten for this job'),
-            h('p', { class: 'muted' }, 'Claude reorders and rewrites your experience around what this role asks for, uses the posting\'s own keywords, and lays it out as a clean PDF that applicant tracking systems can read. It never adds experience you don\'t have.'),
-          ),
-        );
-      }
-      const cv = d.cvData;
-      notes.replaceChildren(
-        ...(cv?.changes?.length ? [h('h3', {}, 'What changed for this job'), h('ul', {}, ...cv.changes.map((c) => h('li', {}, c)))] : []),
-        ...(cv?.keywords?.length ? [h('h3', {}, 'Keywords covered'), h('div', { class: 'tags' }, ...cv.keywords.map((k) => h('span', { class: 'tag' }, k)))] : []),
-        cv
-          ? writingCheck(cvProse(cv), async (phrases, signal) => {
-              status.replaceChildren(h('p', { class: 'muted' }, 'Rewording those lines…'));
-              const cvData = await ai.tailorCV(job, {
-                instructions: `Rewrite only the lines that use these phrases: ${phrases.join(', ')}. Use plain, specific wording a person would use about their own work, and no dashes as punctuation. Keep everything else the same.`,
-                previous: cv,
-                signal,
-              });
-              saveDoc({ cvData, cv: cvToText(cvData) });
-              draw();
-            })
-          : '',
-      );
-      gen.textContent = d.cvData ? 'Rewrite from scratch' : 'Create tailored CV';
-      for (const el of [refine, actions]) el.hidden = !d.cvData;
-    }
+    const body = h('div');
 
     const gen = aiButton('Create tailored CV', {
       output: status,
@@ -845,53 +760,288 @@ function renderJob(id) {
         const cvData = await ai.tailorCV(job, { signal });
         saveDoc({ cvData, cv: cvToText(cvData) });
         draw();
+        openStudio();
         return '';
       },
     });
 
-    const ask = h('input', { id: 'cv-change', type: 'text', placeholder: 'e.g. make it one page, stress leadership, drop the 2015 job' });
-    const refineBtn = aiButton('Update', {
-      variant: '',
-      output: status,
-      task: async (_onText, signal) => {
-        const instructions = ask.value.trim();
-        if (!instructions) throw new Error('Say what you want changed first.');
-        status.replaceChildren(h('p', { class: 'muted' }, 'Updating your CV…'));
-        const cvData = await ai.tailorCV(job, { instructions, previous: docs().cvData, signal });
-        saveDoc({ cvData, cv: cvToText(cvData) });
-        ask.value = '';
-        draw();
-        return '';
-      },
-    });
-    ask.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        refineBtn.click();
+    const pdfBtn = h('button', { class: 'btn small', type: 'button' }, 'Download PDF');
+    pdfBtn.addEventListener('click', () => downloadCV(pdfBtn));
+
+    function draw() {
+      const d = docs();
+      gen.textContent = d.cvData ? 'Rewrite from scratch' : 'Create tailored CV';
+      gen.classList.toggle('primary', !d.cvData);
+      gen.classList.toggle('small', Boolean(d.cvData));
+      if (d.cvData) {
+        const t = getTemplate(template());
+        const thumb = h('button', { type: 'button', class: 'cv-ready-thumb', 'aria-label': 'Open your CV' }, h('div', { class: 'tpl-thumb' }, renderCV(d.cvData, t.id, accent())));
+        const open = h('button', { type: 'button', class: 'btn primary' }, 'Open CV');
+        for (const el of [thumb, open]) el.addEventListener('click', openStudio);
+        pdfBtn.textContent = `Download PDF · ${t.name}`;
+        body.replaceChildren(
+          h(
+            'div',
+            { class: 'cv-ready' },
+            thumb,
+            h(
+              'div',
+              { class: 'cv-ready-info' },
+              h('p', { class: 'cv-ready-state' }, 'Ready to send'),
+              h('p', { class: 'muted small' }, `${t.name} template${d.updatedAt ? ` · updated ${fmtDate(d.updatedAt)}` : ''}`),
+              d.cvData.changes?.length ? h('p', { class: 'small' }, d.cvData.changes[0]) : '',
+              h('div', { class: 'row wrap' }, open, pdfBtn, gen),
+            ),
+          ),
+        );
+      } else {
+        body.replaceChildren(
+          d.cv
+            ? h('div', { class: 'ai-output doc' }, md(d.cv))
+            : h(
+                'div',
+                { class: 'empty-doc' },
+                h('strong', {}, 'Your CV, rewritten for this job'),
+                h('p', { class: 'muted' }, 'Claude reorders and rewrites your experience around what this role asks for, uses the posting\'s own keywords, and lays it out in a professional template you can download as a PDF. It never adds experience you don\'t have.'),
+              ),
+          h('div', { class: 'row', style: 'margin-top:0.8rem' }, gen),
+        );
       }
-    });
-    const refine = h('div', { class: 'refine' }, h('label', { class: 'small strong', for: 'cv-change' }, 'Ask for changes'), h('div', { class: 'row' }, ask, refineBtn));
+    }
 
-    const pdfBtn = h('button', { class: 'btn primary small', type: 'button' }, 'Download PDF');
-    pdfBtn.addEventListener('click', () => savePDF(cvPDFDefinition(docs().cvData, template(), accent()), `${fileBase()}-cv-${template()}.pdf`, pdfBtn));
-    const cp = h('button', { class: 'btn small', type: 'button' }, 'Copy text');
-    cp.addEventListener('click', () => copy(docs().cv || ''));
-    const txt = h('button', { class: 'btn small', type: 'button' }, 'Download text');
-    txt.addEventListener('click', () => download(`${fileBase()}-cv.txt`, docs().cv || ''));
-    const actions = h('div', { class: 'row wrap' }, pdfBtn, cp, txt);
+    async function downloadCV(btn) {
+      await savePDF(cvPDFDefinition(docs().cvData, template(), accent()), `${fileBase()}-cv-${template()}.pdf`, btn);
+    }
 
-    const card = h(
-      'section',
-      { class: 'card' },
-      h('div', { class: 'row space wrap' }, h('h2', {}, 'Tailored CV'), gen),
-      status,
-      picker,
-      h('div', { class: 'cv-layout' }, preview, notes),
-      actions,
-      refine,
-    );
+    // -----------------------------------------------------------------
+    // Full-screen CV viewer
+    // -----------------------------------------------------------------
+    function openStudio() {
+      if (!docs().cvData || document.querySelector('.studio')) return;
+      const returnFocus = document.activeElement;
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      const paperScale = h('div', { class: 'paper-scale' });
+      const paperFit = h('div', { class: 'paper-fit' }, paperScale);
+      const busy = h('div', { class: 'studio-busy', hidden: true }, h('div', { class: 'studio-busy-msg', role: 'status' }));
+      const stage = h('main', { class: 'studio-stage' }, paperFit, busy);
+      const pane = h('div', { class: 'studio-pane' });
+      const tabs = h('nav', { class: 'studio-tabs', role: 'tablist' });
+      const panel = h('aside', { class: 'studio-panel' }, tabs, pane);
+      const sheetOpen = () => panel.classList.contains('open');
+
+      let zoom = 'fit';
+      const zoomBtn = h('button', { type: 'button', class: 'btn small studio-zoom' }, 'Actual size');
+      zoomBtn.addEventListener('click', () => {
+        zoom = zoom === 'fit' ? 'actual' : 'fit';
+        zoomBtn.textContent = zoom === 'fit' ? 'Actual size' : 'Fit to screen';
+        fit();
+      });
+
+      const pdf = h('button', { type: 'button', class: 'btn primary small' });
+      pdf.addEventListener('click', () => downloadCV(pdf));
+      const close = h('button', { type: 'button', class: 'btn small studio-close', 'aria-label': 'Close' }, '← Back');
+      const studio = h(
+        'div',
+        { class: 'studio', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Your CV' },
+        h(
+          'header',
+          { class: 'studio-bar' },
+          close,
+          h('div', { class: 'studio-title' }, h('strong', {}, 'Your CV'), h('span', {}, [job.title, job.company].filter(Boolean).join(' at '))),
+          h('div', { class: 'studio-actions' }, zoomBtn, pdf),
+        ),
+        h('div', { class: 'studio-body' }, stage, panel),
+      );
+
+      // Fit the A4 page to the available width.
+      function fit() {
+        const page = paperScale.firstElementChild;
+        if (!page) return;
+        const avail = stage.clientWidth - (window.innerWidth < 760 ? 24 : 64);
+        const scale = zoom === 'fit' ? Math.min(1, avail / page.offsetWidth) : 1;
+        paperScale.style.transform = `scale(${scale})`;
+        paperFit.style.width = `${page.offsetWidth * scale}px`;
+        paperFit.style.height = `${page.offsetHeight * scale}px`;
+      }
+      const ro = new ResizeObserver(fit);
+      ro.observe(stage);
+
+      function renderPaper() {
+        const d = docs();
+        const t = getTemplate(template());
+        paperScale.replaceChildren(renderCV(d.cvData, t.id, accent()));
+        pdf.textContent = `Download PDF · ${t.name}`;
+        requestAnimationFrame(fit);
+      }
+
+      // Panel tabs
+      const TABS = [
+        ['template', 'Template'],
+        ['changes', 'What changed'],
+        ['edit', 'Edit'],
+      ];
+      let tab = 'template';
+      function drawTabs() {
+        tabs.replaceChildren(
+          ...TABS.map(([k, label]) => {
+            const b = h('button', { type: 'button', role: 'tab', 'aria-selected': String(sheetOpen() && tab === k), class: tab === k ? 'active' : '' }, label);
+            b.addEventListener('click', () => {
+              // On phones the panel is a bottom sheet: tapping the open tab folds it away.
+              if (tab === k && sheetOpen() && window.innerWidth < 900) panel.classList.remove('open');
+              else {
+                tab = k;
+                panel.classList.add('open');
+              }
+              drawTabs();
+              drawPane();
+            });
+            return b;
+          }),
+        );
+      }
+
+      let thumbsFor = null;
+      const gallery = h('div', { class: 'tpl-gallery studio-gallery', role: 'group', 'aria-label': 'CV template' });
+      function drawPane() {
+        const d = docs();
+        const cv = d.cvData;
+        const t = getTemplate(template());
+        if (tab === 'template') {
+          if (thumbsFor !== cv) {
+            thumbsFor = cv;
+            gallery.replaceChildren(
+              ...TEMPLATES.map((x) => {
+                const b = h(
+                  'button',
+                  { type: 'button', class: 'tpl-card', 'data-id': x.id, 'aria-label': `${x.name} template` },
+                  h('div', { class: 'tpl-thumb', 'aria-hidden': 'true' }, renderCV(cv, x.id, x.accent)),
+                  h('strong', {}, x.name),
+                  h('span', { class: `tpl-badge ${x.ats ? '' : 'warn'}` }, x.ats ? 'ATS friendly' : 'Less ATS friendly'),
+                );
+                b.addEventListener('click', () => {
+                  saveDoc({ template: x.id });
+                  refresh();
+                });
+                return b;
+              }),
+            );
+          }
+          for (const b of gallery.children) b.setAttribute('aria-pressed', String(b.dataset.id === t.id));
+          pane.replaceChildren(
+            gallery,
+            h('p', { class: 'tpl-info' }, h('strong', {}, `${t.name}. `), t.blurb),
+            t.accents
+              ? h(
+                  'div',
+                  { class: 'swatches', role: 'group', 'aria-label': 'Colour' },
+                  h('span', { class: 'muted small' }, 'Colour'),
+                  ...t.accents.map((c) => {
+                    const sw = h('button', { type: 'button', class: 'swatch', style: `background:${c}`, 'aria-label': `Colour ${c}`, 'aria-pressed': String(accent() === c) });
+                    sw.addEventListener('click', () => {
+                      saveDoc({ accent: c });
+                      refresh();
+                    });
+                    return sw;
+                  }),
+                )
+              : '',
+          );
+        } else if (tab === 'changes') {
+          pane.replaceChildren(
+            h(
+              'div',
+              { class: 'cv-notes' },
+              ...(cv.changes?.length ? [h('h3', {}, 'What changed for this job'), h('ul', {}, ...cv.changes.map((c) => h('li', {}, c)))] : [h('p', { class: 'muted' }, 'No change notes for this version.')]),
+              ...(cv.keywords?.length ? [h('h3', {}, 'Keywords covered'), h('div', { class: 'tags' }, ...cv.keywords.map((k) => h('span', { class: 'tag' }, k)))] : []),
+              writingCheck(cvProse(cv), (phrases, signal) =>
+                rework(`Rewrite only the lines that use these phrases: ${phrases.join(', ')}. Use plain, specific wording a person would use about their own work, and no dashes as punctuation. Keep everything else the same.`, signal, 'Rewording those lines…'),
+              ),
+            ),
+          );
+        } else {
+          const input = h('textarea', { id: 'studio-change', rows: 3, placeholder: 'e.g. make it one page, stress leadership, drop the 2015 job' });
+          const out = h('div', { class: 'small error', role: 'status' });
+          const apply = aiButton('Update CV', {
+            output: out,
+            task: async (_t, signal) => {
+              const instructions = input.value.trim();
+              if (!instructions) throw new Error('Say what you want changed first.');
+              await rework(instructions, signal, 'Updating your CV…');
+              return '';
+            },
+          });
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) apply.click();
+          });
+          const cp = h('button', { class: 'btn small', type: 'button' }, 'Copy as text');
+          cp.addEventListener('click', () => copy(docs().cv || ''));
+          const txt = h('button', { class: 'btn small', type: 'button' }, 'Download text');
+          txt.addEventListener('click', () => download(`${fileBase()}-cv.txt`, docs().cv || ''));
+          pane.replaceChildren(
+            h('label', { class: 'small strong', for: 'studio-change' }, 'Ask Claude for changes'),
+            input,
+            h('div', { class: 'row' }, apply),
+            out,
+            h('h3', { class: 'small strong pane-sub' }, 'Paste into application forms'),
+            h('div', { class: 'row wrap' }, cp, txt),
+          );
+        }
+      }
+
+      async function rework(instructions, signal, message) {
+        busy.hidden = false;
+        busy.firstChild.textContent = message;
+        try {
+          const cvData = await ai.tailorCV(job, { instructions, previous: docs().cvData, signal });
+          saveDoc({ cvData, cv: cvToText(cvData) });
+          refresh();
+        } finally {
+          busy.hidden = true;
+        }
+      }
+
+      function refresh() {
+        renderPaper();
+        drawTabs();
+        drawPane();
+        draw();
+      }
+
+      function shut() {
+        ro.disconnect();
+        document.removeEventListener('keydown', onKey);
+        document.body.style.overflow = prevOverflow;
+        studio.classList.add('closing');
+        setTimeout(() => studio.remove(), 160);
+        returnFocus?.focus?.();
+      }
+      const onKey = (e) => {
+        if (e.key === 'Escape') shut();
+      };
+      document.addEventListener('keydown', onKey);
+      close.addEventListener('click', shut);
+      // Close if the job page goes away underneath (route change).
+      const gone = new MutationObserver(() => {
+        if (!panelRoot.isConnected) {
+          gone.disconnect();
+          if (studio.isConnected) shut();
+        }
+      });
+      gone.observe(document.getElementById('view'), { childList: true });
+
+      if (window.innerWidth >= 900) panel.classList.add('open');
+      document.body.append(studio);
+      renderPaper();
+      drawTabs();
+      drawPane();
+      close.focus();
+    }
+
+    const panelRoot = h('section', { class: 'card' }, h('h2', {}, 'Tailored CV'), status, body);
     draw();
-    return card;
+    return panelRoot;
   }
 
   function letterSection() {
