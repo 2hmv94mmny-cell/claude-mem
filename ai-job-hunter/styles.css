@@ -1262,3 +1262,9 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
   .studio-title { display: none; }
   .studio-actions { flex: 1; justify-content: flex-end; }
 }
+.chip-more { border-style: dashed; color: var(--accent-text); }
+.chip-more:hover { color: var(--accent-text); border-color: var(--accent); }
+@media (max-width: 560px) {
+  .feed-chips { gap: 6px; }
+  .feed-chips .chip { min-height: 30px; padding: 0 10px; font-size: var(--fs-xs); }
+}

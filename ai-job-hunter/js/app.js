@@ -37,6 +37,8 @@ let feedError = null; // { key, message } from the last failed refresh
 const FEED_PAGE = 12;
 let feedFilter = ''; // show one portal only ('' = all)
 let feedShown = FEED_PAGE; // how many cards are visible
+let feedChipsOpen = false; // all portal chips shown, or only the biggest few
+const feedChipCount = () => (window.innerWidth < 560 ? 3 : 5); // portals shown before "more"
 
 function feedInputs() {
   const p = store.get().profile;
@@ -152,7 +154,17 @@ function feedSection() {
       });
       return b;
     };
-    chips.replaceChildren(chip('All sites', '', feed.jobs.length), ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => chip(k, k, c)));
+    // The biggest portals first; the rest fold behind a "more" chip so the list stays short.
+    const sorted = [...counts].sort((a, b) => b[1] - a[1]);
+    let shown = feedChipsOpen ? sorted : sorted.slice(0, feedChipCount());
+    if (!feedChipsOpen && feedFilter && !shown.some(([k]) => k === feedFilter)) shown = [...shown, sorted.find(([k]) => k === feedFilter)];
+    const hidden = sorted.length - shown.length;
+    const toggle = h('button', { type: 'button', class: 'chip chip-more', 'aria-expanded': String(feedChipsOpen) }, feedChipsOpen ? 'Show less' : `+ ${hidden} more`);
+    toggle.addEventListener('click', () => {
+      feedChipsOpen = !feedChipsOpen;
+      drawChips();
+    });
+    chips.replaceChildren(chip('All sites', '', feed.jobs.length), ...shown.map(([k, c]) => chip(k, k, c)), feedChipsOpen || hidden > 0 ? toggle : '');
   }
   function drawGrid() {
     grid.replaceChildren(...list.slice(0, feedShown).map(feedCard));
