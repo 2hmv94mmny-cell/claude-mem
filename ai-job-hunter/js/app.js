@@ -7,7 +7,8 @@ import { portalsFor } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { readCVFile, ACCEPT } from './files.js';
-import { TEMPLATES, renderCV, cvToText, cvPDFDefinition, letterPDFDefinition, makePDF, cvFromProfile } from './cvdoc.js';
+import { cvToText, cvFromProfile } from './cvdoc.js';
+import { TEMPLATES, getTemplate, accentFor, renderCV, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
 
 const view = document.getElementById('view');
 const nav = document.getElementById('nav');
@@ -728,7 +729,8 @@ function renderJob(id) {
     ensureSaved();
     store.update((s) => (s.docs[id] = { ...s.docs[id], ...patch, updatedAt: Date.now() }));
   };
-  const template = () => docs().template || 'modern';
+  const template = () => getTemplate(docs().template).id;
+  const accent = () => accentFor(getTemplate(template()), docs().accent);
   const fileBase = () => slug(`${store.get().profile.name || 'cv'}-${job.company}`);
 
   async function savePDF(definition, filename, btn) {
@@ -751,21 +753,59 @@ function renderJob(id) {
     const preview = h('div', { class: 'cv-preview' });
     const notes = h('div', { class: 'cv-notes' });
     const status = h('div', { class: 'ai-output compact-status', role: 'status' });
-    const tplRow = h('div', { class: 'chip-row', role: 'group', 'aria-label': 'Layout' });
+    // Template gallery: a live thumbnail of this CV in every template.
+    const gallery = h('div', { class: 'tpl-gallery', role: 'group', 'aria-label': 'CV template' });
+    const tplInfo = h('p', { class: 'tpl-info' });
+    const swatches = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Colour' });
+    const picker = h('div', { class: 'tpl-picker' }, h('h3', { class: 'small strong' }, 'Choose a template'), gallery, tplInfo, swatches);
+    let thumbsFor = null;
+
+    function drawPicker(cv) {
+      if (thumbsFor !== cv) {
+        thumbsFor = cv;
+        gallery.replaceChildren(
+          ...TEMPLATES.map((t) => {
+            const b = h(
+              'button',
+              { type: 'button', class: 'tpl-card', 'data-id': t.id, 'aria-label': `${t.name} template` },
+              h('div', { class: 'tpl-thumb', 'aria-hidden': 'true' }, renderCV(cv, t.id, t.accent)),
+              h('strong', {}, t.name),
+              h('span', { class: `tpl-badge ${t.ats ? '' : 'warn'}` }, t.ats ? 'ATS friendly' : 'Less ATS friendly'),
+            );
+            b.addEventListener('click', () => {
+              saveDoc({ template: t.id });
+              draw();
+            });
+            return b;
+          }),
+        );
+      }
+      const t = getTemplate(template());
+      for (const b of gallery.children) b.setAttribute('aria-pressed', String(b.dataset.id === t.id));
+      tplInfo.textContent = t.blurb;
+      swatches.replaceChildren(
+        ...(t.accents
+          ? [
+              h('span', { class: 'muted small' }, 'Colour'),
+              ...t.accents.map((c) => {
+                const sw = h('button', { type: 'button', class: 'swatch', style: `background:${c}`, 'aria-label': `Colour ${c}`, 'aria-pressed': String(accent() === c) });
+                sw.addEventListener('click', () => {
+                  saveDoc({ accent: c });
+                  draw();
+                });
+                return sw;
+              }),
+            ]
+          : []),
+      );
+      pdfBtn.textContent = `Download PDF · ${t.name}`;
+    }
 
     function draw() {
       const d = docs();
-      tplRow.replaceChildren(
-        ...TEMPLATES.map((t) => {
-          const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(template() === t.id) }, t.label);
-          b.addEventListener('click', () => {
-            saveDoc({ template: t.id });
-            draw();
-          });
-          return b;
-        }),
-      );
-      if (d.cvData) preview.replaceChildren(h('div', { class: 'cv-scroll' }, renderCV(d.cvData, template())));
+      picker.hidden = !d.cvData;
+      if (d.cvData) drawPicker(d.cvData);
+      if (d.cvData) preview.replaceChildren(h('div', { class: 'cv-scroll' }, renderCV(d.cvData, template(), accent())));
       else if (d.cv) preview.replaceChildren(h('div', { class: 'ai-output doc' }, md(d.cv)));
       else {
         preview.replaceChildren(
@@ -833,7 +873,7 @@ function renderJob(id) {
     const refine = h('div', { class: 'refine' }, h('label', { class: 'small strong', for: 'cv-change' }, 'Ask for changes'), h('div', { class: 'row' }, ask, refineBtn));
 
     const pdfBtn = h('button', { class: 'btn primary small', type: 'button' }, 'Download PDF');
-    pdfBtn.addEventListener('click', () => savePDF(cvPDFDefinition(docs().cvData, template()), `${fileBase()}-cv.pdf`, pdfBtn));
+    pdfBtn.addEventListener('click', () => savePDF(cvPDFDefinition(docs().cvData, template(), accent()), `${fileBase()}-cv-${template()}.pdf`, pdfBtn));
     const cp = h('button', { class: 'btn small', type: 'button' }, 'Copy text');
     cp.addEventListener('click', () => copy(docs().cv || ''));
     const txt = h('button', { class: 'btn small', type: 'button' }, 'Download text');
@@ -844,9 +884,10 @@ function renderJob(id) {
       'section',
       { class: 'card' },
       h('div', { class: 'row space wrap' }, h('h2', {}, 'Tailored CV'), gen),
-      h('div', { class: 'row wrap space' }, h('div', { class: 'row wrap' }, h('span', { class: 'muted small' }, 'Layout'), tplRow), actions),
       status,
+      picker,
       h('div', { class: 'cv-layout' }, preview, notes),
+      actions,
       refine,
     );
     draw();
@@ -901,7 +942,7 @@ function renderJob(id) {
     const pdfBtn = h('button', { class: 'btn small', type: 'button' }, 'Download PDF');
     pdfBtn.addEventListener(
       'click',
-      need((t) => savePDF(letterPDFDefinition(docs().cvData || cvFromProfile(store.get().profile), t, template()), `${fileBase()}-cover-letter.pdf`, pdfBtn)),
+      need((t) => savePDF(letterPDFDefinition(docs().cvData || cvFromProfile(store.get().profile), t, template(), accent()), `${fileBase()}-cover-letter.pdf`, pdfBtn)),
     );
 
     return h(
