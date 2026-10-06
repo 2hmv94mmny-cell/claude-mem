@@ -2,8 +2,9 @@
 
 A website that helps you find a job faster, and installs as an app on phones and desktops.
 
-- **Find jobs**: search free job boards (Remotive, Arbeitnow), or let Claude search the whole web for openings that fit your profile. Claude can also score how well each result matches your CV.
-- **Adapt your CV and cover letter**: generate a CV tailored to each posting, plus a cover letter in the tone you choose. You can edit, copy, download (.md) or print/save as PDF. The prompts forbid inventing experience the CV doesn't support.
+- **Find jobs on every portal for your location**: Claude searches the job portals that matter where you live (for example StepStone and Arbeitsagentur in Germany, Reed and Totaljobs in the UK, Nationale Vacaturebank in the Netherlands, SEEK in Australia, Naukri in India), plus Indeed, LinkedIn and company careers pages. Results are grouped by portal, and every portal gets a one-tap link to its own full search. Claude can also score how well each result matches your CV.
+- **Upload your CV**: PDF, Word (.docx), text, or a photo/scan. Claude reviews it (score, strengths, what to fix, applicant-tracking issues) and fills in your profile.
+- **A redesigned CV for each job**: when you apply, Claude rewrites your CV around that posting and lays it out in one of three designs (Modern, Classic, Compact). It lists what it changed and which keywords are now covered, takes follow-up requests ("make it one page"), and downloads as a real-text PDF that applicant tracking systems can read. Cover letters download as PDF too. The prompts forbid inventing experience the CV doesn't support.
 - **Track applications**: a kanban board (Saved → Applied → Interview → Offer → Rejected) with drag and drop, notes and a history of status changes.
 - **Prepare for interviews**: a prep guide with likely questions, STAR answer outlines drawn from your CV, and questions to ask them. A mock interviewer asks one question at a time and gives feedback on each answer.
 
@@ -77,7 +78,10 @@ ai-job-hunter/
 └── js/
     ├── app.js             Router and all screens
     ├── ai.js              Claude prompts and API calls
-    ├── jobs.js            Job board search, plus demo listings used when offline
+    ├── jobs.js            Free job board search, plus demo listings used when offline
+    ├── portals.js         Job portals per country, location detection, portal search links
+    ├── files.js           Reads uploaded CVs (PDF via pdf.js, Word via mammoth, images)
+    ├── cvdoc.js           Structured CV: layout templates, plain text, PDF (pdfmake)
     ├── store.js           Local-first state (localStorage), export/import
     └── ui.js              DOM helpers, safe Markdown renderer, toast, print/download
 ```

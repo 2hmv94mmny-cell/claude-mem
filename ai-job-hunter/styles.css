@@ -290,3 +290,102 @@ input[type='checkbox'] { width: auto; accent-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Chips ---------- */
+.chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chip {
+  font: inherit; font-size: 0.84rem; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.35rem 0.75rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+}
+.chip:hover { color: var(--text); }
+.chip[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.chip-count { font-size: 0.75rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+#view > .chip-row { margin-bottom: 0.8rem; }
+.strong { font-weight: 600; }
+
+/* ---------- Portal links ---------- */
+.portals h2 { margin-bottom: 0.2rem; }
+.portal-links { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.6rem; }
+.portal-link {
+  font-size: 0.86rem; font-weight: 600; padding: 0.4rem 0.75rem; border-radius: 8px;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+}
+.portal-link:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+/* ---------- CV upload + review ---------- */
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
+  padding: 1.6rem 1rem; margin: 0.6rem 0 0.4rem; text-align: center; cursor: pointer;
+  border: 2px dashed var(--border); border-radius: 12px; background: var(--surface-2);
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone:hover, .dropzone.over, .dropzone:focus-visible { border-color: var(--accent); background: var(--accent-soft); outline: none; }
+.analysis:empty { display: none; }
+.analysis { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem; display: grid; gap: 0.8rem; }
+.analysis-head { display: flex; gap: 1rem; align-items: center; }
+.analysis-head p { margin: 0; }
+.score-big {
+  flex: none; width: 4.4rem; height: 4.4rem; border-radius: 50%;
+  display: flex; align-items: baseline; justify-content: center; padding-top: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+.score-big strong { font-size: 1.5rem; line-height: 1; }
+.score-big span { font-size: 0.75rem; }
+.analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem; }
+.analysis-list h3 { font-size: 0.9rem; margin-bottom: 0.3rem; }
+.analysis-list ul { margin: 0; padding-left: 1.1rem; font-size: 0.92rem; }
+.analysis-list li { margin: 0.2rem 0; }
+.analysis-list.good h3 { color: var(--ok); }
+.analysis-list.fix h3 { color: var(--accent); }
+.analysis-list.warn h3 { color: var(--warn); }
+
+/* ---------- Tailored CV ---------- */
+.cv-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 1rem; margin-top: 0.8rem; align-items: start; }
+@media (max-width: 900px) { .cv-layout { grid-template-columns: 1fr; } }
+.cv-notes:empty { display: none; }
+.cv-notes { font-size: 0.9rem; }
+.cv-notes h3 { font-size: 0.88rem; margin: 0 0 0.3rem; }
+.cv-notes ul { padding-left: 1.1rem; margin: 0 0 0.9rem; }
+.cv-notes li { margin: 0.2rem 0; }
+.refine { margin-top: 1rem; display: grid; gap: 0.35rem; }
+.refine .row input { flex: 1; min-width: 0; }
+.compact-status:empty { display: none; }
+.empty-doc { padding: 1.4rem; border-radius: 10px; background: var(--surface-2); }
+.empty-doc p { margin: 0.4rem 0 0; max-width: 60ch; }
+.cv-scroll { overflow-x: auto; border-radius: 10px; background: var(--surface-2); padding: 0.8rem; }
+
+/* The CV preview is paper: it keeps the same light look in both themes,
+   matching the PDF it will become. */
+:root { --paper: #ffffff; --ink: #1f2937; --ink-muted: #6b7280; --paper-rule: #d1d5db; }
+.cv-page {
+  --cv-accent: #3b3ad6;
+  background: var(--paper); color: var(--ink);
+  width: 100%; max-width: 46rem; margin: 0 auto; padding: 2.2rem 2.4rem;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); border-radius: 4px;
+  font: 13.5px/1.5 Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.cv-page h2 { font-size: 1.75rem; margin: 0; color: var(--cv-accent); letter-spacing: -0.01em; }
+.cv-headline { font-size: 1.02rem; margin: 0.15rem 0 0; color: #374151; }
+.cv-contact { font-size: 0.85rem; color: var(--ink-muted); margin: 0.35rem 0 0; }
+.cv-section h3 {
+  font-size: 0.95rem; color: var(--cv-accent); margin: 1.1rem 0 0.4rem;
+  padding-bottom: 0.2rem; border-bottom: 1px solid currentColor;
+}
+.cv-section p { margin: 0 0 0.3rem; }
+.cv-section ul { margin: 0.15rem 0 0.4rem; padding-left: 1.1rem; }
+.cv-section li { margin: 0.1rem 0; }
+.cv-item { margin-bottom: 0.55rem; }
+.cv-item-head { display: flex; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; }
+.cv-item-head p { margin: 0; }
+.cv-dates, .cv-muted { color: var(--ink-muted); font-size: 0.88em; }
+.cv-dates { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cv-page.t-classic { --cv-accent: #111827; font-family: Georgia, 'Times New Roman', serif; }
+.cv-page.t-classic .cv-head { text-align: center; }
+.cv-page.t-classic h2 { color: #111827; }
+.cv-page.t-classic .cv-section h3 { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.82rem; border-color: var(--paper-rule); color: #111827; }
+.cv-page.t-compact { --cv-accent: #0f766e; font-size: 12.5px; padding: 1.6rem 1.8rem; }
+.cv-page.t-compact h2 { font-size: 1.45rem; }
+.cv-page.t-compact .cv-section h3 { margin-top: 0.75rem; }
+@media (max-width: 560px) { .cv-page { padding: 1.3rem 1.1rem; } .cv-scroll { padding: 0.4rem; } }

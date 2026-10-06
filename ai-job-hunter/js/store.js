@@ -19,6 +19,8 @@ const DEFAULT_STATE = {
     skills: '',
     remoteOnly: false,
     cv: '',
+    cvFile: '',
+    cvAnalysis: null,
   },
   // Jobs the user has saved, keyed by id. Each carries its tracker status.
   jobs: {},

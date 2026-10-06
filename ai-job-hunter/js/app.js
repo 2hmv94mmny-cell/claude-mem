@@ -1,8 +1,11 @@
 import { store, STATUSES } from './store.js';
-import { searchJobs, SOURCE_IDS, sourceLabel } from './jobs.js';
+import { searchJobs, SOURCE_IDS } from './jobs.js';
 import * as ai from './ai.js';
-import { h, md, toast, copy, download, printDoc, canPrint, confirmButton, fmtDate, debounce } from './ui.js';
+import { h, md, toast, copy, download, confirmButton, fmtDate, debounce } from './ui.js';
 import { inArtifact, ready as runtimeReady } from './runtime.js';
+import { portalsFor } from './portals.js';
+import { readCVFile, ACCEPT } from './files.js';
+import { TEMPLATES, renderCV, cvToMarkdown, cvPDFDefinition, letterPDFDefinition, makePDF, cvFromProfile } from './cvdoc.js';
 
 const view = document.getElementById('view');
 const nav = document.getElementById('nav');
@@ -265,32 +268,59 @@ function renderFind() {
   const { profile } = store.get();
   const defaults = session.query || {
     query: profile.targetRoles.split(',')[0]?.trim() || '',
-    location: '',
+    location: profile.location || '',
     remoteOnly: profile.remoteOnly,
     sources: [...SOURCE_IDS],
   };
+  session.filter ??= '';
 
-  const q = h('input', { type: 'search', placeholder: 'Job title, skill or keyword', value: defaults.query, 'aria-label': 'Keywords' });
-  const loc = h('input', { type: 'text', placeholder: 'Location (optional)', value: defaults.location, 'aria-label': 'Location' });
-  const remote = h('input', { type: 'checkbox', checked: defaults.remoteOnly });
-  const srcBoxes = SOURCE_IDS.map((id) => {
-    const cb = h('input', { type: 'checkbox', value: id, checked: defaults.sources.includes(id) });
-    return h('label', { class: 'check' }, cb, sourceLabel(id));
-  });
+  const q = h('input', { id: 'find-q', type: 'search', placeholder: 'Job title, skill or keyword', value: defaults.query, 'aria-label': 'Keywords' });
+  const loc = h('input', { id: 'find-loc', type: 'text', placeholder: 'City or country, e.g. Amsterdam', value: defaults.location, 'aria-label': 'Location' });
+  const remote = h('input', { id: 'find-remote', type: 'checkbox', checked: defaults.remoteOnly });
 
   const results = h('div', { class: 'results' });
   const status = h('p', { class: 'muted small', role: 'status' });
+  const filters = h('div', { class: 'chip-row', role: 'group', 'aria-label': 'Filter by portal' });
+  const portalBox = h('section', { class: 'card portals' });
 
-  const params = () => ({
-    query: q.value,
-    location: loc.value,
-    remoteOnly: remote.checked,
-    sources: srcBoxes.map((l) => l.querySelector('input')).filter((c) => c.checked).map((c) => c.value),
-  });
+  const params = () => ({ query: q.value.trim(), location: loc.value.trim(), remoteOnly: remote.checked, sources: [...SOURCE_IDS] });
 
-  // Inside the artifact viewer the page cannot reach job boards directly, so
-  // live search goes through the viewer's web-search connector instead.
-  const webMode = inArtifact;
+  // Links to every portal's own search page for this query and place.
+  function drawPortals() {
+    const { query, location, remoteOnly } = params();
+    const { portals, countryName } = portalsFor(query || 'jobs', location, { remote: remoteOnly });
+    portalBox.replaceChildren(
+      h('h2', {}, countryName ? `Job portals in ${countryName}` : location ? 'Job portals' : 'Job portals worldwide'),
+      h(
+        'p',
+        { class: 'muted small' },
+        countryName || !location
+          ? 'Open the full search on each portal for these keywords and location.'
+          : `No portal list for "${location}" yet; showing international portals. Try adding the country.`,
+      ),
+      h(
+        'div',
+        { class: 'portal-links' },
+        ...portals.map((x) => h('a', { class: 'portal-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.name, h('span', { 'aria-hidden': 'true' }, ' ↗'))),
+      ),
+    );
+  }
+  for (const el of [q, loc]) el.addEventListener('input', debounce(drawPortals, 250));
+  remote.addEventListener('change', drawPortals);
+
+  async function runBoardSearch() {
+    const p = params();
+    session.query = p;
+    status.textContent = 'Searching free job boards…';
+    results.replaceChildren(skeleton());
+    const { jobs, errors } = await searchJobs(p);
+    session.examples = false;
+    session.results = jobs;
+    session.scores = {};
+    session.errors = errors;
+    session.filter = '';
+    drawResults();
+  }
 
   async function showExamples() {
     const { jobs } = await searchJobs({ sources: [] });
@@ -301,42 +331,36 @@ function renderFind() {
     drawResults();
   }
 
-  async function runBoardSearch() {
-    const p = params();
-    if (!p.sources.length) return toast('Pick at least one job board.');
-    session.query = p;
-    status.textContent = 'Searching job boards…';
-    results.replaceChildren(skeleton());
-    const { jobs, errors } = await searchJobs(p);
-    session.examples = false;
-    session.results = jobs;
-    session.scores = {};
-    session.errors = errors;
-    drawResults();
-  }
-
   const aiStream = h('div', { class: 'ai-output compact', hidden: true });
-  const aiBtn = aiButton(webMode ? 'Search jobs' : 'AI web search', {
-    variant: '',
+  const searchBtn = aiButton('Search all portals', {
     output: aiStream,
     task: async (onText, signal) => {
       const p = params();
       session.query = p;
       aiStream.hidden = false;
-      status.textContent = 'Claude is searching the web for openings… this can take a minute.';
-      const query = [p.query, p.location && `in ${p.location}`, p.remoteOnly && 'remote only'].filter(Boolean).join(' ');
-      const jobs = await ai.aiFindJobs(query, { onText: () => onText('Searching and reading postings…'), signal });
-      session.results = jobs;
-      session.scores = {};
-      session.examples = false;
-      session.errors = jobs.length ? [] : ['No postings found'];
-      aiStream.hidden = true;
-      drawResults();
-      return '';
+      results.replaceChildren(skeleton());
+      status.textContent = 'Searching job portals… this usually takes under a minute.';
+      try {
+        const { jobs } = await ai.searchEverywhere(p, { onText: (t) => onText(t), signal });
+        session.results = jobs;
+        session.scores = {};
+        session.examples = false;
+        session.filter = '';
+        session.errors = jobs.length ? [] : ['No open postings found for this search'];
+        aiStream.hidden = true;
+        drawResults();
+        return '';
+      } catch (err) {
+        drawResults();
+        throw err;
+      }
     },
   });
 
-  const scoreBtn = aiButton('Score matches with AI', {
+  const boardsBtn = inArtifact ? '' : h('button', { class: 'btn', type: 'button' }, 'Free job boards');
+  if (boardsBtn) boardsBtn.addEventListener('click', runBoardSearch);
+
+  const scoreBtn = aiButton('Score matches', {
     variant: '',
     task: async (_onText, signal) => {
       if (!store.get().profile.cv.trim()) throw new Error('Add your CV in Profile so matches can be scored.');
@@ -350,22 +374,39 @@ function renderFind() {
   });
 
   function drawResults() {
-    const n = session.results.length;
+    const all = session.results;
+    const counts = new Map();
+    for (const j of all) counts.set(j.source, (counts.get(j.source) || 0) + 1);
+    if (session.filter && !counts.has(session.filter)) session.filter = '';
+    const shown = session.filter ? all.filter((j) => j.source === session.filter) : all;
+
+    const n = all.length;
     status.textContent = session.examples
-      ? 'These are example listings. Press Search jobs to find live openings.'
-      : `${n} job${n === 1 ? '' : 's'} found` + (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
-    if (!n) {
+      ? 'These are example listings. Press Search all portals to find live openings.'
+      : `${n} job${n === 1 ? '' : 's'} found` + (counts.size > 1 ? ` on ${counts.size} sites` : '') + (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
+
+    const chip = (label, value, count) => {
+      const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(session.filter === value) }, label, h('span', { class: 'chip-count' }, String(count)));
+      b.addEventListener('click', () => {
+        session.filter = value;
+        drawResults();
+      });
+      return b;
+    };
+    filters.replaceChildren(...(counts.size > 1 && !session.examples ? [chip('All', '', n), ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => chip(k, k, c))] : []));
+
+    if (!shown.length) {
       results.replaceChildren(
-        h('div', { class: 'empty' }, h('p', {}, 'No jobs matched. Try broader keywords, or '), h('a', { href: '#/add' }, 'add a job you found elsewhere.')),
+        h('div', { class: 'empty' }, h('p', {}, 'No jobs to show. Try broader keywords, open a portal above, or '), h('a', { href: '#/add' }, 'add a job you found elsewhere.')),
       );
       return;
     }
-    results.replaceChildren(...session.results.map(jobCard));
+    results.replaceChildren(...shown.map(jobCard));
   }
 
   function jobCard(job) {
     const saved = Boolean(store.get().jobs[job.id]);
-    const saveBtn = h('button', { class: 'btn small', disabled: saved }, saved ? 'Saved' : 'Save');
+    const saveBtn = h('button', { class: 'btn small', type: 'button', disabled: saved }, saved ? 'Saved' : 'Save');
     saveBtn.addEventListener('click', () => {
       store.saveJob({ ...job, match: session.scores[job.id] });
       saveBtn.textContent = 'Saved';
@@ -386,10 +427,11 @@ function renderFind() {
       h(
         'div',
         { class: 'job-card-foot' },
-        h('div', { class: 'tags' }, ...[job.salary, ...(job.tags || [])].filter(Boolean).map((t) => h('span', { class: 'tag' }, t)), h('span', { class: 'tag source' }, job.source)),
+        h('div', { class: 'tags' }, h('span', { class: 'tag source' }, job.source), ...[job.salary, ...(job.tags || [])].filter(Boolean).map((t) => h('span', { class: 'tag' }, t))),
         h(
           'div',
           { class: 'row' },
+          job.url ? h('a', { class: 'btn small', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'Posting ↗') : '',
           saveBtn,
           h('a', { class: 'btn small primary', href: `#/job/${encodeURIComponent(job.id)}` }, 'Open'),
         ),
@@ -400,50 +442,35 @@ function renderFind() {
   const form = h(
     'form',
     { class: 'card search-form' },
-    h('div', { class: 'search-row' }, q, loc, webMode ? aiBtn : h('button', { class: 'btn primary', type: 'submit' }, 'Search boards')),
-    h(
-      'div',
-      { class: 'row wrap' },
-      h('label', { class: 'check' }, remote, 'Remote only'),
-      ...(webMode ? [h('span', { class: 'muted small' }, 'Searches the live web with Claude')] : [h('span', { class: 'muted small' }, 'Boards:'), ...srcBoxes]),
-      h('span', { class: 'spacer' }),
-      webMode ? '' : aiBtn,
-      scoreBtn,
-    ),
+    h('div', { class: 'search-row' }, q, loc, searchBtn),
+    h('div', { class: 'row wrap' }, h('label', { class: 'check' }, remote, 'Remote only'), h('span', { class: 'spacer' }), boardsBtn, scoreBtn),
   );
-  if (webMode) {
-    aiBtn.classList.add('primary');
-    for (const el of [q, loc]) {
-      el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          aiBtn.click();
-        }
-      });
-    }
+  form.addEventListener('submit', (e) => e.preventDefault());
+  for (const el of [q, loc]) {
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (ai.hasKey()) searchBtn.click();
+        else if (boardsBtn) runBoardSearch();
+      }
+    });
   }
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (webMode) aiBtn.click();
-    else runBoardSearch();
-  });
 
   view.append(
-    pageHeader(
-      'Find jobs',
-      webMode
-        ? 'Claude searches the web for open roles that fit your profile, then scores how well each one matches your CV.'
-        : 'Search free job boards, or let Claude search the whole web for openings that fit your profile.',
-    ),
+    pageHeader('Find jobs', 'Claude searches the job portals for your location, plus LinkedIn and company careers pages, and gathers the openings here.'),
     profileNotice() || '',
+    !ai.hasKey() && !inArtifact ? h('div', { class: 'notice' }, 'Add an API key in ', h('a', { href: '#/settings' }, 'Settings'), ' to search every portal. Until then, use the free job boards or the portal links below.') : '',
     form,
+    portalBox,
     aiStream,
     status,
+    filters,
     results,
   );
+  drawPortals();
 
   if (session.results.length) drawResults();
-  else if (webMode) showExamples();
+  else if (inArtifact || ai.hasKey()) showExamples();
   else runBoardSearch();
 }
 
@@ -679,60 +706,167 @@ function renderJob(id) {
 
   // ----- Documents -----
   function docsTab() {
-    const docs = store.get().docs[id] || {};
-    panel.append(keyNotice() || '', profileNotice() || '', docSection('Tailored CV', 'cv', docs.cv), docSection('Cover letter', 'coverLetter', docs.coverLetter));
+    panel.append(keyNotice() || '', profileNotice() || '', cvSection(), letterSection());
   }
 
-  function docSection(title, key, existing) {
-    const out = h('div', { class: 'ai-output doc' });
-    const editor = h('textarea', { class: 'doc-editor', rows: 22, hidden: true });
-    let text = existing || '';
-    const render = () => out.replaceChildren(text ? md(text) : h('p', { class: 'muted' }, 'Nothing generated yet.'));
-    render();
+  const docs = () => store.get().docs[id] || {};
+  const saveDoc = (patch) => {
+    ensureSaved();
+    store.update((s) => (s.docs[id] = { ...s.docs[id], ...patch, updatedAt: Date.now() }));
+  };
+  const template = () => docs().template || 'modern';
+  const fileBase = () => slug(`${store.get().profile.name || 'cv'}-${job.company}`);
 
-    const persist = (value) => {
-      text = value;
-      ensureSaved();
-      store.update((s) => (s.docs[id] = { ...s.docs[id], [key]: value, updatedAt: Date.now() }));
-    };
+  async function savePDF(definition, filename, btn) {
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Making PDF…';
+    try {
+      await download(filename, await makePDF(definition), 'application/pdf');
+    } catch (err) {
+      console.error(err);
+      toast('Could not make the PDF. Check your connection and try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
 
-    const tone = h(
-      'select',
-      { 'aria-label': 'Tone' },
-      ...['professional', 'warm and enthusiastic', 'concise and direct', 'formal'].map((t) => h('option', { value: t }, t)),
-    );
-    const gen = aiButton(existing ? 'Regenerate' : 'Generate', {
-      output: out,
-      task: (onText, signal) =>
-        key === 'cv' ? ai.tailorCV(job, { onText, signal }) : ai.writeCoverLetter(job, { tone: tone.value, onText, signal }),
-      onDone: persist,
+  // Tailored CV: structured data, laid out with a template, exported as PDF.
+  function cvSection() {
+    const preview = h('div', { class: 'cv-preview' });
+    const notes = h('div', { class: 'cv-notes' });
+    const status = h('div', { class: 'ai-output compact-status', role: 'status' });
+    const tplRow = h('div', { class: 'chip-row', role: 'group', 'aria-label': 'Layout' });
+
+    function draw() {
+      const d = docs();
+      tplRow.replaceChildren(
+        ...TEMPLATES.map((t) => {
+          const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(template() === t.id) }, t.label);
+          b.addEventListener('click', () => {
+            saveDoc({ template: t.id });
+            draw();
+          });
+          return b;
+        }),
+      );
+      if (d.cvData) preview.replaceChildren(h('div', { class: 'cv-scroll' }, renderCV(d.cvData, template())));
+      else if (d.cv) preview.replaceChildren(h('div', { class: 'ai-output doc' }, md(d.cv)));
+      else {
+        preview.replaceChildren(
+          h(
+            'div',
+            { class: 'empty-doc' },
+            h('strong', {}, 'Your CV, rewritten for this job'),
+            h('p', { class: 'muted' }, 'Claude reorders and rewrites your experience around what this role asks for, uses the posting\'s own keywords, and lays it out as a clean PDF that applicant tracking systems can read. It never adds experience you don\'t have.'),
+          ),
+        );
+      }
+      const cv = d.cvData;
+      notes.replaceChildren(
+        ...(cv?.changes?.length ? [h('h3', {}, 'What changed for this job'), h('ul', {}, ...cv.changes.map((c) => h('li', {}, c)))] : []),
+        ...(cv?.keywords?.length ? [h('h3', {}, 'Keywords covered'), h('div', { class: 'tags' }, ...cv.keywords.map((k) => h('span', { class: 'tag' }, k)))] : []),
+      );
+      gen.textContent = d.cvData ? 'Rewrite from scratch' : 'Create tailored CV';
+      for (const el of [refine, actions]) el.hidden = !d.cvData;
+    }
+
+    const gen = aiButton('Create tailored CV', {
+      output: status,
+      task: async (_onText, signal) => {
+        status.replaceChildren(h('p', { class: 'muted' }, 'Claude is rewriting your CV for this job. This takes about a minute.'));
+        const cvData = await ai.tailorCV(job, { signal });
+        saveDoc({ cvData, cv: cvToMarkdown(cvData) });
+        draw();
+        return '';
+      },
     });
 
-    const edit = h('button', { class: 'btn small' }, 'Edit');
+    const ask = h('input', { id: 'cv-change', type: 'text', placeholder: 'e.g. make it one page, stress leadership, drop the 2015 job' });
+    const refineBtn = aiButton('Update', {
+      variant: '',
+      output: status,
+      task: async (_onText, signal) => {
+        const instructions = ask.value.trim();
+        if (!instructions) throw new Error('Say what you want changed first.');
+        status.replaceChildren(h('p', { class: 'muted' }, 'Updating your CV…'));
+        const cvData = await ai.tailorCV(job, { instructions, previous: docs().cvData, signal });
+        saveDoc({ cvData, cv: cvToMarkdown(cvData) });
+        ask.value = '';
+        draw();
+        return '';
+      },
+    });
+    ask.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        refineBtn.click();
+      }
+    });
+    const refine = h('div', { class: 'refine' }, h('label', { class: 'small strong', for: 'cv-change' }, 'Ask for changes'), h('div', { class: 'row' }, ask, refineBtn));
+
+    const pdfBtn = h('button', { class: 'btn primary small', type: 'button' }, 'Download PDF');
+    pdfBtn.addEventListener('click', () => savePDF(cvPDFDefinition(docs().cvData, template()), `${fileBase()}-cv.pdf`, pdfBtn));
+    const cp = h('button', { class: 'btn small', type: 'button' }, 'Copy text');
+    cp.addEventListener('click', () => copy(docs().cv || ''));
+    const txt = h('button', { class: 'btn small', type: 'button' }, 'Download text');
+    txt.addEventListener('click', () => download(`${fileBase()}-cv.md`, docs().cv || ''));
+    const actions = h('div', { class: 'row wrap' }, pdfBtn, cp, txt);
+
+    const card = h(
+      'section',
+      { class: 'card' },
+      h('div', { class: 'row space wrap' }, h('h2', {}, 'Tailored CV'), gen),
+      h('div', { class: 'row wrap space' }, h('div', { class: 'row wrap' }, h('span', { class: 'muted small' }, 'Layout'), tplRow), actions),
+      status,
+      h('div', { class: 'cv-layout' }, preview, notes),
+      refine,
+    );
+    draw();
+    return card;
+  }
+
+  function letterSection() {
+    const out = h('div', { class: 'ai-output doc' });
+    const editor = h('textarea', { class: 'doc-editor', rows: 18, hidden: true });
+    const render = () => out.replaceChildren(docs().coverLetter ? md(docs().coverLetter) : h('p', { class: 'muted' }, 'A specific, human-sounding letter for this role, built from your CV.'));
+    render();
+
+    const tone = h('select', { 'aria-label': 'Tone' }, ...['professional', 'warm and enthusiastic', 'concise and direct', 'formal'].map((t) => h('option', { value: t }, t)));
+    const gen = aiButton(docs().coverLetter ? 'Rewrite' : 'Write cover letter', {
+      output: out,
+      task: (onText, signal) => ai.writeCoverLetter(job, { tone: tone.value, onText, signal }),
+      onDone: (text) => saveDoc({ coverLetter: text }),
+    });
+
+    const edit = h('button', { class: 'btn small', type: 'button' }, 'Edit');
     edit.addEventListener('click', () => {
       const editing = !editor.hidden;
       if (editing) {
-        persist(editor.value);
+        saveDoc({ coverLetter: editor.value });
         render();
         edit.textContent = 'Edit';
       } else {
-        editor.value = text;
+        editor.value = docs().coverLetter || '';
         edit.textContent = 'Done';
       }
       editor.hidden = editing;
       out.hidden = !editing;
     });
-    const cp = h('button', { class: 'btn small' }, 'Copy');
-    cp.addEventListener('click', () => (text ? copy(text) : toast('Generate it first')));
-    const dl = h('button', { class: 'btn small' }, 'Download');
-    dl.addEventListener('click', () => (text ? download(`${slug(job.company)}-${slug(title)}.md`, text) : toast('Generate it first')));
-    const pdf = canPrint ? h('button', { class: 'btn small' }, 'Print / PDF') : '';
-    if (pdf) pdf.addEventListener('click', () => (text ? printDoc(`${title} – ${job.company}`, md(text)) : toast('Generate it first')));
+    const need = (fn) => () => (docs().coverLetter ? fn(docs().coverLetter) : toast('Write the letter first'));
+    const cp = h('button', { class: 'btn small', type: 'button' }, 'Copy');
+    cp.addEventListener('click', need((t) => copy(t)));
+    const pdfBtn = h('button', { class: 'btn small', type: 'button' }, 'Download PDF');
+    pdfBtn.addEventListener(
+      'click',
+      need((t) => savePDF(letterPDFDefinition(docs().cvData || cvFromProfile(store.get().profile), t, template()), `${fileBase()}-cover-letter.pdf`, pdfBtn)),
+    );
 
     return h(
       'section',
       { class: 'card' },
-      h('div', { class: 'row space wrap' }, h('h2', {}, title), h('div', { class: 'row wrap' }, key === 'coverLetter' ? tone : '', gen, edit, cp, dl, pdf)),
+      h('div', { class: 'row space wrap' }, h('h2', {}, 'Cover letter'), h('div', { class: 'row wrap' }, tone, gen, edit, cp, pdfBtn)),
       out,
       editor,
     );
@@ -866,35 +1000,140 @@ function safeUrl(u) {
 function renderProfile() {
   const p = store.get().profile;
   const inputs = {
-    name: h('input', { value: p.name, autocomplete: 'name' }),
-    email: h('input', { type: 'email', value: p.email, autocomplete: 'email' }),
-    phone: h('input', { type: 'tel', value: p.phone, autocomplete: 'tel' }),
-    location: h('input', { value: p.location, placeholder: 'City, country' }),
-    headline: h('input', { value: p.headline, placeholder: 'e.g. Full-stack engineer with 6 years in fintech' }),
-    targetRoles: h('input', { value: p.targetRoles, placeholder: 'e.g. Frontend Engineer, UI Engineer' }),
-    skills: h('input', { value: p.skills, placeholder: 'e.g. React, TypeScript, Node, AWS' }),
-    remoteOnly: h('input', { type: 'checkbox', checked: p.remoteOnly }),
-    cv: h('textarea', { rows: 20, placeholder: 'Paste your full CV / résumé as plain text. The more detail, the better the tailoring.' }, p.cv),
+    name: h('input', { id: 'pf-name', value: p.name, autocomplete: 'name' }),
+    email: h('input', { id: 'pf-email', type: 'email', value: p.email, autocomplete: 'email' }),
+    phone: h('input', { id: 'pf-phone', type: 'tel', value: p.phone, autocomplete: 'tel' }),
+    location: h('input', { id: 'pf-location', value: p.location, placeholder: 'City, country' }),
+    headline: h('input', { id: 'pf-headline', value: p.headline, placeholder: 'e.g. Full-stack engineer with 6 years in fintech' }),
+    targetRoles: h('input', { id: 'pf-roles', value: p.targetRoles, placeholder: 'e.g. Frontend Engineer, UI Engineer' }),
+    skills: h('input', { id: 'pf-skills', value: p.skills, placeholder: 'e.g. React, TypeScript, Node, AWS' }),
+    remoteOnly: h('input', { id: 'pf-remote', type: 'checkbox', checked: p.remoteOnly }),
+    cv: h('textarea', { id: 'pf-cv', rows: 16, placeholder: 'Upload your CV above, or paste it here as plain text.' }, p.cv),
   };
 
-  const fileInput = h('input', { type: 'file', accept: '.txt,.md,text/plain,text/markdown', hidden: true });
-  const loadBtn = h('button', { class: 'btn small', type: 'button' }, 'Load from .txt/.md');
-  loadBtn.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files[0];
-    if (file) inputs.cv.value = await file.text();
+  // ----- Upload + analysis -----
+  const fileInput = h('input', { id: 'cv-file', type: 'file', accept: ACCEPT, hidden: true });
+  const fileStatus = h('p', { class: 'small muted', role: 'status' }, p.cvFile ? `Current CV: ${p.cvFile}` : 'PDF, Word (.docx), text, or a photo of your CV.');
+  const analysisBox = h('div', { class: 'analysis' });
+  const drop = h(
+    'div',
+    { class: 'dropzone', tabindex: '0', role: 'button', 'aria-label': 'Upload your CV' },
+    h('strong', {}, p.cvFile ? 'Upload a new version' : 'Upload your CV'),
+    h('span', { class: 'muted small' }, 'Drop a file here or tap to choose'),
+  );
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput.click();
+    }
   });
+  drop.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    drop.classList.add('over');
+  });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => fileInput.files[0] && handleFile(fileInput.files[0]));
+
+  let pendingImages = [];
+
+  async function handleFile(file) {
+    if (file.size > 15 * 1024 * 1024) return toast('That file is over 15 MB. Upload a smaller one.');
+    fileStatus.textContent = `Reading ${file.name}…`;
+    try {
+      const { text, images } = await readCVFile(file);
+      pendingImages = images;
+      if (text) inputs.cv.value = text;
+      store.update((s) => {
+        s.profile.cvFile = file.name;
+        if (text) s.profile.cv = text;
+      });
+      fileStatus.textContent = text
+        ? `Read ${file.name} (${text.split(/\s+/).length} words). Check the text below and fix anything that came out wrong.`
+        : `${file.name} is an image or a scan, so Claude will read it.`;
+      if (ai.hasKey()) runAnalysis();
+      else if (!text) fileStatus.textContent += ' Add an API key in Settings so Claude can read it.';
+    } catch (err) {
+      console.error(err);
+      fileStatus.textContent = err.message || 'Could not read that file. Try a PDF or Word file.';
+    }
+  }
+
+  const analyzeBtn = aiButton(p.cvAnalysis ? 'Analyse again' : 'Analyse my CV', {
+    variant: '',
+    task: async (onText, signal) => {
+      await analyse(signal);
+      return '';
+    },
+  });
+
+  function runAnalysis() {
+    analyzeBtn.click();
+  }
+
+  async function analyse(signal) {
+    const text = inputs.cv.value.trim();
+    if (!text && !pendingImages.length) throw new Error('Upload or paste your CV first.');
+    analysisBox.replaceChildren(h('p', { class: 'muted' }, 'Claude is reading your CV…'));
+    const result = await ai.analyzeCV({ text: pendingImages.length ? '' : text, images: pendingImages }, { signal });
+    const filled = [];
+    store.update((s) => {
+      if (result.cvText && !text) {
+        s.profile.cv = String(result.cvText);
+        inputs.cv.value = s.profile.cv;
+      }
+      for (const [k, v] of Object.entries(result.profile || {})) {
+        if (k in inputs && v && !String(s.profile[k] || '').trim() && typeof v === 'string') {
+          s.profile[k] = v.trim();
+          inputs[k].value = v.trim();
+          filled.push(k);
+        }
+      }
+      s.profile.cvAnalysis = { ...result, cvText: undefined, at: Date.now() };
+    });
+    pendingImages = [];
+    drawAnalysis();
+    if (filled.length) toast('Filled in your profile from the CV');
+  }
+
+  function drawAnalysis() {
+    const a = store.get().profile.cvAnalysis;
+    if (!a) {
+      analysisBox.replaceChildren();
+      return;
+    }
+    const list = (title, items, cls) =>
+      items?.length ? h('div', { class: `analysis-list ${cls}` }, h('h3', {}, title), h('ul', {}, ...items.map((x) => h('li', {}, String(x))))) : '';
+    const score = Math.max(0, Math.min(100, Number(a.score) || 0));
+    const level = score >= 75 ? 'high' : score >= 50 ? 'mid' : 'low';
+    analysisBox.replaceChildren(
+      h(
+        'div',
+        { class: 'analysis-head' },
+        h('div', { class: `score-big score-${level}` }, h('strong', {}, String(score)), h('span', {}, '/100')),
+        h('div', {}, h('h3', {}, 'CV review'), h('p', {}, a.verdict || '')),
+      ),
+      h('div', { class: 'analysis-grid' }, list('Strengths', a.strengths, 'good'), list('Improve', a.improvements, 'fix'), list('Applicant tracking systems', a.atsIssues, 'warn')),
+      h('p', { class: 'muted small' }, 'When you apply, open the job and use "CV & cover letter" to get a redesigned CV written for that role.'),
+    );
+  }
+  drawAnalysis();
 
   const form = h(
     'form',
     { class: 'card form' },
-    h('div', { class: 'grid-2' }, field('Full name', inputs.name), field('Location', inputs.location), field('Email', inputs.email), field('Phone', inputs.phone)),
+    h('h2', {}, 'Details'),
+    h('div', { class: 'grid-2' }, field('Full name', inputs.name), field('Location', inputs.location, 'Used to find jobs near you.'), field('Email', inputs.email), field('Phone', inputs.phone)),
     field('Headline', inputs.headline),
     h('div', { class: 'grid-2' }, field('Target roles', inputs.targetRoles, 'Comma-separated; the first one pre-fills job search.'), field('Key skills', inputs.skills)),
     h('label', { class: 'check' }, inputs.remoteOnly, 'I only want remote roles'),
-    h('div', { class: 'row space' }, h('h2', {}, 'Master CV'), h('div', {}, loadBtn, fileInput)),
+    h('h2', {}, 'CV text'),
     inputs.cv,
-    h('p', { class: 'muted small' }, 'Tip: for a PDF or Word CV, open it, select all, copy and paste here.'),
     h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, 'Save profile')),
   );
   form.addEventListener('submit', (e) => {
@@ -905,7 +1144,11 @@ function renderProfile() {
     toast('Profile saved');
   });
 
-  view.append(pageHeader('Your profile', 'This is what the AI uses to match, tailor and prepare you. It stays on this device.'), form);
+  view.append(
+    pageHeader('Your profile', 'Upload your CV and Claude reviews it, fills in your details, and uses it to tailor every application. It stays on this device.'),
+    h('section', { class: 'card' }, h('div', { class: 'row space wrap' }, h('h2', {}, 'Your CV'), analyzeBtn), drop, fileInput, fileStatus, analysisBox),
+    form,
+  );
 }
 
 // ---------------------------------------------------------------------------
