@@ -9,6 +9,7 @@
 import { h } from './ui.js';
 import { loadScript } from './files.js';
 import { contactParts, dates } from './cvdoc.js';
+import { writtenIn } from './match.js';
 
 const ACCENTS = ['#2b5797', '#0f766e', '#9b2c2c', '#6d28d9', '#b45309', '#1f2937'];
 
@@ -458,26 +459,135 @@ function sidebarPDF(cv, t, L, defaults, info) {
   };
 }
 
-/** Cover letter PDF in the same font and header style as the chosen CV template. */
-export function letterPDFDefinition(cv, letterText, templateId = 'harvard', pickedAccent) {
+// ===========================================================================
+// Cover letter: the same eight designs, laid out as a business letter
+// (letterhead, place and date, recipient, subject line, text).
+// ===========================================================================
+
+const LETTER_WORDS = {
+  English: { locale: 'en-GB', subject: (t) => `Application for ${t}`, on: '' },
+  German: { locale: 'de-CH', subject: (t) => `Bewerbung als ${t}`, on: '' },
+  French: { locale: 'fr-CH', subject: (t) => `Candidature au poste de ${t}`, on: 'le ' },
+  Italian: { locale: 'it-CH', subject: (t) => `Candidatura per la posizione di ${t}`, on: '' },
+};
+
+/**
+ * The pieces around the letter text, in the letter's own language.
+ * @param {object} meta { title, company, location, date }
+ */
+export function letterParts(cv, letterText, meta = {}) {
+  const text = String(letterText || '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#+\s*/gm, '').trim();
+  const words = LETTER_WORDS[writtenIn(text) || 'English'] || LETTER_WORDS.English;
+  const place = String(cv.contact?.location || '').split(',')[0].trim();
+  let date = '';
+  try {
+    date = new Intl.DateTimeFormat(words.locale, { day: 'numeric', month: 'long', year: 'numeric' }).format(meta.date ? new Date(meta.date) : new Date());
+  } catch {}
+  return {
+    dateLine: [place, `${words.on}${date}`].filter((x) => x.trim()).join(', '),
+    recipient: [meta.company, meta.location && !/remote/i.test(meta.location) ? meta.location : ''].filter(Boolean),
+    subject: meta.title ? words.subject(meta.title) : '',
+    // Short multi-line blocks (the sign-off and name) keep their line breaks.
+    paragraphs: text
+      .split(/\n{2,}/)
+      .map((x) => {
+        const lines = x.split('\n').map((l) => l.trim()).filter(Boolean);
+        return lines.length <= 3 && lines.every((l) => l.length < 45) ? lines.join('\n') : lines.join(' ');
+      })
+      .filter(Boolean),
+  };
+}
+
+function letterBodyPreview(parts) {
+  return h(
+    'div',
+    { class: 'letter-body' },
+    parts.dateLine ? h('p', { class: 'letter-date' }, parts.dateLine) : '',
+    parts.recipient.length ? h('div', { class: 'letter-to' }, ...parts.recipient.map((x) => h('p', {}, x))) : '',
+    parts.subject ? h('p', { class: 'letter-subject' }, parts.subject) : '',
+    ...parts.paragraphs.map((x) => h('p', {}, x)),
+  );
+}
+
+/** On-screen cover letter in a template. */
+export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}) {
+  const t = getTemplate(templateId);
+  const accent = accentFor(t, pickedAccent);
+  const parts = letterParts(cv, letterText, meta);
+  const page = h('article', { class: `cv-page letter-page tpl-${t.id} lay-${t.layout}`, style: `--cv-accent:${accent}` });
+  if (t.layout === 'sidebar') {
+    const c = cv.contact;
+    page.append(
+      h(
+        'div',
+        { class: 'cv-sidebar-wrap' },
+        h('aside', { class: 'cv-side' }, h('h4', {}, 'Contact'), ...[c.email, c.phone, c.location, ...c.links].filter(Boolean).map((x) => h('p', {}, x))),
+        h('div', { class: 'cv-main' }, h('header', { class: 'cv-head' }, h('h2', {}, cv.name || 'Your name'), cv.headline && h('p', { class: 'cv-headline' }, cv.headline)), letterBodyPreview(parts)),
+      ),
+    );
+    return page;
+  }
+  page.append(headerPreview(cv, t), h('div', { class: 'letter-rule' }), letterBodyPreview(parts));
+  return page;
+}
+
+/** Cover letter PDF matching renderLetter. */
+export function letterPDFDefinition(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}) {
   const t = getTemplate(templateId);
   const L = pdfLook(t, accentFor(t, pickedAccent));
-  const paragraphs = letterText
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .split(/\n{2,}/)
-    .map((p) => ({ text: p.replace(/\n/g, ' ').trim(), margin: [0, 0, 0, 9] }))
-    .filter((p) => p.text);
-  const align = L.center ? 'center' : 'left';
-  return {
-    pageSize: 'A4',
-    pageMargins: [64, 56, 64, 56],
-    info: { title: `${cv.name} cover letter`, author: cv.name },
-    content: [
-      { ...pdfName(cv, t, L), fontSize: Math.min(L.nameSize, 22), alignment: align, ...(t.id === 'sidebar' ? { color: L.accent } : {}) },
-      { text: contactParts(cv).join(t.sep === '\n' ? '  ·  ' : t.sep), color: MUTED, fontSize: L.base - 0.5, alignment: align, margin: [0, 4, 0, 6] },
-      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: A4_W - 128, y2: 0, lineWidth: 0.6, lineColor: t.accents ? L.accent : '#9ca3af' }], margin: [0, 0, 0, 22] },
-      ...paragraphs,
-    ],
-    defaultStyle: { font: L.font, fontSize: L.base + 0.5, lineHeight: 1.35, color: INK },
-  };
+  const parts = letterParts(cv, letterText, meta);
+  const info = { title: `${cv.name} cover letter`, author: cv.name };
+  const defaults = { font: L.font, fontSize: L.base + 0.5, lineHeight: 1.35, color: INK };
+  const ruleColor = t.accents ? L.accent : '#9ca3af';
+  const body = [
+    ...(parts.dateLine ? [{ text: parts.dateLine, alignment: 'right', margin: [0, 0, 0, 14] }] : []),
+    ...parts.recipient.map((x, i) => ({ text: x, bold: i === 0, margin: [0, 0, 0, 0] })),
+    ...(parts.subject ? [{ text: parts.subject, bold: true, fontSize: L.base + 1.5, color: t.accents ? L.accent : INK, margin: [0, 16, 0, 12] }] : [{ text: '', margin: [0, 10, 0, 0] }]),
+    ...parts.paragraphs.map((x) => ({ text: x, margin: [0, 0, 0, 9] })),
+  ];
+
+  if (t.layout === 'sidebar') {
+    const LEFT_MARGIN = 26;
+    const SIDE_W = 140;
+    const GAP = 28;
+    const c = cv.contact;
+    const side = [
+      { text: 'CONTACT', bold: true, color: '#ffffff', fontSize: L.base - 0.5, characterSpacing: 1, margin: [0, 14, 0, 4] },
+      ...[c.email, c.phone, c.location, ...c.links].filter(Boolean).map((x) => ({ text: x, color: '#e5e7eb', fontSize: L.base - 1, margin: [0, 1, 0, 1] })),
+    ];
+    const mainWidth = A4_W - LEFT_MARGIN - SIDE_W - GAP - 40;
+    const main = [
+      { text: cv.name, bold: true, fontSize: L.nameSize, color: '#111111' },
+      ...(cv.headline ? [{ text: cv.headline, color: L.accent, fontSize: L.base + 1.5, margin: [0, 2, 0, 0] }] : []),
+      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: mainWidth, y2: 0, lineWidth: 1.2, lineColor: L.accent }], margin: [0, 10, 0, 18] },
+      ...body,
+    ];
+    return {
+      pageSize: 'A4',
+      pageMargins: [LEFT_MARGIN, 40, 40, 40],
+      info,
+      background: (_page, size) => ({ canvas: [{ type: 'rect', x: 0, y: 0, w: LEFT_MARGIN + SIDE_W + GAP / 2, h: size.height, color: L.accent }] }),
+      content: [{ columns: [{ width: SIDE_W, stack: side }, { width: '*', stack: main }], columnGap: GAP }],
+      defaultStyle: defaults,
+    };
+  }
+
+  const margins = [60, 50, 60, 50];
+  const width = A4_W - margins[0] - margins[2];
+  const head = [];
+  if (t.layout === 'europass') {
+    const c = cv.contact;
+    const label = (x) => ({ text: x, color: L.accent, alignment: 'right', fontSize: L.base - 0.5 });
+    const row = (k, v) => ({ columns: [{ width: 96, ...label(k) }, { width: '*', text: v, fontSize: L.base }], columnGap: 14, margin: [0, 1, 0, 1] });
+    head.push(
+      { columns: [{ width: 96, ...label('Personal') }, { width: '*', stack: [{ text: cv.name, bold: true, fontSize: L.nameSize }, ...(cv.headline ? [{ text: cv.headline, color: '#374151' }] : [])] }], columnGap: 14, margin: [0, 0, 0, 4] },
+      ...[['Email', c.email], ['Phone', c.phone], ['Location', c.location], ['Links', c.links.join(', ')]].filter(([, v]) => v).map(([k, v]) => row(k, v)),
+    );
+  } else {
+    head.push({ ...pdfName(cv, t, L), fontSize: Math.min(L.nameSize, 24) });
+    if (cv.headline) head.push({ text: t.id === 'awesome' ? cv.headline.toUpperCase() : cv.headline, color: t.id === 'awesome' ? L.accent : '#374151', fontSize: t.id === 'awesome' ? L.base - 1 : L.base + 1, characterSpacing: t.id === 'awesome' ? 1 : 0, alignment: L.center ? 'center' : 'left', margin: [0, 2, 0, 0] });
+    head.push({ text: contactParts(cv).join(t.sep === '\n' ? '  ·  ' : t.sep), color: t.id === 'harvard' || t.id === 'jakes' ? INK : MUTED, fontSize: L.base - 0.5, alignment: L.center ? 'center' : 'left', margin: [0, 4, 0, 0] });
+  }
+  head.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: width, y2: 0, lineWidth: t.id === 'minimal' ? 0.4 : 0.8, lineColor: ruleColor }], margin: [0, 10, 0, 22] });
+  return { pageSize: 'A4', pageMargins: margins, info, content: [...head, ...body], defaultStyle: defaults };
 }

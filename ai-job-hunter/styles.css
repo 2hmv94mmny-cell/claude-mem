@@ -1197,3 +1197,19 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
   .company-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .company-cols { grid-template-columns: 1fr; }
 }
+
+/* ---------- Cover letter on paper (uses the CV template classes) ---------- */
+.letter-page .letter-rule { height: 1px; background: var(--paper-rule); margin: 0.9rem 0 1.4rem; }
+.letter-page:is(.tpl-modern, .tpl-awesome, .tpl-moderncv, .tpl-europass) .letter-rule { background: var(--cv-accent); }
+.letter-page .letter-body { font-size: 1.02em; line-height: 1.55; }
+.letter-page .letter-body p { margin: 0 0 0.75rem; white-space: pre-line; }
+.letter-page .letter-date { text-align: right; margin-bottom: 1rem !important; }
+.letter-page .letter-to p { margin: 0 !important; }
+.letter-page .letter-to p:first-child { font-weight: 700; }
+.letter-page .letter-subject { font-weight: 700; font-size: 1.08em; margin: 1.2rem 0 0.9rem !important; }
+.letter-page:is(.tpl-modern, .tpl-awesome, .tpl-moderncv, .tpl-europass, .tpl-sidebar) .letter-subject { color: var(--cv-accent); }
+.letter-page.lay-sidebar .cv-main .letter-body { margin-top: 1.2rem; }
+.letter-regen { margin-top: var(--sp-2); }
+.letter-regen select { width: auto; }
+.tpl-thumb .cv-page { text-align: left; }
+.letter-regen select { max-width: 15rem; }

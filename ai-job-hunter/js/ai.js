@@ -527,20 +527,21 @@ export async function analyzeCV({ text = '', images = [] }, { signal, onText } =
   return reply;
 }
 
-export async function writeCoverLetter(job, { tone = 'professional', ...opts } = {}) {
+export async function writeCoverLetter(job, { tone = 'professional', instructions = '', previous = '', ...opts } = {}) {
+  // The app lays out the letterhead, date, recipient and subject line itself,
+  // so the model writes only the greeting, the body and the sign-off.
+  const shape =
+    'Write it in the language of the job posting. Begin with a greeting line (to the named hiring manager if the posting names one, otherwise the usual neutral greeting in that language). ' +
+    'Do not include a letterhead, address, date or subject line. Separate paragraphs with an empty line. ';
+  const task = previous
+    ? `Here is the current letter:\n<letter>\n${previous}\n</letter>\n\nChange it as follows: ${instructions}\nKeep what was not mentioned. ${shape}Output only the full letter.`
+    : `Write a ${tone} cover letter for this job, 220-320 words, in the first person. ${shape}` +
+      'After the greeting, start with something specific about this role or company and why it fits the candidate, not with "I am writing to" or "I am excited to apply". ' +
+      'Connect two concrete things from the CV to what the job needs, in plain words. End with one simple, direct closing line and a sign-off with the candidate\'s name. ' +
+      'Contractions are fine. No placeholders like [Company]: use the real details, or leave out what is unknown. Output only the letter.';
   const text = await ask({
     system: 'You help people write their own cover letters. The letter must sound like the candidate wrote it, not a template. ' + HONESTY + '\n\n' + HUMAN_STYLE,
-    messages: [
-      {
-        role: 'user',
-        content:
-          `${profileBlock()}\n\n${jobBlock(job)}\n\n` +
-          `Write a ${tone} cover letter for this job, 220-320 words, in the first person. ` +
-          'Start with something specific about this role or company and why it fits the candidate, not with "I am writing to" or "I am excited to apply". ' +
-          'Connect two concrete things from the CV to what the job needs, in plain words. End with one simple, direct closing line and a sign-off with the candidate\'s name. ' +
-          'Contractions are fine. No placeholders like [Company]: use the real details, or leave out what is unknown. Output only the letter.',
-      },
-    ],
+    messages: [{ role: 'user', content: `${profileBlock()}\n\n${jobBlock(job)}\n\n${task}` }],
     ...opts,
   });
   return cleanText(text);

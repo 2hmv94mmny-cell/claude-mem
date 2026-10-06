@@ -247,9 +247,10 @@ const COMMON_WORDS = {
   English: /\b(and|the|with|for|of|in|to|my|as|at)\b/g,
   Italian: /\b(e|il|di|per|con|della|nel|una|che)\b/g,
 };
-function writtenIn(text) {
+/** The language a text is written in (English, German, French, Italian), or null. */
+export function writtenIn(text) {
   const t = norm(text).slice(0, 8000);
-  if (t.length < 200) return null;
+  if (t.length < 120) return null;
   const counts = Object.entries(COMMON_WORDS).map(([lang, re]) => [lang, (t.match(re) || []).length]);
   counts.sort((a, b) => b[1] - a[1]);
   return counts[0][1] >= 8 ? counts[0][0] : null;
