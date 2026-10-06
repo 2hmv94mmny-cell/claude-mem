@@ -3,7 +3,7 @@ import { searchJobs, SOURCE_IDS } from './jobs.js';
 import * as ai from './ai.js';
 import { h, md, toast, copy, download, confirmButton, fmtDate, debounce } from './ui.js';
 import { inArtifact, ready as runtimeReady } from './runtime.js';
-import { portalsFor } from './portals.js';
+import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
@@ -592,6 +592,7 @@ function renderFind() {
   async function aiSearch() {
     const p = params();
     session.query = p;
+    session.extraRun = null;
     bar.submit.disabled = true;
     bar.submit.textContent = 'Searching…';
     results.replaceChildren(skeleton());
@@ -599,7 +600,8 @@ function renderFind() {
     status.textContent = `Searching job sites${p.location ? ` in ${p.location}` : ''}. This usually takes under a minute.`;
     const ctl = newAbort();
     try {
-      const { jobs } = await ai.searchEverywhere(p, { onText: (t) => (status.textContent = t), signal: ctl.signal, rank: Boolean(store.get().profile.cv.trim()) });
+      const found = await ai.searchEverywhere(p, { onText: (t) => (status.textContent = t), signal: ctl.signal, rank: Boolean(store.get().profile.cv.trim()) });
+      const jobs = onlyIn(found.jobs, p);
       session.results = jobs;
       session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
       session.examples = false;
@@ -615,22 +617,68 @@ function renderFind() {
       bar.submit.textContent = 'Search';
     }
     drawResults();
+    addCvMatches(p);
+  }
+
+  // A search with a place shows only jobs in that place (a city, or a whole country).
+  const COUNTRY_WORDS = new Set([...Object.values(COUNTRIES).map((c) => norm(c.name)), 'schweiz', 'suisse', 'svizzera', 'deutschland', 'osterreich', 'italia', 'espana', 'brasil', 'nederland', 'belgique', 'uk', 'usa']);
+  function onlyIn(jobs, p) {
+    const place = String(p.location || '').trim();
+    if (!place || p.remoteOnly) return jobs;
+    const city = norm(place.split(',')[0]);
+    const code = detectCountry(place);
+    const wholeCountry = COUNTRY_WORDS.has(city);
+    return jobs.filter((j) => {
+      const hay = norm(`${j.location} ${j.title} ${String(j.description || '').slice(0, 600)}`);
+      if (hay.includes(city)) return true;
+      return wholeCountry && code && detectCountry(j.location) === code;
+    });
+  }
+
+  // After a search: add jobs from the same place that fit the CV and are not
+  // already on the home page or in the results (matched on the device, no AI).
+  async function addCvMatches(p) {
+    const profile = store.get().profile;
+    if (!(profile.cv.trim() || profile.targetRoles.trim() || profile.headline.trim())) return;
+    const place = p.remoteOnly ? '' : p.location || profile.location;
+    if (!place && !p.remoteOnly) return;
+    const run = (session.extraRun = Symbol('extra'));
+    try {
+      const { jobs } = await moreJobsForYou(
+        { ...profile, location: place, remoteOnly: Boolean(p.remoteOnly) },
+        { exclude: [...(store.get().feed?.jobs || []), ...session.results] },
+      );
+      if (session.extraRun !== run || !results.isConnected) return;
+      const extra = onlyIn(jobs, { ...p, location: place }).map((j) => ({ ...j, extra: true }));
+      if (!extra.length) return;
+      session.results = [...session.results.filter((j) => !j.extra), ...extra];
+      for (const j of extra) if (j.match) session.scores[j.id] = j.match;
+      session.extraPlace = p.remoteOnly ? 'remote' : place;
+      if (!session.selected) session.selected = session.results[0]?.id;
+      session.errors = session.errors.filter((e) => e !== 'No open postings found for this search');
+      drawResults();
+    } catch {
+      // Extra matches are a bonus; the search results stand on their own.
+    }
   }
 
   async function runBoardSearch() {
     const p = params();
     session.query = p;
+    session.extraRun = null;
     status.textContent = 'Searching free job boards…';
     results.replaceChildren(skeleton());
-    const { jobs, errors } = await searchJobs(p);
+    const found = await searchJobs(p);
+    const jobs = onlyIn(found.jobs.filter((j) => j.source !== 'Demo'), p);
     session.examples = false;
     session.more = false;
     session.results = jobs;
     session.scores = {};
-    session.errors = errors;
+    session.errors = jobs.length ? found.errors.filter((e) => e !== 'Showing demo listings') : ['No open postings found for this search'];
     session.filter = '';
     session.selected = jobs[0]?.id;
     drawResults();
+    addCvMatches(p);
   }
 
   // Before a search: more jobs that fit the CV near the user, beyond the ones
@@ -715,7 +763,14 @@ function renderFind() {
       return;
     }
     if (!shown.some((j) => j.id === session.selected)) session.selected = shown[0].id;
-    results.replaceChildren(...shown.map(jobCard));
+    // Search results first, then the extra CV matches under their own heading.
+    const firstExtra = shown.findIndex((j) => j.extra);
+    const cards = shown.map(jobCard);
+    if (firstExtra >= 0) {
+      const count = shown.length - firstExtra;
+      cards.splice(firstExtra, 0, h('div', { class: 'results-divider', role: 'presentation' }, h('strong', {}, `Also matching your CV in ${session.extraPlace}`), h('span', { class: 'small muted' }, `${count} more, not on your home page`)));
+    }
+    results.replaceChildren(...cards);
     drawDetail();
   }
 
@@ -2040,6 +2095,60 @@ function withSuggest(input, kind) {
   return input;
 }
 
+// Profile photo: picked on the device, cropped to a centred square and shrunk
+// to a small JPEG (about 20 to 40 KB) so it stays light enough to sync.
+const CAMERA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
+
+async function photoFromFile(file) {
+  if (!/^image\//.test(file.type)) throw new Error('Choose an image file (JPG, PNG or HEIC).');
+  if (file.size > 20 * 1024 * 1024) throw new Error('That picture is over 20 MB. Choose a smaller one.');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('Could not open that picture. Try a JPG or PNG.'));
+      i.src = url;
+    });
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const size = 320;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+    return c.toDataURL('image/jpeg', 0.85);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** The round profile picture (or initials). With `editable`, tapping it changes the photo. */
+function profileAvatar(pr, { editable = false, onChange } = {}) {
+  const face = pr.photo ? h('img', { src: pr.photo, alt: '' }) : initials(pr.name);
+  if (!editable) return h('div', { class: 'avatar', 'aria-hidden': 'true' }, face);
+  const input = h('input', { type: 'file', accept: 'image/*', hidden: true });
+  const btn = h(
+    'button',
+    { type: 'button', class: 'avatar avatar-edit', 'aria-label': pr.photo ? 'Change profile photo' : 'Add profile photo', title: pr.photo ? 'Change profile photo' : 'Add profile photo' },
+    face,
+    h('span', { class: 'avatar-badge', 'aria-hidden': 'true' }, svgIcon(CAMERA)),
+  );
+  btn.addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const photo = await photoFromFile(file);
+      store.update((s) => (s.profile.photo = photo));
+      toast('Profile photo updated');
+      onChange?.();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  return h('div', { class: 'avatar-wrap' }, btn, input);
+}
+
 function initials(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   return ((parts[0]?.[0] || '') + (parts.length > 1 ? parts.at(-1)[0] : '')).toUpperCase() || '?';
@@ -2121,7 +2230,14 @@ function renderProfile() {
     });
     form.addEventListener('keydown', (e) => e.key === 'Escape' && close());
     header.classList.add('editing');
-    header.replaceChildren(h('div', { class: 'avatar', 'aria-hidden': 'true' }, initials(pr.name)), form);
+    const removePhoto = h('button', { type: 'button', class: 'btn small danger' }, 'Remove photo');
+    removePhoto.addEventListener('click', () => {
+      store.update((s) => (s.profile.photo = ''));
+      toast('Profile photo removed');
+      editHeader();
+    });
+    const photoCol = h('div', { class: 'hero-photo' }, profileAvatar(pr, { editable: true, onChange: () => editHeader() }), pr.photo ? removePhoto : h('span', { class: 'small muted' }, 'Tap to add a photo'));
+    header.replaceChildren(photoCol, form);
     const target = inputs.find(([k]) => k === focusKey)?.[2] || inputs[0][2];
     target.focus();
     target.select?.();
@@ -2145,7 +2261,7 @@ function renderProfile() {
     editBtn.addEventListener('click', () => editHeader());
     header.classList.remove('editing');
     header.replaceChildren(
-      h('div', { class: 'avatar', 'aria-hidden': 'true' }, initials(pr.name)),
+      profileAvatar(pr, { editable: true, onChange: () => drawHeader() }),
       h(
         'div',
         { class: 'profile-id' },
@@ -2639,7 +2755,7 @@ function renderSettings() {
     const data = JSON.parse(store.exportJSON());
     data.settings.apiKey = '';
     data.settings.keys = {};
-    download(`ai-job-hunter-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
+    download(`vora-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
   });
   const fileIn = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
   const imp = h('button', { class: 'btn' }, 'Import backup');
@@ -2797,8 +2913,8 @@ function openAccount() {
           'p',
           { class: 'muted' },
           inArtifact
-            ? 'Accounts are not available in this view. Open AI Job Hunter from your own Claude app to sign in.'
-            : 'Accounts work when you open AI Job Hunter in the Claude app, where you sign in with your Claude account. Here, your data is saved on this device.',
+            ? 'Accounts are not available in this view. Open Vora from your own Claude app to sign in.'
+            : 'Accounts work when you open Vora in the Claude app, where you sign in with your Claude account. Here, your data is saved on this device.',
         ),
         h('a', { class: 'btn', href: '#/settings' }, 'Back up my data'),
       );
@@ -2822,7 +2938,7 @@ function openAccount() {
         }
       });
       body.replaceChildren(
-        h('div', { class: 'account-mark', 'aria-hidden': 'true' }, h('img', { src: 'icons/icon.svg', alt: '', width: 48, height: 48 })),
+        h('div', { class: 'account-mark', 'aria-hidden': 'true' }, h('img', { src: 'icons/vora-mark-96.png', alt: '', width: 48, height: 48 })),
         h('h2', { id: 'account-title' }, 'Create your account'),
         h('p', { class: 'muted' }, 'Save your profile, CV, applications and interview progress, and pick up where you left off on any device.'),
         h(
@@ -2880,7 +2996,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 window.addEventListener('appinstalled', () => {
   deferredInstall = null;
   document.getElementById('install-btn').hidden = true;
-  toast('Installed! Find AI Job Hunter on your home screen.');
+  toast('Installed! Find Vora on your home screen.');
 });
 
 async function promptInstall() {

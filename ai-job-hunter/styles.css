@@ -238,18 +238,22 @@ p { margin: 0 0 0.6em; }
   backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px);
   border-bottom: 1px solid var(--border);
 }
-.appbar-inner { max-width: var(--content-w); margin: 0 auto; height: var(--appbar-h); padding-inline: var(--sp-6); display: flex; align-items: center; gap: var(--sp-8); }
-.brand { display: inline-flex; align-items: center; gap: var(--sp-2); font-weight: 800; font-size: var(--fs-lg); letter-spacing: -0.02em; color: var(--text); white-space: nowrap; }
+/* Three columns: menu on the left, the Vora logo in the exact centre, actions on the right. */
+.appbar-inner {
+  max-width: var(--content-w); margin: 0 auto; height: var(--appbar-h); padding-inline: var(--sp-6);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--sp-4);
+}
+.brand { grid-column: 2; grid-row: 1; justify-self: center; display: inline-flex; align-items: center; gap: var(--sp-2); font-weight: 800; font-size: 1.35rem; letter-spacing: -0.02em; color: var(--text); white-space: nowrap; }
 .brand:hover { text-decoration: none; }
-.brand img { width: 30px; height: 30px; }
-.mainnav { display: flex; align-items: stretch; gap: var(--sp-1); height: 100%; }
+.brand img { width: 40px; height: 40px; object-fit: contain; }
+.mainnav { grid-column: 1; grid-row: 1; justify-self: start; display: flex; align-items: stretch; gap: var(--sp-1); height: 100%; min-width: 0; }
 .mainnav a {
   display: inline-flex; align-items: center; padding: 0 var(--sp-3); font-weight: 600; font-size: var(--fs-sm);
   color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
 .mainnav a:hover { color: var(--text); text-decoration: none; }
 .mainnav a.active { color: var(--accent-text); border-bottom-color: var(--accent); }
-.appbar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
+.appbar-actions { grid-column: 3; grid-row: 1; justify-self: end; display: flex; align-items: center; gap: var(--sp-2); }
 .icon-link {
   display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text-2);
 }
@@ -263,6 +267,8 @@ main { max-width: var(--content-w); margin: 0 auto; width: 100%; min-width: 0; p
 
 @media (max-width: 860px) {
   .appbar-inner { padding-inline: var(--sp-4); height: 56px; gap: var(--sp-3); }
+  .brand img { width: 34px; height: 34px; }
+  .brand { font-size: 1.2rem; }
   .mainnav, .appbar-actions .install { display: none; }
   .tabbar {
     position: fixed; inset: auto 0 0 0; z-index: 30; display: flex;
@@ -1000,7 +1006,8 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
   .hero-edit { grid-column: 2; grid-row: 1; justify-self: end; }
   .profile-hero:not(.editing) .profile-id { grid-column: 1 / -1; }
   .profile-hero.editing { grid-template-columns: 1fr; }
-  .profile-hero.editing .avatar { display: none; }
+  .hero-photo { grid-auto-flow: column; justify-content: start; align-items: center; }
+  .hero-photo .avatar { width: 64px; height: 64px; font-size: 1.3rem; }
 }
 
 .pf-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr) 300px; gap: var(--sp-6); align-items: start; }
@@ -1295,3 +1302,25 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .provider-option[aria-checked="true"] span { color: var(--accent-text); }
 .provider-details { display: grid; gap: var(--sp-3); }
 .provider-details .notice { margin: 0; }
+
+/* Medium screens: a tighter menu so it never runs into the centred logo */
+@media (min-width: 861px) and (max-width: 1120px) {
+  .mainnav a { padding: 0 var(--sp-2); }
+  .appbar-inner { padding-inline: var(--sp-4); }
+}
+.results-divider { display: grid; gap: 2px; padding: var(--sp-4) var(--sp-1) var(--sp-2); border-top: 1px solid var(--border); margin-top: var(--sp-2); }
+.results-divider strong { font-size: var(--fs-md); }
+
+/* ---------- Profile photo ---------- */
+.avatar-wrap { position: relative; flex: none; justify-self: start; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.avatar-edit { padding: 0; font: inherit; cursor: pointer; position: relative; }
+.avatar-edit:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.avatar-badge {
+  position: absolute; right: -2px; bottom: -2px; width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+}
+.avatar-badge svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.avatar-edit:hover .avatar-badge { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-border); }
+.hero-photo { display: grid; justify-items: center; gap: var(--sp-2); align-self: start; }
+@media (max-width: 760px) { .avatar-badge { width: 28px; height: 28px; } }

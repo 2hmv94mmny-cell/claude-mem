@@ -30,6 +30,7 @@ const DEFAULT_STATE = {
     linkedin: '',
     portfolio: '',
     github: '',
+    photo: '', // small square JPEG as a data URL
     // Job preferences used for search, ranking and cover letters.
     prefs: {
       workModes: [],

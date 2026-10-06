@@ -23,7 +23,7 @@ const COL = { de: 0, fr: 1, it: 2, es: 3, pt: 4 };
 // English: [German, French, Italian, Spanish, Portuguese]
 const DICT = {
   // App shell
-  'AI Job Hunter': ['AI Job Hunter', 'AI Job Hunter', 'AI Job Hunter', 'AI Job Hunter', 'AI Job Hunter'],
+  'Vora': ['Vora', 'Vora', 'Vora', 'Vora', 'Vora'],
   'Skip to content': ['Zum Inhalt springen', 'Aller au contenu', 'Vai al contenuto', 'Ir al contenido', 'Pular para o conteúdo'],
   'Home': ['Start', 'Accueil', 'Home', 'Inicio', 'Início'],
   'Find jobs': ['Jobs finden', 'Trouver un emploi', 'Trova lavoro', 'Buscar empleo', 'Encontrar vagas'],
@@ -34,7 +34,7 @@ const DICT = {
   'Main': ['Hauptmenü', 'Menu principal', 'Menu principale', 'Menú principal', 'Menu principal'],
   'Install app': ['App installieren', "Installer l'app", "Installa l'app", 'Instalar app', 'Instalar app'],
   'Sign in': ['Anmelden', 'Se connecter', 'Accedi', 'Iniciar sesión', 'Entrar'],
-  'AI Job Hunter needs JavaScript enabled.': ['AI Job Hunter braucht JavaScript.', 'AI Job Hunter nécessite JavaScript.', 'AI Job Hunter richiede JavaScript.', 'AI Job Hunter necesita JavaScript.', 'O AI Job Hunter precisa de JavaScript.'],
+  'Vora needs JavaScript enabled.': ['Vora braucht JavaScript.', 'Vora nécessite JavaScript.', 'Vora richiede JavaScript.', 'Vora necesita JavaScript.', 'O Vora precisa de JavaScript.'],
 
   // Common
   'Remote': ['Remote', 'Télétravail', 'Da remoto', 'Remoto', 'Remoto'],
@@ -165,6 +165,12 @@ const DICT = {
   'AI provider': ['KI-Anbieter', 'Fournisseur d’IA', 'Fornitore IA', 'Proveedor de IA', 'Provedor de IA'],
   'Save and test connection': ['Speichern und Verbindung testen', 'Enregistrer et tester', 'Salva e prova la connessione', 'Guardar y probar conexión', 'Salvar e testar conexão'],
   'Fast model': ['Schnelles Modell', 'Modèle rapide', 'Modello veloce', 'Modelo rápido', 'Modelo rápido'],
+  'Change profile photo': ['Profilbild ändern', 'Changer la photo de profil', 'Cambia foto profilo', 'Cambiar foto de perfil', 'Alterar foto de perfil'],
+  'Add profile photo': ['Profilbild hinzufügen', 'Ajouter une photo de profil', 'Aggiungi foto profilo', 'Añadir foto de perfil', 'Adicionar foto de perfil'],
+  'Remove photo': ['Foto entfernen', 'Supprimer la photo', 'Rimuovi foto', 'Quitar foto', 'Remover foto'],
+  'Tap to add a photo': ['Tippen, um ein Foto hinzuzufügen', 'Touchez pour ajouter une photo', 'Tocca per aggiungere una foto', 'Toca para añadir una foto', 'Toque para adicionar uma foto'],
+  'Profile photo updated': ['Profilbild aktualisiert', 'Photo de profil mise à jour', 'Foto profilo aggiornata', 'Foto de perfil actualizada', 'Foto de perfil atualizada'],
+  'Profile photo removed': ['Profilbild entfernt', 'Photo de profil supprimée', 'Foto profilo rimossa', 'Foto de perfil eliminada', 'Foto de perfil removida'],
   'Show less': ['Weniger anzeigen', 'Afficher moins', 'Mostra meno', 'Mostrar menos', 'Mostrar menos'],
   'See every listing on each job site': ['Alle Inserate auf jedem Jobportal ansehen', 'Voir toutes les annonces sur chaque site', 'Vedi tutti gli annunci su ogni sito', 'Ver todos los anuncios en cada portal', 'Ver todos os anúncios em cada site'],
   'Free job boards': ['Kostenlose Jobbörsen', 'Sites d’emploi gratuits', 'Bacheche di lavoro gratuite', 'Portales gratuitos', 'Sites de vagas gratuitos'],
@@ -484,8 +490,8 @@ const DICT = {
   'saved jobs': ['gespeicherte Jobs', 'offres enregistrées', 'offerte salvate', 'empleos guardados', 'vagas salvas'],
   'tailored CVs': ['angepasste Lebensläufe', 'CV adaptés', 'CV su misura', 'CV adaptados', 'currículos adaptados'],
   'Accounts': ['Konten', 'Comptes', 'Account', 'Cuentas', 'Contas'],
-  'Accounts are not available in this view. Open AI Job Hunter from your own Claude app to sign in.': ['Konten sind in dieser Ansicht nicht verfügbar. Öffne AI Job Hunter in deiner eigenen Claude-App, um dich anzumelden.', 'Les comptes ne sont pas disponibles ici. Ouvrez AI Job Hunter dans votre app Claude pour vous connecter.', 'Gli account non sono disponibili qui. Apri AI Job Hunter nella tua app Claude per accedere.', 'Las cuentas no están disponibles aquí. Abre AI Job Hunter en tu app de Claude para iniciar sesión.', 'Contas não estão disponíveis aqui. Abra o AI Job Hunter no seu app do Claude para entrar.'],
-  'Accounts work when you open AI Job Hunter in the Claude app, where you sign in with your Claude account. Here, your data is saved on this device.': ['Konten funktionieren, wenn du AI Job Hunter in der Claude-App öffnest; dort meldest du dich mit deinem Claude-Konto an. Hier werden deine Daten auf diesem Gerät gespeichert.', 'Les comptes fonctionnent quand vous ouvrez AI Job Hunter dans l’app Claude, avec votre compte Claude. Ici, vos données sont enregistrées sur cet appareil.', 'Gli account funzionano quando apri AI Job Hunter nell’app Claude, dove accedi con il tuo account Claude. Qui i dati sono salvati su questo dispositivo.', 'Las cuentas funcionan al abrir AI Job Hunter en la app de Claude, donde inicias sesión con tu cuenta de Claude. Aquí tus datos se guardan en este dispositivo.', 'As contas funcionam ao abrir o AI Job Hunter no app do Claude, onde você entra com sua conta do Claude. Aqui seus dados ficam neste dispositivo.'],
+  'Accounts are not available in this view. Open Vora from your own Claude app to sign in.': ['Konten sind in dieser Ansicht nicht verfügbar. Öffne Vora in deiner eigenen Claude-App, um dich anzumelden.', 'Les comptes ne sont pas disponibles ici. Ouvrez Vora dans votre app Claude pour vous connecter.', 'Gli account non sono disponibili qui. Apri Vora nella tua app Claude per accedere.', 'Las cuentas no están disponibles aquí. Abre Vora en tu app de Claude para iniciar sesión.', 'Contas não estão disponíveis aqui. Abra o Vora no seu app do Claude para entrar.'],
+  'Accounts work when you open Vora in the Claude app, where you sign in with your Claude account. Here, your data is saved on this device.': ['Konten funktionieren, wenn du Vora in der Claude-App öffnest; dort meldest du dich mit deinem Claude-Konto an. Hier werden deine Daten auf diesem Gerät gespeichert.', 'Les comptes fonctionnent quand vous ouvrez Vora dans l’app Claude, avec votre compte Claude. Ici, vos données sont enregistrées sur cet appareil.', 'Gli account funzionano quando apri Vora nell’app Claude, dove accedi con il tuo account Claude. Qui i dati sono salvati su questo dispositivo.', 'Las cuentas funcionan al abrir Vora en la app de Claude, donde inicias sesión con tu cuenta de Claude. Aquí tus datos se guardan en este dispositivo.', 'As contas funcionam ao abrir o Vora no app do Claude, onde você entra com sua conta do Claude. Aqui seus dados ficam neste dispositivo.'],
   'Back up my data': ['Meine Daten sichern', 'Sauvegarder mes données', 'Salva i miei dati', 'Copiar mis datos', 'Fazer backup dos meus dados'],
   'Continue with your Claude account': ['Mit deinem Claude-Konto fortfahren', 'Continuer avec votre compte Claude', 'Continua con il tuo account Claude', 'Continuar con tu cuenta de Claude', 'Continuar com sua conta do Claude'],
   'Signed in. Your progress was loaded from your account.': ['Angemeldet. Dein Fortschritt wurde aus deinem Konto geladen.', 'Connecté. Votre progression a été chargée depuis votre compte.', 'Accesso eseguito. I tuoi progressi sono stati caricati dall’account.', 'Sesión iniciada. Tu progreso se cargó desde tu cuenta.', 'Você entrou. Seu progresso foi carregado da sua conta.'],
@@ -501,7 +507,7 @@ const DICT = {
   'Could not reach your account. Changes are kept on this device and will sync later.': ['Dein Konto ist nicht erreichbar. Änderungen bleiben auf diesem Gerät und werden später synchronisiert.', 'Compte injoignable. Les modifications restent sur cet appareil et seront synchronisées plus tard.', 'Account non raggiungibile. Le modifiche restano qui e si sincronizzeranno dopo.', 'No se pudo conectar con tu cuenta. Los cambios se guardan aquí y se sincronizarán después.', 'Não foi possível acessar sua conta. As mudanças ficam aqui e sincronizam depois.'],
 
   // Install
-  'Installed! Find AI Job Hunter on your home screen.': ['Installiert! Du findest AI Job Hunter auf deinem Startbildschirm.', 'Installé ! AI Job Hunter est sur votre écran d’accueil.', 'Installata! Trovi AI Job Hunter nella schermata Home.', '¡Instalada! Encontrarás AI Job Hunter en tu pantalla de inicio.', 'Instalado! O AI Job Hunter está na sua tela inicial.'],
+  'Installed! Find Vora on your home screen.': ['Installiert! Du findest Vora auf deinem Startbildschirm.', 'Installé ! Vora est sur votre écran d’accueil.', 'Installata! Trovi Vora nella schermata Home.', '¡Instalada! Encontrarás Vora en tu pantalla de inicio.', 'Instalado! O Vora está na sua tela inicial.'],
   'Install as an app': ['Als App installieren', 'Installer comme une app', 'Installa come app', 'Instalar como app', 'Instalar como app'],
 
   // Interview game
@@ -629,6 +635,8 @@ const PATTERNS = [
   [/^Talking to (.+)…$/, ['Verbindung zu {1}…', 'Connexion à {1}…', 'Connessione a {1}…', 'Conectando con {1}…', 'Conectando ao {1}…']],
   [/^(.+) is connected\. It replied: (.+)$/, ['{1} ist verbunden. Antwort: {2}', '{1} est connecté. Réponse : {2}', '{1} è collegato. Risposta: {2}', '{1} está conectado. Respuesta: {2}', '{1} está conectado. Resposta: {2}']],
   [/^Paste your (.+) API key first\.$/, ['Füge zuerst deinen {1}-API-Schlüssel ein.', 'Collez d’abord votre clé API {1}.', 'Prima incolla la tua chiave API {1}.', 'Primero pega tu clave API de {1}.', 'Cole primeiro sua chave de API {1}.']],
+  [/^Also matching your CV in (.+)$/, ['Ebenfalls passend zu deinem Lebenslauf in {1}', 'Correspondent aussi à votre CV à {1}', 'Adatte al tuo CV anche a {1}', 'También encajan con tu CV en {1}', 'Também combinam com seu currículo em {1}']],
+  [/^(\d+) more, not on your home page$/, ['{1} weitere, nicht auf deiner Startseite', '{1} de plus, absentes de votre accueil', 'altre {1}, non nella tua home', '{1} más, no están en tu inicio', 'mais {1}, fora do seu início']],
   [/^See all (\d+)$/, ['Alle {1} anzeigen', 'Voir les {1}', 'Vedi tutte ({1})', 'Ver los {1}', 'Ver todas ({1})']],
   [/^Based on your experience as (.+) · updating…$/, ['Basierend auf deiner Erfahrung als {1} · wird aktualisiert…', 'Selon votre expérience de {1} · mise à jour…', 'In base alla tua esperienza come {1} · aggiornamento…', 'Según tu experiencia como {1} · actualizando…', 'Com base na sua experiência como {1} · atualizando…']],
   [/^Based on your experience as (.+) · updated (.+)$/, ['Basierend auf deiner Erfahrung als {1} · aktualisiert {2}', 'Selon votre expérience de {1} · mis à jour {2}', 'In base alla tua esperienza come {1} · aggiornato {2}', 'Según tu experiencia como {1} · actualizado {2}', 'Com base na sua experiência como {1} · atualizado {2}']],

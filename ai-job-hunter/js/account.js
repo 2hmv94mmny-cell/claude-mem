@@ -258,7 +258,7 @@ export async function signIn() {
   await ready;
   if (!accountsAvailable()) {
     account.status = 'unavailable';
-    account.error = inArtifact ? 'Accounts are not available in this view.' : 'Accounts work when you open AI Job Hunter in the Claude app.';
+    account.error = inArtifact ? 'Accounts are not available in this view.' : 'Accounts work when you open Vora in the Claude app.';
     emit();
     throw new Error(account.error);
   }
