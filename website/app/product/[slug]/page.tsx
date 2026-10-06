@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { AddToCart } from "@/components/AddToCart";
 import { ProductCard } from "@/components/ProductCard";
 import { ProductImage } from "@/components/ProductImage";
-import { SHIPPING, getCategory, getProductBySlug, getProducts, getProductsByCategory } from "@/lib/catalog";
+import { SHIPPING, getCategory, getColourVariants, getProductBySlug, getProducts, getProductsByCategory } from "@/lib/catalog";
 import { formatChf } from "@/lib/money";
 import { priceNote } from "@/content";
 
@@ -23,8 +23,9 @@ export default async function ProductPage({ params }: Props) {
   const product = getProductBySlug((await params).slug);
   if (!product) notFound();
   const category = getCategory(product.category);
+  const colours = getColourVariants(product);
   const related = getProductsByCategory(product.category)
-    .filter((p) => p.id !== product.id)
+    .filter((p) => p.id !== product.id && !(product.colourGroup && p.colourGroup === product.colourGroup))
     .slice(0, 4);
   const views = Math.max(3, product.images.length);
 
@@ -59,6 +60,27 @@ export default async function ProductPage({ params }: Props) {
             </p>
             <p className="muted small">{priceNote}</p>
           </div>
+
+          {colours.length > 1 && (
+            <div className="colour-picker">
+              <span className="label">
+                Colour <span className="muted">{product.colour}</span>
+              </span>
+              <div className="swatches">
+                {colours.map((c) => (
+                  <Link
+                    key={c.id}
+                    href={`/product/${c.slug}`}
+                    className="swatch"
+                    aria-label={c.colour}
+                    aria-current={c.id === product.id ? "true" : undefined}
+                    style={{ backgroundColor: c.swatch }}
+                    title={c.colour}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           <AddToCart product={product} />
 

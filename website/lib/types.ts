@@ -25,6 +25,8 @@ export interface Product {
   /** Outline drawn on the placeholder image until real photos exist. */
   silhouette: Silhouette;
   colour: string;
+  /** Products sharing a colour group are the same piece in different colours. */
+  colourGroup?: string;
   /** Final selling price in Rappen (1/100 CHF). */
   priceCents: number;
   compareAtCents?: number;

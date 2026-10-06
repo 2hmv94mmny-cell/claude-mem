@@ -986,6 +986,40 @@ body.menu-open {
   margin-left: 10px;
 }
 
+.colour-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.colour-picker .muted {
+  margin-left: 8px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.swatches {
+  display: flex;
+  gap: 12px;
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 4px transparent;
+  transition: box-shadow 200ms ease;
+}
+
+.swatch:hover {
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 4px var(--muted);
+}
+
+.swatch[aria-current="true"] {
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 4px var(--ink);
+}
+
 .option-head {
   display: flex;
   justify-content: space-between;

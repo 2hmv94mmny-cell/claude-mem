@@ -22,6 +22,12 @@ export function getProductBySlug(slug: string): Product | undefined {
   return getProducts().find((p) => p.slug === slug);
 }
 
+/** The same piece in other colours, including the product itself, in catalog order. */
+export function getColourVariants(product: Product): Product[] {
+  if (!product.colourGroup) return [product];
+  return getProducts().filter((p) => p.colourGroup === product.colourGroup);
+}
+
 export function getCategory(id: string) {
   return categories.find((c) => c.id === id);
 }
