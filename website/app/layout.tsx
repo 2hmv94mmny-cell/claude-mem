@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import { Bodoni_Moda, Jost } from "next/font/google";
 import Link from "next/link";
 import { CartCount } from "@/components/CartCount";
+import { CurrencySelect } from "@/components/CurrencySelect";
 import { MenuController } from "@/components/MenuController";
-import { categories, getProductsByCategory, hasExampleProducts } from "@/lib/catalog";
+import { SearchOverlay } from "@/components/SearchOverlay";
+import { categories, getProducts, getProductsByCategory, hasExampleProducts } from "@/lib/catalog";
+import { normalize, type SearchItem } from "@/lib/search";
 import { announcements, brand, company, footerLinks } from "@/content";
 import "./globals.css";
 
@@ -22,6 +25,31 @@ export const metadata: Metadata = {
   description: brand.tagline,
 };
 
+const searchItems: SearchItem[] = getProducts().map((p) => {
+  const category = categories.find((c) => c.id === p.category)?.name ?? "";
+  return {
+    slug: p.slug,
+    name: p.name,
+    colour: p.colour,
+    category,
+    priceCents: p.priceCents,
+    image: p.images[0] ?? null,
+    swatch: p.swatch,
+    text: normalize([p.name, p.colour, category, p.silhouette, p.description, ...p.details].join(" ")),
+  };
+});
+const searchSuggestions = [
+  ...categories.map((c) => ({ href: `/shop/${c.id}`, label: c.name })),
+  { href: "/pages/size-guide", label: "Size guide" },
+];
+
+const searchIcon = (
+  <svg className="search-icon" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+    <circle cx="8.5" cy="8.5" r="6" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    <path d="M13 13 L18 18" stroke="currentColor" strokeWidth="1.2" />
+  </svg>
+);
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-CH" className={`${display.variable} ${ui.variable}`}>
@@ -37,23 +65,35 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         <header className="site-header">
           <div className="wrap header-grid">
-            <nav className="nav-desktop label" aria-label="Collections">
-              {categories.map((c) => (
-                <Link key={c.id} href={`/shop/${c.id}`}>
-                  {c.name}
-                </Link>
-              ))}
-            </nav>
-            <button
-              type="button"
-              className="menu-toggle label"
-              data-menu-open
-              aria-controls="site-menu"
-              aria-expanded="false"
-            >
-              <span className="menu-icon" aria-hidden="true" />
-              Menu
-            </button>
+            <div className="header-left">
+              <nav className="nav-desktop label" aria-label="Collections">
+                {categories.map((c) => (
+                  <Link key={c.id} href={`/shop/${c.id}`}>
+                    {c.name}
+                  </Link>
+                ))}
+              </nav>
+              <button
+                type="button"
+                className="menu-toggle label"
+                data-menu-open
+                aria-controls="site-menu"
+                aria-expanded="false"
+              >
+                <span className="menu-icon" aria-hidden="true" />
+                <span className="menu-toggle-text">Menu</span>
+              </button>
+              <button
+                type="button"
+                className="search-toggle label"
+                data-search-open
+                aria-controls="site-search"
+                aria-expanded="false"
+              >
+                {searchIcon}
+                <span className="search-toggle-text">Search</span>
+              </button>
+            </div>
 
             <Link className="wordmark" href="/" aria-label={`${brand.name}, home`}>
               {brand.name}
@@ -63,6 +103,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link className="only-desktop" href="/pages/contact">
                 Client care
               </Link>
+              <CurrencySelect className="only-desktop" />
               <Link href="/bag">
                 Bag <CartCount />
               </Link>
@@ -103,17 +144,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/pages/returns">Returns</Link>
               <Link href="/pages/size-guide">Size guide</Link>
             </div>
-            <p className="label muted">Switzerland · CHF</p>
+            <div className="menu-currency">
+              <span className="label muted">Delivered worldwide · Currency</span>
+              <CurrencySelect />
+            </div>
           </div>
         </div>
         <MenuController />
+        <SearchOverlay items={searchItems} suggestions={searchSuggestions} />
 
         <main>{children}</main>
 
         <footer className="site-footer">
           <div className="wrap footer-grid">
             <div className="footer-brand">
-              <p>{brand.tagline}. Delivered across Switzerland and Liechtenstein.</p>
+              <p>{brand.tagline}. Designed in Switzerland, delivered worldwide.</p>
             </div>
             {Object.entries(footerLinks).map(([title, links]) => (
               <div key={title}>
@@ -136,7 +181,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span>
                 © {new Date().getFullYear()} {company.legalName}
               </span>
-              <span>Switzerland · CHF</span>
+              <span className="footer-currency">
+                Delivered worldwide · <CurrencySelect />
+              </span>
             </div>
           </div>
         </footer>

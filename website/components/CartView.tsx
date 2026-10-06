@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { setQuantity, useCart } from "@/lib/cart-store";
-import { formatChf } from "@/lib/money";
+import { CurrencyNote, Money } from "./Money";
 import type { Product } from "@/lib/types";
 import { ProductImage } from "./ProductImage";
 
@@ -102,7 +102,7 @@ export function CartView({
                 </button>
               </div>
             </div>
-            <span className="price">{formatChf(l.product.priceCents * l.quantity)}</span>
+            <span className="price"><Money cents={l.product.priceCents * l.quantity} /></span>
           </li>
         ))}
       </ul>
@@ -113,7 +113,9 @@ export function CartView({
           <span>
             {delivery === 0
               ? "You qualify for complimentary delivery."
-              : `${formatChf(shipping.freeFromCents - subtotal)} away from complimentary delivery.`}
+              : <>
+                <Money cents={shipping.freeFromCents - subtotal} /> away from complimentary delivery.
+              </>}
           </span>
           <div className="progress-track">
             <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
@@ -122,17 +124,18 @@ export function CartView({
         <dl>
           <div>
             <dt>Subtotal</dt>
-            <dd>{formatChf(subtotal)}</dd>
+            <dd><Money cents={subtotal} /></dd>
           </div>
           <div>
             <dt>Delivery</dt>
-            <dd>{delivery === 0 ? "Complimentary" : formatChf(delivery)}</dd>
+            <dd>{delivery === 0 ? "Complimentary" : <Money cents={delivery} />}</dd>
           </div>
           <div className="total">
             <dt>Total</dt>
-            <dd>{formatChf(subtotal + delivery)}</dd>
+            <dd><Money cents={subtotal + delivery} /></dd>
           </div>
         </dl>
+        <CurrencyNote />
         <p className="fine">{priceNote}. You enter your delivery address and payment details on the next step.</p>
         <button className="button block" type="button" onClick={checkout} disabled={loading}>
           {loading ? "Opening secure checkout…" : "Proceed to checkout"}

@@ -12,6 +12,12 @@ const root = new URL("../", import.meta.url).pathname;
 const appDir = join(root, ".next/server/app");
 const target = process.argv[2] ?? join(root, "preview.html");
 const products = JSON.parse(readFileSync(join(root, "data/products.json"), "utf8")).filter((p) => p.published);
+const currencies = JSON.parse(readFileSync(join(root, "data/currencies.json"), "utf8"));
+const categoryNames = { "ready-to-wear": "Ready-to-Wear", bags: "Bags", shoes: "Shoes", kids: "Kids" };
+const shippingSource = readFileSync(join(root, "lib/catalog.ts"), "utf8");
+const FLAT = Number(shippingSource.match(/flatCents:\s*(\d+)/)[1]);
+const FREE_FROM = Number(shippingSource.match(/freeFromCents:\s*(\d+)/)[1]);
+const normalize = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -68,14 +74,84 @@ const catalog = products.map((p) => ({
   variantLabel: p.variantLabel,
   deliveryDays: p.deliveryDays,
   variants: p.variants.map((v) => ({ id: v.id, label: v.label })),
+  category: categoryNames[p.category] ?? "",
+  image: p.images[0] ? p.images[0].replace(/^\//, "") : null,
+  swatch: p.swatch,
+  text: normalize([p.name, p.colour, categoryNames[p.category], p.silhouette, p.description, ...p.details].join(" ")),
 }));
 
 const script = `
 (() => {
   const PRODUCTS = ${JSON.stringify(catalog)};
-  const FLAT = 690, FREE_FROM = 8000, KEY = "preview-bag";
-  const chf = new Intl.NumberFormat("de-CH", { style: "currency", currency: "CHF" });
-  const money = (c) => chf.format(c / 100);
+  const FLAT = ${FLAT}, FREE_FROM = ${FREE_FROM}, KEY = "preview-bag", CUR_KEY = "currency-v1";
+  const CUR = ${JSON.stringify({ rates: currencies.rates, countries: currencies.countries, fallback: currencies.fallback })};
+  const money = (c) => '<span class="money" data-chf="' + c + '">' + format(c, currency()) + "</span>";
+  let curMemory = null;
+  const normalize = (s) => s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
+  const formatters = {};
+
+  function detect() {
+    const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language];
+    for (const tag of langs) {
+      try {
+        const region = new Intl.Locale(tag).maximize().region;
+        if (region) return CUR.countries[region] || CUR.fallback;
+      } catch {}
+    }
+    return "CHF";
+  }
+  function currency() {
+    let stored = curMemory;
+    try { stored = localStorage.getItem(CUR_KEY) || curMemory; } catch {}
+    return stored && CUR.rates[stored] ? stored : detect();
+  }
+  function format(cents, code) {
+    const f = formatters[code] || (formatters[code] = code === "CHF"
+      ? new Intl.NumberFormat("de-CH", { style: "currency", currency: "CHF" })
+      : new Intl.NumberFormat("en-US", { style: "currency", currency: code, maximumFractionDigits: 0, minimumFractionDigits: 0 }));
+    const amount = (cents / 100) * CUR.rates[code];
+    return f.format(code === "CHF" ? amount : Math.round(amount));
+  }
+  function applyCurrency() {
+    const code = currency();
+    document.querySelectorAll(".money[data-chf]").forEach((el) => (el.textContent = format(Number(el.dataset.chf), code)));
+    document.querySelectorAll("select[data-currency]").forEach((el) => (el.value = code));
+    document.querySelectorAll("[data-currency-note]").forEach((el) => {
+      el.hidden = code === "CHF";
+      el.textContent = "Prices in " + code + " are approximate. You can pay in your own currency at checkout, at the exchange rate shown there.";
+    });
+  }
+
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  function renderSearch() {
+    const overlay = document.getElementById("site-search");
+    if (!overlay) return;
+    const query = overlay.querySelector("[data-search-input]").value.trim();
+    const words = normalize(query).split(/\\s+/).filter(Boolean);
+    const results = words.length
+      ? PRODUCTS.filter((p) => words.every((w) => p.text.includes(w)))
+          .map((p) => ({ p, score: words.filter((w) => normalize(p.name).includes(w)).length }))
+          .sort((a, b) => b.score - a.score).slice(0, 12).map((r) => r.p)
+      : [];
+    overlay.querySelector("[data-search-suggestions]").hidden = words.length > 0;
+    overlay.querySelector("[data-search-status]").textContent = !words.length ? "Suggestions"
+      : !results.length ? "No results for \u201c" + query + "\u201d"
+      : results.length + (results.length === 1 ? " result" : " results");
+    overlay.querySelector("[data-search-results]").innerHTML = results.map((p) => \`
+      <li><a href="#product-\${p.slug}" class="search-result">
+        <span class="search-thumb" style="background-color:\${p.swatch}">\${p.image ? '<img src="' + p.image + '" alt="" loading="lazy">' : ""}</span>
+        <span class="search-result-info"><span class="name">\${esc(p.name)}</span><span class="muted small">\${p.colour ? esc(p.colour) + " · " : ""}\${p.category}</span></span>
+        <span class="small">\${money(p.price)}</span>
+      </a></li>\`).join("");
+  }
+  function setSearch(open) {
+    const overlay = document.getElementById("site-search");
+    if (!overlay) return;
+    overlay.hidden = !open;
+    document.body.classList.toggle("menu-open", open);
+    document.querySelectorAll("[data-search-open]").forEach((b) => b.setAttribute("aria-expanded", String(open)));
+    if (open) { renderSearch(); overlay.querySelector("[data-search-input]").focus(); }
+  }
   const view = document.getElementById("view");
   let memory = [];
 
@@ -141,6 +217,7 @@ const script = `
             <div><dt>Delivery</dt><dd>\${delivery === 0 ? "Complimentary" : money(delivery)}</dd></div>
             <div class="total"><dt>Total</dt><dd>\${money(subtotal + delivery)}</dd></div>
           </dl>
+          <p class="muted small currency-note" data-currency-note hidden></p>
           <p class="fine">Final price in CHF. You enter your delivery address and payment details on the next step.</p>
           <button class="button block" type="button" data-checkout>Proceed to checkout</button>
           <p class="error" role="alert" hidden data-checkout-note>This is a preview. Checkout opens once payments are connected.</p>
@@ -162,12 +239,28 @@ const script = `
     const tpl = document.getElementById("r-" + id) || document.getElementById("r-home");
     view.innerHTML = tpl.innerHTML;
     setMenu(false);
+    setSearch(false);
     if (id === "bag") renderBag();
+    applyCurrency();
     updateCount();
     window.scrollTo(0, 0);
   }
 
+  document.addEventListener("input", (e) => {
+    if (e.target.closest("[data-search-input]")) renderSearch();
+  });
+  document.addEventListener("submit", (e) => {
+    if (e.target.closest(".search-form")) e.preventDefault();
+  });
+
   document.addEventListener("change", (e) => {
+    const picker = e.target.closest("select[data-currency]");
+    if (picker) {
+      curMemory = picker.value;
+      try { localStorage.setItem(CUR_KEY, picker.value); } catch {}
+      applyCurrency();
+      return;
+    }
     const input = e.target.closest('input[name="variant"]');
     if (!input) return;
     const buy = input.closest(".buy");
@@ -206,6 +299,7 @@ const script = `
         .filter((l) => l.quantity > 0);
       write(lines);
       renderBag();
+      applyCurrency();
       return;
     }
     if (t.closest("[data-checkout]")) {
@@ -213,6 +307,8 @@ const script = `
       if (note) note.hidden = false;
       return;
     }
+    if (t.closest("[data-search-open]")) { setMenu(false); setSearch(true); return; }
+    if (t.closest("[data-search-close]") || t.closest("#site-search a")) { setSearch(false); return; }
     if (t.closest("[data-menu-open]")) { setMenu(true); return; }
     if (t.closest("[data-menu-close]") || t.closest("#site-menu a")) setMenu(false);
   });
@@ -226,7 +322,7 @@ const script = `
     form.outerHTML = '<p role="status">Thank you. You are now on our list.</p>';
   });
 
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { setMenu(false); setSearch(false); } });
   window.addEventListener("hashchange", route);
   route();
 })();

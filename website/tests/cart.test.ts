@@ -45,8 +45,8 @@ describe("priceCart", () => {
 });
 
 describe("shippingCents", () => {
-  it("costs CHF 6.90 and is free from CHF 80", () => {
-    expect(shippingCents(7999)).toBe(690);
-    expect(shippingCents(8000)).toBe(0);
+  it("costs CHF 9.90 worldwide and is free from CHF 150", () => {
+    expect(shippingCents(14999)).toBe(990);
+    expect(shippingCents(15000)).toBe(0);
   });
 });

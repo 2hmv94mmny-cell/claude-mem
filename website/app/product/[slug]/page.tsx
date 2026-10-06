@@ -5,7 +5,7 @@ import { AddToCart } from "@/components/AddToCart";
 import { ProductCard } from "@/components/ProductCard";
 import { ProductImage } from "@/components/ProductImage";
 import { SHIPPING, getCategory, getColourVariants, getProductBySlug, getProducts, getProductsByCategory } from "@/lib/catalog";
-import { formatChf } from "@/lib/money";
+import { CurrencyNote, Money } from "@/components/Money";
 import { priceNote } from "@/content";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -55,10 +55,11 @@ export default async function ProductPage({ params }: Props) {
           </div>
           <div>
             <p className="pdp-price">
-              {formatChf(product.priceCents)}
-              {product.compareAtCents && <s>{formatChf(product.compareAtCents)}</s>}
+              <Money cents={product.priceCents} />
+              {product.compareAtCents && <s><Money cents={product.compareAtCents} /></s>}
             </p>
             <p className="muted small">{priceNote}</p>
+            <CurrencyNote />
           </div>
 
           {colours.length > 1 && (
@@ -87,7 +88,7 @@ export default async function ProductPage({ params }: Props) {
           <div className="delivery-line">
             <span>Estimated delivery: {product.deliveryDays}</span>
             <span>
-              {formatChf(SHIPPING.flatCents)} delivery, complimentary over {formatChf(SHIPPING.freeFromCents)}.{" "}
+              Worldwide delivery <Money cents={SHIPPING.flatCents} />, complimentary over <Money cents={SHIPPING.freeFromCents} />.{" "}
               <Link href="/pages/shipping">Customs and import charges</Link>
             </span>
           </div>

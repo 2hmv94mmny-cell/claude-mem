@@ -131,7 +131,7 @@ async function importPid(products: Product[], pid: string, category: CategoryId)
       supplierSku: v.variantSku,
       costUsd: v.variantSellPrice,
     })),
-    deliveryDays: values.country && values.country !== "CN" ? "5–10 business days" : "8–15 business days",
+    deliveryDays: values.country && values.country !== "CN" ? "5–12 business days" : "8–20 business days",
     supplier: "cj",
     published: false,
   });

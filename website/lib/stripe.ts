@@ -1,5 +1,6 @@
 import Stripe from "stripe";
-import { SHIPPING, getProducts, priceCart, shippingCents } from "./catalog";
+import { getProducts, priceCart, shippingCents } from "./catalog";
+import { SHIPPING_COUNTRIES } from "./countries";
 import type { FulfillmentRecord, OrderStore } from "./fulfillment";
 import type { CartLine, FulfillmentStatus, OrderLine, PaidOrder } from "./types";
 
@@ -45,12 +46,14 @@ export async function createCheckoutSession(stripe: Stripe, cart: CartLine[], or
         },
       },
     })),
-    shipping_address_collection: { allowed_countries: [...SHIPPING.countries] },
+    shipping_address_collection: { allowed_countries: SHIPPING_COUNTRIES },
+    // Lets Stripe show and charge the total in the customer's local currency (enable Adaptive Pricing in the dashboard).
+    adaptive_pricing: { enabled: true },
     shipping_options: [
       {
         shipping_rate_data: {
           type: "fixed_amount",
-          display_name: shipping === 0 ? "Complimentary delivery" : "Standard delivery",
+          display_name: shipping === 0 ? "Complimentary worldwide delivery" : "Worldwide delivery",
           fixed_amount: { amount: shipping, currency: "chf" },
         },
       },

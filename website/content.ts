@@ -1,7 +1,8 @@
 // Brand copy, company details and legal texts (Swiss law).
 // Everything in [square brackets] is a placeholder and must be replaced before going live.
-// The legal texts are drafts written for a Swiss company selling online to consumers in
-// Switzerland and Liechtenstein. Have them reviewed by a Swiss lawyer before launch.
+// The legal texts are drafts written for a Swiss company selling online to consumers worldwide.
+// Consumers in the EU, EEA and UK keep their mandatory local rights (e.g. the statutory right of
+// withdrawal). Have the texts reviewed by a lawyer before launch.
 
 export const company = {
   /** Registered company name incl. legal form, e.g. "Maison Elva GmbH". */
@@ -42,21 +43,23 @@ export const brand = {
 };
 
 export const shipping = {
-  regions: "Switzerland and Liechtenstein",
-  flat: "CHF 6.90",
-  freeFrom: "CHF 80",
-  delivery: "8 to 15 business days",
+  regions: "worldwide",
+  flat: "CHF 9.90",
+  freeFrom: "CHF 150",
+  delivery: "8 to 20 business days, depending on the destination",
+  /** Who pays import duties and taxes. Shown in the terms and on the shipping page. */
+  customs: "Orders are shipped from our fulfilment partner's warehouse abroad and delivered duties unpaid. Import duties, taxes such as VAT, and clearance fees charged by the carrier in the destination country are not included in our prices and are payable by the recipient on delivery. In Switzerland this typically applies to parcels with a value from around CHF 62; thresholds and rates in other countries vary.",
 };
 
 export const priceNote = company.vatRegistered ? `Incl. ${company.vatRate} VAT` : "Final price in CHF";
 
 export const announcements = [
-  `Complimentary delivery on orders over ${shipping.freeFrom}`,
+  `Complimentary worldwide delivery on orders over ${shipping.freeFrom}`,
   "Returns accepted within 14 days",
 ];
 
 export const services = [
-  { title: "Complimentary delivery", text: `On all orders over ${shipping.freeFrom} within ${shipping.regions}.` },
+  { title: "Worldwide delivery", text: `We ship to most countries. Complimentary on all orders over ${shipping.freeFrom}.` },
   { title: "14-day returns", text: "Unworn pieces with their tags can be returned within 14 days of delivery." },
   { title: "Secure payment", text: "Pay by card, TWINT, Apple Pay or Google Pay through our payment partner Stripe." },
   { title: "Client care", text: `Our team answers every message personally, ${company.hours.toLowerCase()}.` },
@@ -207,7 +210,7 @@ export const pages: Record<string, TextPage> = {
       {
         heading: "1. Scope",
         paragraphs: [
-          `These terms apply to all orders placed in the ${brand.name} online shop operated by ${company.legalName} ("we", "us"). We deliver to customers in ${shipping.regions}.`,
+          `These terms apply to all orders placed in the ${brand.name} online shop operated by ${company.legalName} ("we", "us"). We deliver worldwide, with the exception of countries subject to Swiss or international sanctions.`,
         ],
       },
       {
@@ -243,15 +246,14 @@ export const pages: Record<string, TextPage> = {
       {
         heading: "6. Customs and import charges",
         paragraphs: [
-          "[Decision needed – choose one of the two options and delete the other:]",
-          "[Option A: Any customs duties, import VAT and carrier clearance fees are paid by us. You will not be asked to pay anything on delivery.]",
-          "[Option B: For parcels with a value from around CHF 62, import VAT and carrier clearance fees may be charged on delivery. These charges are payable by you.]",
+          shipping.customs,
         ],
       },
       {
-        heading: "7. Voluntary returns",
+        heading: "7. Returns and right of withdrawal",
         paragraphs: [
           "Swiss law does not provide a statutory right of withdrawal for online purchases. We nevertheless offer a voluntary return policy of 14 days from delivery, as described on our Returns page.",
+          "If you are a consumer living in the European Union, the European Economic Area or the United Kingdom, you have a statutory right to withdraw from the contract within 14 days without giving a reason. The details and a model withdrawal form are on our Returns page. Mandatory consumer protection rules of your country of residence remain unaffected.",
         ],
       },
       {
@@ -287,7 +289,7 @@ export const pages: Record<string, TextPage> = {
     sections: [
       {
         paragraphs: [
-          "Swiss law does not provide a statutory right of withdrawal for online purchases. We want you to love what you ordered, so we offer a voluntary return policy.",
+          "We want you to love what you ordered. Every customer can return unworn pieces within 14 days of delivery. Customers in the EU, EEA and UK additionally have a statutory right of withdrawal, described below.",
         ],
       },
       {
@@ -308,6 +310,22 @@ export const pages: Record<string, TextPage> = {
           "If you receive a damaged or incorrect item, please write to us within 7 days of delivery and include photos. You will not need to send anything back, and we will cover all costs.",
         ],
       },
+      {
+        heading: "Right of withdrawal for customers in the EU, EEA and UK",
+        paragraphs: [
+          "You have the right to withdraw from this contract within 14 days without giving any reason. The withdrawal period expires 14 days after the day on which you, or a third party other than the carrier indicated by you, acquire physical possession of the goods.",
+          `To exercise the right of withdrawal, you must inform us (${company.legalName}, ${company.street}, ${company.postalCode} ${company.city}, ${company.country}, ${company.email}) of your decision by a clear statement, for example an email. You may use the model withdrawal form below, but it is not obligatory. To meet the deadline, it is sufficient to send your notice before the withdrawal period has expired.`,
+          "If you withdraw, we will reimburse all payments received from you, including the costs of standard delivery, without undue delay and at the latest within 14 days of the day we are informed of your decision. We use the same means of payment you used for the original transaction. We may withhold reimbursement until we have received the goods back or you have supplied evidence of having sent them back, whichever is earlier.",
+          `Please send the goods back without undue delay and in any event within 14 days of informing us of your withdrawal, to ${company.returnAddress}. You bear the direct cost of returning the goods. You are only liable for any diminished value of the goods resulting from handling other than what is necessary to establish their nature, characteristics and functioning.`,
+        ],
+      },
+      {
+        heading: "Model withdrawal form",
+        paragraphs: [
+          `To ${company.legalName}, ${company.street}, ${company.postalCode} ${company.city}, ${company.country}, ${company.email}:`,
+          "I/We hereby give notice that I/We withdraw from my/our contract of sale of the following goods: [item], ordered on [date] / received on [date]. Name of consumer(s): [name]. Address of consumer(s): [address]. Date: [date]. Signature (only if this form is notified on paper).",
+        ],
+      },
     ],
   },
 
@@ -318,7 +336,7 @@ export const pages: Record<string, TextPage> = {
       {
         heading: "Destinations and costs",
         paragraphs: [
-          `We deliver to ${shipping.regions}. Delivery costs ${shipping.flat} and is complimentary on orders over ${shipping.freeFrom}.`,
+          `We deliver worldwide. Delivery costs ${shipping.flat} per order and is complimentary on orders over ${shipping.freeFrom}. We cannot deliver to countries subject to Swiss or international sanctions; these are not available at checkout.`,
         ],
       },
       {
@@ -329,7 +347,7 @@ export const pages: Record<string, TextPage> = {
       },
       {
         heading: "Customs and import charges",
-        paragraphs: ["[Insert the same text as section 6 of the Terms and Conditions once decided.]"],
+        paragraphs: [shipping.customs],
       },
     ],
   },

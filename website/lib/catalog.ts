@@ -37,10 +37,9 @@ export function hasExampleProducts(): boolean {
 }
 
 export const SHIPPING = {
-  // Amounts in Rappen (1/100 CHF).
-  flatCents: 690,
-  freeFromCents: 8000,
-  countries: ["CH", "LI"] as const,
+  // Amounts in Rappen (1/100 CHF). One worldwide rate: every order ships from the same CJ warehouse.
+  flatCents: 990,
+  freeFromCents: 15000,
 };
 
 export const MAX_QUANTITY_PER_LINE = 10;
