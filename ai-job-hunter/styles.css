@@ -938,6 +938,7 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 
 /* ---------- Home: jobs for you ---------- */
 .feed { display: grid; gap: var(--sp-4); margin: 0; }
+.feed-note { margin: 0; }
 .feed-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3); flex-wrap: wrap; }
 .feed-head h2 { margin: 0 0 2px; font-size: var(--fs-xl); }
 .feed-head p { margin: 0; max-width: 60ch; }

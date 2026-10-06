@@ -7,6 +7,7 @@ import { portalsFor } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
+import { jobsForYou } from './match.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
 import { TEMPLATES, getTemplate, accentFor, renderCV, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
@@ -40,7 +41,7 @@ function feedInputs() {
   const remote = Boolean(p.remoteOnly);
   const hasExperience = Boolean(p.cv.trim() || roles.length || p.headline.trim());
   // Changes to any of these mean the feed should be rebuilt.
-  const key = JSON.stringify([roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300), p.prefs?.workModes, p.prefs?.types, p.prefs?.salaryMin]);
+  const key = JSON.stringify(['rules-v1', roles, location.toLowerCase(), remote, p.headline.trim(), p.cv.length, p.cv.slice(0, 300), p.prefs?.workModes, p.prefs?.types, p.prefs?.salaryMin]);
   return { roles, location, remote, hasExperience, key };
 }
 
@@ -55,12 +56,10 @@ function runFeed() {
   const { roles: given, location, remote, key } = feedInputs();
   feedError = null;
   feedRun = (async () => {
-    let roles = given;
-    if (!roles.length && store.get().profile.cv.trim()) roles = await ai.suggestRoles();
-    if (!roles.length && store.get().profile.headline.trim()) roles = [store.get().profile.headline.trim()];
-    if (!roles.length) throw new Error('Add your CV or target roles in Profile first.');
-    const { jobs, country } = await ai.searchEverywhere({ query: roles.join(' or '), location, remoteOnly: remote }, { rank: true });
-    store.update((s) => (s.feed = { key, at: Date.now(), jobs: jobs.slice(0, 12), roles, location: remote ? 'Remote' : location, country }));
+    // Plain matching rules on this device (js/match.js), no AI.
+    void given;
+    const { jobs, roles, country } = await jobsForYou(store.get().profile);
+    store.update((s) => (s.feed = { key, at: Date.now(), jobs: jobs.slice(0, 12), roles, location: remote ? 'Remote' : location, country, noAI: true }));
   })()
     .catch((err) => {
       if (err?.name !== 'AbortError') feedError = { key, message: err.message || 'Could not load jobs.' };
@@ -88,15 +87,8 @@ function feedSection() {
     h('div', { class: 'feed-head' }, h('div', {}, h('h2', {}, where ? `Jobs for you ${remote ? '(remote)' : `in ${location}`}` : 'Jobs for you'), sub && h('p', { class: 'muted small' }, sub)), actions.length ? h('div', { class: 'row' }, ...actions) : '');
   const prompt = (text, href, label) => h('section', { class: 'card feed' }, head(''), h('div', { class: 'feed-empty' }, h('p', {}, text), h('a', { class: 'btn primary', href }, label)));
 
-  if (!hasExperience) return prompt('Upload your CV and Claude will find jobs near you that fit your experience.', '#/profile', 'Upload your CV');
+  if (!hasExperience) return prompt('Upload your CV and we will find jobs near you that fit your experience.', '#/profile', 'Upload your CV');
   if (!location && !remote) return prompt('Add your city in your profile to see jobs near you.', '#/profile', 'Add your location');
-  if (!ai.hasKey()) {
-    return prompt(
-      inArtifact ? 'Allow this page to use Claude when it asks, then reload to see jobs picked for you.' : 'Add an API key in Settings to see jobs picked for you.',
-      inArtifact ? '#/' : '#/settings',
-      inArtifact ? 'Reload' : 'Open Settings',
-    );
-  }
 
   if (feedNeedsRefresh() && !feedRun && feedError?.key !== key) runFeed();
 
@@ -112,7 +104,7 @@ function feedSection() {
     return h(
       'section',
       { class: 'card feed' },
-      head(`Searching the job portals${where ? ` for ${where}` : ''} and matching what you find against your experience. This takes about a minute.`),
+      head(`Searching the job portals${where ? ` for ${where}` : ''} and matching what you find against your CV. This takes a few seconds.`),
       h('div', { class: 'feed-grid' }, ...Array.from({ length: 3 }, () => h('div', { class: 'skeleton feed-skel' }))),
     );
   }
@@ -139,6 +131,7 @@ function feedSection() {
     { class: 'card feed' },
     head(`Based on your experience as ${feed.roles.join(' or ')}${feedRun ? ' · updating…' : ` · updated ${timeAgo(feed.at)}`}`, refresh, seeAll),
     h('div', { class: 'feed-grid' }, ...feed.jobs.slice(0, 6).map(feedCard)),
+    h('p', { class: 'small muted feed-note' }, 'Matched on this device by job title, skills, location and experience. No AI is used for these picks.'),
   );
 }
 
