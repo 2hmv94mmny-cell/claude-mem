@@ -1349,7 +1349,17 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .hero-photo { display: grid; justify-items: center; gap: var(--sp-2); align-self: start; }
 @media (max-width: 760px) { .avatar-badge { width: 28px; height: 28px; } }
 
-@media (max-width: 420px) {
-  .account-btn:not(.signed-in) { padding-inline: 12px; font-size: var(--fs-sm); min-height: 34px; }
-  .appbar-actions { gap: 2px; }
+/* Account button: person icon + "Sign in". On phones it is a round icon button with a fixed size,
+   so neither its label nor "Signing in…" can push into the centred logo. */
+.account-btn { gap: 6px; }
+.account-btn > svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.account-btn > svg.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 860px) {
+  .account-btn:not(.signed-in) { width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
+  .account-btn:not(.signed-in) .account-label { display: none; }
+  .account-btn:not(.signed-in) > svg { width: 20px; height: 20px; }
+  .appbar-actions { gap: 4px; }
 }
+@media (max-width: 340px) { .brand span { display: none; } }
+@media (prefers-reduced-motion: reduce) { .account-btn > svg.spin { animation: none; } }

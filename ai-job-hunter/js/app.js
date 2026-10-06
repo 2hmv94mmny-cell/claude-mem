@@ -2846,6 +2846,8 @@ function syncedLabel() {
   return `Synced ${timeAgo(account.lastSync)}`;
 }
 
+const ICON_PERSON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>';
+const ICON_SPINNER = '<svg viewBox="0 0 24 24" aria-hidden="true" class="spin"><path d="M12 3a9 9 0 1 0 9 9"/></svg>';
 function drawAccountButton() {
   if (!accountBtn) return;
   accountBtn.classList.toggle('signed-in', account.status === 'signed-in');
@@ -2854,8 +2856,13 @@ function drawAccountButton() {
     accountBtn.replaceChildren(img, h('span', { class: 'account-name' }, account.me.name ? account.me.name.split(' ')[0] : 'Account'));
     accountBtn.setAttribute('aria-label', `Your account${account.me.name ? `, ${account.me.name}` : ''}`);
   } else {
-    accountBtn.replaceChildren(account.status === 'working' ? 'Signing in…' : 'Sign in');
-    accountBtn.setAttribute('aria-label', 'Create account or sign in');
+    // Icon + label; on phones only the icon shows, so the button never grows into the centred logo.
+    const working = account.status === 'working';
+    accountBtn.replaceChildren(
+      svgIcon(working ? ICON_SPINNER : ICON_PERSON),
+      h('span', { class: 'account-label' }, working ? 'Signing in…' : 'Sign in'),
+    );
+    accountBtn.setAttribute('aria-label', working ? 'Signing in…' : 'Create account or sign in');
   }
 }
 
