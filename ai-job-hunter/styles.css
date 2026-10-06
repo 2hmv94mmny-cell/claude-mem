@@ -1287,3 +1287,11 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .suggest-tag { flex: none; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); background: var(--surface-2); border-radius: 999px; padding: 2px 8px; }
 @media (max-width: 760px) { .searchbar label + label .suggest, .searchbar label .suggest { left: -1px; right: -1px; } }
 .chip { white-space: nowrap; flex: none; }
+
+/* ---------- AI provider picker (Settings) ---------- */
+.provider-option { display: grid; gap: 2px; }
+.provider-option strong { font-size: var(--fs-md); }
+.provider-option span { font-size: var(--fs-xs); font-weight: 500; color: var(--text-2); }
+.provider-option[aria-checked="true"] span { color: var(--accent-text); }
+.provider-details { display: grid; gap: var(--sp-3); }
+.provider-details .notice { margin: 0; }

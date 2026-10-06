@@ -161,6 +161,10 @@ const DICT = {
   'Search above, or add your CV and city in your profile to see jobs picked for you here.': ['Suche oben oder füge im Profil Lebenslauf und Stadt hinzu, um hier passende Jobs zu sehen.', 'Lancez une recherche ou ajoutez votre CV et votre ville dans le profil pour voir ici des offres pour vous.', 'Cerca qui sopra o aggiungi CV e città nel profilo per vedere qui offerte per te.', 'Busca arriba o añade tu CV y tu ciudad en el perfil para ver aquí empleos para ti.', 'Busque acima ou adicione currículo e cidade no perfil para ver vagas para você aqui.'],
   'Open profile': ['Profil öffnen', 'Ouvrir le profil', 'Apri il profilo', 'Abrir perfil', 'Abrir perfil'],
   'No other matching jobs found right now. Search above to look for something else.': ['Gerade keine weiteren passenden Jobs gefunden. Suche oben nach etwas anderem.', 'Aucune autre offre trouvée pour le moment. Lancez une autre recherche ci-dessus.', 'Nessun’altra offerta trovata ora. Cerca qualcos’altro qui sopra.', 'No hay más empleos ahora. Busca otra cosa arriba.', 'Nenhuma outra vaga agora. Busque outra coisa acima.'],
+  'Choose which AI does the work. Every task runs with the same senior HR recruiter instructions.': ['Wähle, welche KI die Arbeit macht. Jede Aufgabe läuft mit denselben Anweisungen eines erfahrenen HR-Recruiters.', 'Choisissez l’IA qui fait le travail. Chaque tâche suit les mêmes consignes de recruteur RH senior.', 'Scegli quale IA fa il lavoro. Ogni attività segue le stesse istruzioni di un recruiter HR senior.', 'Elige qué IA hace el trabajo. Cada tarea sigue las mismas instrucciones de un reclutador senior de RR. HH.', 'Escolha qual IA faz o trabalho. Cada tarefa segue as mesmas instruções de um recrutador sênior de RH.'],
+  'AI provider': ['KI-Anbieter', 'Fournisseur d’IA', 'Fornitore IA', 'Proveedor de IA', 'Provedor de IA'],
+  'Save and test connection': ['Speichern und Verbindung testen', 'Enregistrer et tester', 'Salva e prova la connessione', 'Guardar y probar conexión', 'Salvar e testar conexão'],
+  'Fast model': ['Schnelles Modell', 'Modèle rapide', 'Modello veloce', 'Modelo rápido', 'Modelo rápido'],
   'Show less': ['Weniger anzeigen', 'Afficher moins', 'Mostra meno', 'Mostrar menos', 'Mostrar menos'],
   'See every listing on each job site': ['Alle Inserate auf jedem Jobportal ansehen', 'Voir toutes les annonces sur chaque site', 'Vedi tutti gli annunci su ogni sito', 'Ver todos los anuncios en cada portal', 'Ver todos os anúncios em cada site'],
   'Free job boards': ['Kostenlose Jobbörsen', 'Sites d’emploi gratuits', 'Bacheche di lavoro gratuite', 'Portales gratuitos', 'Sites de vagas gratuitos'],
@@ -615,6 +619,16 @@ const PATTERNS = [
   [/^Searched the open web and free job boards, then matched on this device by job title, skills, location and experience\. No AI is used for these picks\.$/, ['Das offene Web und kostenlose Jobbörsen durchsucht, dann auf diesem Gerät nach Jobtitel, Fähigkeiten, Ort und Erfahrung abgeglichen. Für diese Auswahl wird keine KI verwendet.', 'Recherche sur le web et les sites gratuits, puis tri sur cet appareil selon le poste, les compétences, le lieu et l’expérience. Aucune IA n’est utilisée pour ces choix.', 'Cercato sul web e sulle bacheche gratuite, poi abbinato su questo dispositivo per ruolo, competenze, luogo ed esperienza. Per questa selezione non si usa l’IA.', 'Buscado en la web y portales gratuitos, y luego comparado en este dispositivo por puesto, habilidades, ubicación y experiencia. No se usa IA para esta selección.', 'Busca na web e em sites gratuitos, depois comparação neste dispositivo por cargo, habilidades, local e experiência. Nenhuma IA é usada nesta seleção.']],
   [/^(\d+) more jobs for you near (.+) that are not on your home page, best match first$/, ['{1} weitere Jobs für dich in der Nähe von {2}, die nicht auf deiner Startseite sind, beste Treffer zuerst', '{1} autres offres pour vous près de {2}, absentes de votre accueil, les meilleures d’abord', 'Altre {1} offerte per te vicino a {2} che non sono nella tua home, le migliori prima', '{1} empleos más para ti cerca de {2} que no están en tu inicio, los mejores primero', 'Mais {1} vagas para você perto de {2} que não estão no seu início, as melhores primeiro']],
   [/^Finding more jobs near (.+) that fit your CV…$/, ['Weitere passende Jobs in der Nähe von {1} werden gesucht…', 'Recherche d’autres offres près de {1} qui correspondent à votre CV…', 'Cerco altre offerte vicino a {1} adatte al tuo CV…', 'Buscando más empleos cerca de {1} que encajen con tu CV…', 'Buscando mais vagas perto de {1} que combinam com seu currículo…']],
+  [/^(.+) does not let other websites sign you in with your (.+) account\. Instead, paste an API key from their developer site\. Use is billed by (.+) to your own account \(separate from a (.+) app subscription\)\. The key stays in this browser and is only sent to (.+)\.$/, ['{1} erlaubt anderen Websites keine Anmeldung mit deinem {2}-Konto. Füge stattdessen einen API-Schlüssel von deren Entwicklerseite ein. Die Nutzung rechnet {3} über dein eigenes Konto ab (getrennt von einem {4}-Abo). Der Schlüssel bleibt in diesem Browser und geht nur an {5}.', '{1} ne permet pas aux autres sites de vous connecter avec votre compte {2}. Collez plutôt une clé API de leur site développeur. L’usage est facturé par {3} sur votre propre compte (séparé d’un abonnement {4}). La clé reste dans ce navigateur et n’est envoyée qu’à {5}.', '{1} non consente ad altri siti di accedere con il tuo account {2}. Incolla invece una chiave API dal loro sito per sviluppatori. L’uso è fatturato da {3} sul tuo account (separato da un abbonamento {4}). La chiave resta in questo browser ed è inviata solo a {5}.', '{1} no permite que otras webs inicien sesión con tu cuenta de {2}. En su lugar, pega una clave API de su web para desarrolladores. El uso lo cobra {3} en tu propia cuenta (aparte de una suscripción a {4}). La clave se queda en este navegador y solo se envía a {5}.', 'A {1} não permite que outros sites façam login com sua conta {2}. Em vez disso, cole uma chave de API do site de desenvolvedores. O uso é cobrado pela {3} na sua própria conta (separado de uma assinatura {4}). A chave fica neste navegador e só vai para a {5}.']],
+  [/^(.+) API key$/, ['{1}-API-Schlüssel', 'Clé API {1}', 'Chiave API {1}', 'Clave API de {1}', 'Chave de API {1}']],
+  [/^Get a (.+) API key ↗$/, ['{1}-API-Schlüssel holen ↗', 'Obtenir une clé API {1} ↗', 'Ottieni una chiave API {1} ↗', 'Conseguir una clave API de {1} ↗', 'Obter uma chave de API {1} ↗']],
+  [/^Leave empty for (.+)\.$/, ['Leer lassen für {1}.', 'Laisser vide pour {1}.', 'Lascia vuoto per {1}.', 'Déjalo vacío para {1}.', 'Deixe vazio para {1}.']],
+  [/^For quick tasks\. Leave empty for (.+)\.$/, ['Für schnelle Aufgaben. Leer lassen für {1}.', 'Pour les tâches rapides. Laisser vide pour {1}.', 'Per attività rapide. Lascia vuoto per {1}.', 'Para tareas rápidas. Déjalo vacío para {1}.', 'Para tarefas rápidas. Deixe vazio para {1}.']],
+  [/^(.+) cannot read photos of a CV\. Upload PDF or Word files instead\.$/, ['{1} kann keine Fotos von Lebensläufen lesen. Lade stattdessen PDF- oder Word-Dateien hoch.', '{1} ne lit pas les photos de CV. Importez plutôt des PDF ou des Word.', '{1} non legge foto di CV. Carica invece file PDF o Word.', '{1} no puede leer fotos de un CV. Sube archivos PDF o Word.', '{1} não lê fotos de currículo. Envie arquivos PDF ou Word.']],
+  [/^(.+) cannot search the web here, so job search uses the free job boards \(and the Exa connector inside the Claude app\)\.$/, ['{1} kann hier nicht im Web suchen, deshalb nutzt die Jobsuche die kostenlosen Jobbörsen (und in der Claude-App den Exa-Connector).', '{1} ne peut pas chercher sur le web ici : la recherche utilise les sites gratuits (et le connecteur Exa dans l’app Claude).', '{1} non può cercare sul web qui, quindi la ricerca usa le bacheche gratuite (e il connettore Exa nell’app Claude).', '{1} no puede buscar en la web aquí, así que la búsqueda usa los portales gratuitos (y el conector Exa en la app de Claude).', '{1} não pode buscar na web aqui, então a busca usa os sites gratuitos (e o conector Exa no app do Claude).']],
+  [/^Talking to (.+)…$/, ['Verbindung zu {1}…', 'Connexion à {1}…', 'Connessione a {1}…', 'Conectando con {1}…', 'Conectando ao {1}…']],
+  [/^(.+) is connected\. It replied: (.+)$/, ['{1} ist verbunden. Antwort: {2}', '{1} est connecté. Réponse : {2}', '{1} è collegato. Risposta: {2}', '{1} está conectado. Respuesta: {2}', '{1} está conectado. Resposta: {2}']],
+  [/^Paste your (.+) API key first\.$/, ['Füge zuerst deinen {1}-API-Schlüssel ein.', 'Collez d’abord votre clé API {1}.', 'Prima incolla la tua chiave API {1}.', 'Primero pega tu clave API de {1}.', 'Cole primeiro sua chave de API {1}.']],
   [/^See all (\d+)$/, ['Alle {1} anzeigen', 'Voir les {1}', 'Vedi tutte ({1})', 'Ver los {1}', 'Ver todas ({1})']],
   [/^Based on your experience as (.+) · updating…$/, ['Basierend auf deiner Erfahrung als {1} · wird aktualisiert…', 'Selon votre expérience de {1} · mise à jour…', 'In base alla tua esperienza come {1} · aggiornamento…', 'Según tu experiencia como {1} · actualizando…', 'Com base na sua experiência como {1} · atualizando…']],
   [/^Based on your experience as (.+) · updated (.+)$/, ['Basierend auf deiner Erfahrung als {1} · aktualisiert {2}', 'Selon votre expérience de {1} · mis à jour {2}', 'In base alla tua esperienza come {1} · aggiornato {2}', 'Según tu experiencia como {1} · actualizado {2}', 'Com base na sua experiência como {1} · atualizado {2}']],
@@ -743,14 +757,34 @@ function lookup(core) {
 
 /** Translate one English UI text into the current language (unknown texts pass through). */
 export function t(text) {
-  if (lang === 'en' || !text) return text;
+  if (!text || (lang === 'en' && !brand)) return text;
   const key = String(text);
   if (cache.has(key)) return cache.get(key);
-  const m = key.match(/^(\s*)([\s\S]*?)(\s*)$/);
-  const out = m[2] && m[2].length < 600 ? lookup(m[2]) : null;
-  const res = out == null ? key : m[1] + out + m[3];
+  let res = key;
+  if (lang !== 'en') {
+    const m = key.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    const out = m[2] && m[2].length < 600 ? lookup(m[2]) : null;
+    if (out != null) res = m[1] + out + m[3];
+  }
+  if (brand) res = withBrand(res);
   cache.set(key, res);
   return res;
+}
+
+// When another AI does the work, "Claude is writing…" should name that AI.
+// The Claude app, Claude account and Claude model names keep their name.
+let brand = '';
+const KEEP = /^(?:\s|-)*(?:app|account|session|Opus|Sonnet|Haiku|App|Konto|-App|-Konto)\b|^\.ai|^'s (?:app|account)/;
+function withBrand(text) {
+  return text.replace(/\bClaude(?:s)?\b/g, (word, i) => (KEEP.test(text.slice(i + word.length)) || /(your|dein|deinem|votre|tuo|tu|sua|seu|eigenen|own)\s+$/i.test(text.slice(0, i)) ? word : word.replace('Claude', brand)));
+}
+/** Name the AI that does the work in interface texts ('' = Claude). */
+export function setBrand(name) {
+  const next = name && name !== 'Claude' ? name : '';
+  if (next === brand) return;
+  brand = next;
+  cache.clear();
+  if (observer) retranslate();
 }
 
 /** Fill an English format like "you have {1}" in the current language. */

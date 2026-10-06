@@ -8,8 +8,9 @@ import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
 import { jobsForYou, moreJobsForYou, aboutFromPosting, norm } from './match.js';
-import { LANGUAGES, setLanguage, currentLanguage } from './i18n.js';
+import { LANGUAGES, setLanguage, currentLanguage, setBrand } from './i18n.js';
 import { attachSuggest, rememberSearch } from './suggest.js';
+import { PROVIDERS, providerById } from './providers.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
 import { TEMPLATES, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
@@ -2528,24 +2529,108 @@ function renderSettings() {
     ...['low', 'medium', 'high'].map((v) => h('option', { value: v, selected: v === s.effort }, v)),
   );
 
-  const form = h(
-    'form',
-    { class: 'card form' },
-    h('h2', {}, 'AI'),
-    ai.usingViewerClaude()
-      ? h('p', { class: 'notice' }, 'AI features run on your Claude account here, so no API key is needed. The key and model settings below apply when you run the app outside Claude.')
-      : '',
-    field('Anthropic API key', key, 'Get one at console.anthropic.com. Stored only in this browser and sent only to api.anthropic.com.'),
-    h('div', { class: 'grid-2' }, field('Model', model), field('Effort', effort, 'Higher effort gives more thorough results but takes longer.')),
-    h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, 'Save settings')),
-  );
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
+  // Which AI does the work: Claude, or the user's own ChatGPT / Gemini / DeepSeek / Grok key.
+  let chosen = s.provider || 'claude';
+  const OPTIONS = [{ id: 'claude', name: 'Claude', company: 'Anthropic' }, ...PROVIDERS];
+  const fields = {}; // provider id -> { key, model, quick }
+  for (const pv of PROVIDERS) {
+    fields[pv.id] = {
+      key: h('input', { type: 'password', value: s.keys?.[pv.id] || '', placeholder: pv.keyHint, autocomplete: 'off', spellcheck: 'false' }),
+      model: h('input', { type: 'text', value: s.models?.[pv.id] || '', placeholder: pv.model, autocomplete: 'off', spellcheck: 'false' }),
+      quick: h('input', { type: 'text', value: s.models?.[`${pv.id}Quick`] || '', placeholder: pv.quickModel, autocomplete: 'off', spellcheck: 'false' }),
+    };
+  }
+  const providerGroup = h('div', { class: 'lang-grid provider-grid', role: 'radiogroup', 'aria-label': 'AI provider' });
+  const details = h('div', { class: 'provider-details' });
+  const testOut = h('p', { class: 'small', role: 'status' });
+  function drawProvider() {
+    providerGroup.replaceChildren(
+      ...OPTIONS.map((o) => {
+        const b = h('button', { type: 'button', class: 'lang-option provider-option', role: 'radio', 'aria-checked': String(o.id === chosen), translate: 'no' }, h('strong', {}, o.name), h('span', {}, o.company));
+        b.addEventListener('click', () => {
+          chosen = o.id;
+          testOut.textContent = '';
+          drawProvider();
+        });
+        return b;
+      }),
+    );
+    if (chosen === 'claude') {
+      details.replaceChildren(
+        ai.usingViewerClaude()
+          ? h('p', { class: 'notice' }, 'AI features run on your Claude account here, so no API key is needed. The key and model settings below apply when you run the app outside Claude.')
+          : '',
+        field('Anthropic API key', key, 'Get one at console.anthropic.com. Stored only in this browser and sent only to api.anthropic.com.'),
+        h('div', { class: 'grid-2' }, field('Model', model), field('Effort', effort, 'Higher effort gives more thorough results but takes longer.')),
+      );
+      return;
+    }
+    const pv = providerById(chosen);
+    const f = fields[chosen];
+    details.replaceChildren(
+      h(
+        'p',
+        { class: 'notice' },
+        `${pv.company} does not let other websites sign you in with your ${pv.name} account. Instead, paste an API key from their developer site. Use is billed by ${pv.company} to your own account (separate from a ${pv.name} app subscription). The key stays in this browser and is only sent to ${pv.company}.`,
+      ),
+      field(`${pv.name} API key`, f.key),
+      h('p', { class: 'small', style: 'margin:0' }, h('a', { href: pv.keyUrl, target: '_blank', rel: 'noopener noreferrer' }, `Get a ${pv.name} API key ↗`)),
+      h('div', { class: 'grid-2' }, field('Model', f.model, `Leave empty for ${pv.model}.`), field('Fast model', f.quick, `For quick tasks. Leave empty for ${pv.quickModel}.`)),
+      !pv.vision ? h('p', { class: 'small muted' }, `${pv.name} cannot read photos of a CV. Upload PDF or Word files instead.`) : '',
+      !pv.webSearch ? h('p', { class: 'small muted' }, `${pv.name} cannot search the web here, so job search uses the free job boards (and the Exa connector inside the Claude app).`) : '',
+      h('div', { class: 'row wrap' }, testBtn),
+      testOut,
+    );
+  }
+  function saveProvider() {
     store.update((st) => {
       st.settings.apiKey = key.value.trim();
       st.settings.model = model.value;
       st.settings.effort = effort.value;
+      st.settings.provider = chosen;
+      st.settings.keys = { ...(st.settings.keys || {}) };
+      st.settings.models = { ...(st.settings.models || {}) };
+      for (const pv of PROVIDERS) {
+        st.settings.keys[pv.id] = fields[pv.id].key.value.trim();
+        st.settings.models[pv.id] = fields[pv.id].model.value.trim();
+        st.settings.models[`${pv.id}Quick`] = fields[pv.id].quick.value.trim();
+      }
     });
+    setBrand(ai.aiName());
+  }
+  const testBtn = h('button', { type: 'button', class: 'btn small' }, 'Save and test connection');
+  testBtn.addEventListener('click', async () => {
+    saveProvider();
+    const pv = providerById(chosen);
+    if (!fields[chosen].key.value.trim()) {
+      testOut.textContent = `Paste your ${pv.name} API key first.`;
+      return;
+    }
+    testBtn.disabled = true;
+    testOut.textContent = `Talking to ${pv.name}…`;
+    try {
+      const reply = await ai.ask({ system: 'Connection test.', messages: [{ role: 'user', content: 'Reply with the single word OK.' }], quick: true });
+      testOut.textContent = `${pv.name} is connected. It replied: ${String(reply).trim().slice(0, 40)}`;
+    } catch (err) {
+      testOut.textContent = err.message;
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+  drawProvider();
+
+  const form = h(
+    'form',
+    { class: 'card form' },
+    h('h2', {}, 'AI'),
+    h('p', { class: 'muted', style: 'margin:0' }, 'Choose which AI does the work. Every task runs with the same senior HR recruiter instructions.'),
+    providerGroup,
+    details,
+    h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, 'Save settings')),
+  );
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveProvider();
     toast('Settings saved');
   });
 
@@ -2553,6 +2638,7 @@ function renderSettings() {
   exp.addEventListener('click', () => {
     const data = JSON.parse(store.exportJSON());
     data.settings.apiKey = '';
+    data.settings.keys = {};
     download(`ai-job-hunter-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
   });
   const fileIn = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
@@ -2562,9 +2648,12 @@ function renderSettings() {
     const file = fileIn.files[0];
     if (!file) return;
     try {
-      const apiKey = store.get().settings.apiKey;
+      const { apiKey, keys } = store.get().settings;
       store.importJSON(await file.text());
-      if (!store.get().settings.apiKey) store.update((st) => (st.settings.apiKey = apiKey));
+      store.update((st) => {
+        if (!st.settings.apiKey) st.settings.apiKey = apiKey;
+        st.settings.keys = { ...(keys || {}), ...(st.settings.keys || {}) };
+      });
       toast('Backup restored');
       route();
     } catch {
@@ -2829,6 +2918,7 @@ if (!inArtifact && 'serviceWorker' in navigator && location.protocol !== 'file:'
 }
 
 setLanguage(store.get().settings.language || 'en');
+setBrand(ai.aiName());
 route();
 // In the artifact viewer, capabilities arrive a moment after load: redraw
 // once they do so AI and web search light up.

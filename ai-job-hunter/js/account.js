@@ -68,8 +68,9 @@ const docKey = (id) => encodeURIComponent(id).replace(/%/g, '~');
 
 /** The synced sections of local state, keyed. */
 function sections(s = store.get()) {
-  const { apiKey, ...settings } = s.settings;
-  void apiKey; // the API key never leaves the device
+  const { apiKey, keys, ...settings } = s.settings;
+  void apiKey; // API keys (Claude's and the other providers') never leave the device
+  void keys;
   const out = {
     profile: s.profile,
     settings,
@@ -189,7 +190,7 @@ async function pull() {
     store.update((s) => {
       for (const [key, body] of apply) {
         if (key === 'profile' && body.data) s.profile = { ...s.profile, ...body.data, prefs: { ...s.profile.prefs, ...(body.data.prefs || {}) } };
-        else if (key === 'settings' && body.data) s.settings = { ...s.settings, ...body.data, apiKey: s.settings.apiKey };
+        else if (key === 'settings' && body.data) s.settings = { ...s.settings, ...body.data, apiKey: s.settings.apiKey, keys: s.settings.keys };
         else if (key === 'feed') s.feed = body.data;
         else if (key.startsWith('job:')) {
           const id = key.slice(4);
@@ -298,9 +299,12 @@ export function signOut({ wipe = false } = {}) {
   account.lastSync = 0;
   account.error = '';
   if (wipe) {
-    const apiKey = store.get().settings.apiKey;
+    const { apiKey, keys } = store.get().settings;
     store.reset();
-    store.update((s) => (s.settings.apiKey = apiKey));
+    store.update((s) => {
+      s.settings.apiKey = apiKey;
+      s.settings.keys = keys || {};
+    });
   }
   emit();
 }

@@ -9,6 +9,10 @@ const DEFAULT_STATE = {
     model: 'claude-opus-5-5',
     effort: 'medium',
     language: 'en',
+    // AI provider: 'claude' or one of providers.js (own API key, kept on this device only)
+    provider: 'claude',
+    keys: {},
+    models: {},
   },
   profile: {
     name: '',

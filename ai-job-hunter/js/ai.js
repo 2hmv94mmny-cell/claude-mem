@@ -14,6 +14,31 @@ import { portalsFor, portalForUrl } from './portals.js';
 import { normalizeCV } from './cvdoc.js';
 import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
 import { currentLanguage, languageName } from './i18n.js';
+import { providerById, askProvider } from './providers.js';
+import { searchJobs } from './jobs.js';
+
+// Every task runs with the same senior HR persona and quality bar, whichever
+// AI does the work (Claude, ChatGPT, Gemini, DeepSeek or Grok).
+const SENIOR_HR =
+  'You are a senior HR professional and hiring manager with more than 15 years of recruiting experience across Europe and ' +
+  'international companies. You have screened thousands of CVs, run hundreds of interviews and decided who gets hired. ' +
+  'You know what hiring managers look for in the first 30 seconds, how applicant tracking systems read documents, and what ' +
+  'makes a candidate stand out or get rejected. In this app you work for the candidate: you use that insider view to help ' +
+  'them land the job. Your standard is the work of a top recruiter at a leading company: specific to this person and this ' +
+  'role, honest even when it is uncomfortable, concrete instead of generic, and accurate. Never invent facts. Before you ' +
+  'answer, check your work against the instructions and fix anything that falls short. Follow the requested output format exactly.';
+
+/** The provider the user chose in Settings, if it is not Claude and has a key. */
+export function activeProvider() {
+  const s = store.get().settings;
+  if (!s.provider || s.provider === 'claude') return null;
+  const p = providerById(s.provider);
+  return p && s.keys?.[p.id] ? p : null;
+}
+/** Short name of the AI doing the work, for messages. */
+export function aiName() {
+  return activeProvider()?.name || 'Claude';
+}
 
 /** Coaching replies follow the interface language the user picked. */
 function uiLanguage(extra = '') {
@@ -30,7 +55,7 @@ function loadSDK() {
 
 /** True when AI features can run (viewer's Claude, or an API key). */
 export function hasKey() {
-  return usingViewerClaude() || Boolean(store.get().settings.apiKey);
+  return Boolean(activeProvider()) || usingViewerClaude() || Boolean(store.get().settings.apiKey);
 }
 
 /** True when running in a claude.ai viewer that lends us its Claude. */
@@ -40,7 +65,10 @@ export function usingViewerClaude() {
 
 /** True when live web job search is possible. */
 export function canSearchWeb() {
-  return Boolean(caps.mcp && caps.sample) || (!caps.sample && Boolean(store.get().settings.apiKey));
+  const p = activeProvider();
+  if (caps.mcp && (caps.sample || p)) return true;
+  if (p) return Boolean(p.webSearch);
+  return !caps.sample && Boolean(store.get().settings.apiKey);
 }
 
 async function client() {
@@ -61,6 +89,19 @@ async function client() {
  * @returns {Promise<string>} final text
  */
 export async function ask({ system, messages, tools, onText, signal, json = false, images = [], quick = false }) {
+  system = `${SENIOR_HR}\n\n${system}`;
+  const prov = activeProvider();
+  if (prov) {
+    const s = store.get().settings;
+    const model = (quick ? s.models?.[`${prov.id}Quick`] : s.models?.[prov.id]) || (quick ? prov.quickModel : prov.model);
+    const webSearch = Boolean(tools?.some((t) => t.name === 'web_search'));
+    const text = await askProvider(prov, { key: s.keys[prov.id], model, system, messages, onText, signal, json, images, webSearch });
+    try {
+      return json ? extractJSON(text) : text;
+    } catch {
+      throw new Error(`${prov.name} replied in an unexpected format. Try again.`);
+    }
+  }
   if (usingViewerClaude()) return askViewer({ system, messages, onText, signal, json, images, quick });
   const anthropic = await client();
   const { model, effort } = store.get().settings;
@@ -259,9 +300,13 @@ export async function searchEverywhere({ query, location, remoteOnly }, { onText
   const where = location || (remoteOnly ? 'remote' : p.location) || '';
   const { portals, country } = portalsFor(what, where, { remote: remoteOnly });
   const live = portals.filter((x) => x.live).slice(0, 6);
-  let jobs = usingViewerClaude()
-    ? await viewerSearch(what, where, remoteOnly, live, { onText, signal, rank })
-    : await sdkSearch(what, where, remoteOnly, live, { onText, signal, rank });
+  const prov = activeProvider();
+  let jobs =
+    caps.mcp && (caps.sample || prov)
+      ? await viewerSearch(what, where, remoteOnly, live, { onText, signal, rank })
+      : prov && !prov.webSearch
+        ? await boardSearch(what, where, remoteOnly, { onText, signal, rank })
+        : await sdkSearch(what, where, remoteOnly, live, { onText, signal, rank });
   if (rank) jobs = jobs.sort((a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1));
   return { jobs, country };
 }
@@ -360,6 +405,17 @@ async function viewerSearch(what, where, remoteOnly, portals, { onText, signal, 
 }
 
 // Standalone route: Claude's own web search tool via the API.
+// Providers without web search: the free job boards, ranked by the AI.
+async function boardSearch(what, where, remoteOnly, { onText, signal, rank }) {
+  onText?.('Searching free job boards…');
+  const { jobs } = await searchJobs({ query: what, location: remoteOnly ? '' : where, remoteOnly });
+  const real = jobs.filter((j) => j.source !== 'Demo');
+  if (!rank || !real.length) return real;
+  onText?.('Ranking each job against your CV…');
+  const scores = await scoreJobs(real, { signal });
+  return real.map((j) => (scores[j.id] ? { ...j, match: scores[j.id] } : j));
+}
+
 async function sdkSearch(what, where, remoteOnly, portals, { onText, signal, rank }) {
   const place = where ? ` in ${where}` : '';
   const list = await ask({
@@ -615,8 +671,8 @@ export async function companyProfile(job, { signal } = {}) {
   const posting = `<job_posting>\nCompany: ${name}${where}\nTitle: ${job.title}\n${String(job.description || '').slice(0, 4000)}\n</job_posting>`;
 
   let reply;
-  if (usingViewerClaude()) {
-    if (!caps.mcp) throw new Error('Company lookup needs the Exa connector. Add it in claude.ai Settings → Connectors, then reload.');
+  if (!caps.mcp && caps.sample && !activeProvider()) throw new Error('Company lookup needs the Exa connector. Add it in claude.ai Settings → Connectors, then reload.');
+  if (caps.mcp && (caps.sample || activeProvider())) {
     const searches = [
       { query: `${name}${where} official website about the company`, objective: `The official website and "about us" page of the employer ${name}${where}: what it does, founding year, headquarters, number of employees, ownership.` },
       { query: `${name} company news 2026`, objective: `Recent news about the company ${name}${where} from the last 12 months: results, launches, acquisitions, layoffs, leadership changes. Include dates.` },
