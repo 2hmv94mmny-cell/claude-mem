@@ -24,14 +24,13 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CSS = ROOT / "styles.css"
 
-# Brand: "Hunter", a deep evergreen. The hiring leaders all own blue
-# (Indeed h260, LinkedIn h255, StepStone h250), so a blue button reads as
-# "someone else's job board". A pine green between forest and teal is ours:
-# it says growth and "go", sits apart from the blues, and stays calm enough
-# for a tool people trust with their career. Like Stripe or Spotify, the
-# brand colour is used sparingly (primary actions, focus, selection) on
-# neutral surfaces, so it carries meaning when it appears.
-BRAND_HUE = 168
+# Brand: "Vora blue", sampled from the Vora logo (OKLCH hue 255-265, chroma
+# about 0.2: a vivid royal blue that shades from sky to indigo). As the big
+# product companies do (Stripe, Linear, Apple), the brand colour is used
+# sparingly for actions, links, focus and selection, on calm neutrals tinted
+# with the same hue; the logo's sky-to-indigo gradient is kept for one hero
+# accent, never for buttons or text.
+BRAND_HUE = 264
 
 # Lightness per step. Light: near-white backgrounds down to near-black text.
 # Dark: deep backgrounds up to near-white text. Step 9 is set per hue.
@@ -44,8 +43,8 @@ C_DARK = [0.14, 0.18, 0.26, 0.32, 0.38, 0.45, 0.54, 0.66, 1.00, 1.00, 0.62, 0.28
 
 # name: (hue, peak chroma, step-9 L light, step-9 L dark, text on solid)
 HUES = {
-    "gray":   (BRAND_HUE, 0.012, 0.560, 0.560, "light"),
-    "brand":  (BRAND_HUE, 0.110, 0.470, 0.540, "light"),
+    "gray":   (BRAND_HUE, 0.014, 0.560, 0.560, "light"),
+    "brand":  (BRAND_HUE, 0.205, 0.500, 0.560, "light"),
     # success leans yellow-green so it does not read as the brand
     "green":  (140,       0.140, 0.540, 0.600, "light"),
     "amber":  (72,        0.150, 0.800, 0.800, "dark"),
@@ -122,6 +121,8 @@ def scale(name, dark):
         c = peak * Cs[i]
         if name == "gray":
             c = peak * (0.35 + 0.65 * Cs[i])  # keep the tint even at the ends
+            if dark:
+                c *= 1.9  # navy-black like the logo's background, not grey-black
         out.append(to_hex(Ls[i], c, hue))
     return out
 
@@ -174,7 +175,7 @@ SEMANTIC_LIGHT = {
     "--cat-fit": "var(--teal-11)",
     "--cat-curve": "var(--amber-11)",
     "--stage": "var(--gray-5)",
-    "--shadow-color": "170 25% 15%",
+    "--shadow-color": "230 35% 20%",
 }
 SEMANTIC_DARK = {
     **SEMANTIC_LIGHT,
@@ -187,7 +188,7 @@ SEMANTIC_DARK = {
     "--border": "var(--gray-5)",
     "--border-strong": "var(--gray-8)",
     "--stage": "var(--gray-1)",
-    "--shadow-color": "170 30% 2%",
+    "--shadow-color": "230 50% 2%",
 }
 
 
