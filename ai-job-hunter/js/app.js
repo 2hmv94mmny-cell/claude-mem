@@ -4,8 +4,9 @@ import * as ai from './ai.js';
 import { h, md, toast, copy, download, confirmButton, fmtDate, debounce } from './ui.js';
 import { inArtifact, ready as runtimeReady } from './runtime.js';
 import { portalsFor } from './portals.js';
+import { styleIssues, cvProse } from './style.js';
 import { readCVFile, ACCEPT } from './files.js';
-import { TEMPLATES, renderCV, cvToMarkdown, cvPDFDefinition, letterPDFDefinition, makePDF, cvFromProfile } from './cvdoc.js';
+import { TEMPLATES, renderCV, cvToText, cvPDFDefinition, letterPDFDefinition, makePDF, cvFromProfile } from './cvdoc.js';
 
 const view = document.getElementById('view');
 const nav = document.getElementById('nav');
@@ -705,6 +706,18 @@ function renderJob(id) {
   }
 
   // ----- Documents -----
+
+  // Shows stock AI phrases or dash punctuation left in a text, with a fix button.
+  function writingCheck(text, fix) {
+    const { phrases, dashes } = styleIssues(text);
+    if (!phrases.length && !dashes) {
+      return h('p', { class: 'writing-check ok small' }, h('strong', {}, 'Writing check: '), 'no dashes or stock AI phrases found.');
+    }
+    const found = [...phrases.map((p) => `"${p.replace(/^i /, "I ")}"`), ...(dashes ? [`${dashes} dash${dashes === 1 ? '' : 'es'}`] : [])];
+    const btn = aiButton('Fix wording', { variant: 'small', task: async (_t, signal) => (await fix(phrases.length ? phrases : ['dashes used as punctuation'], signal), '') });
+    return h('div', { class: 'writing-check warn small' }, h('p', {}, h('strong', {}, 'Writing check: '), `still sounds generated in places: ${found.join(', ')}.`), btn);
+  }
+
   function docsTab() {
     panel.append(keyNotice() || '', profileNotice() || '', cvSection(), letterSection());
   }
@@ -767,6 +780,18 @@ function renderJob(id) {
       notes.replaceChildren(
         ...(cv?.changes?.length ? [h('h3', {}, 'What changed for this job'), h('ul', {}, ...cv.changes.map((c) => h('li', {}, c)))] : []),
         ...(cv?.keywords?.length ? [h('h3', {}, 'Keywords covered'), h('div', { class: 'tags' }, ...cv.keywords.map((k) => h('span', { class: 'tag' }, k)))] : []),
+        cv
+          ? writingCheck(cvProse(cv), async (phrases, signal) => {
+              status.replaceChildren(h('p', { class: 'muted' }, 'Rewording those lines…'));
+              const cvData = await ai.tailorCV(job, {
+                instructions: `Rewrite only the lines that use these phrases: ${phrases.join(', ')}. Use plain, specific wording a person would use about their own work, and no dashes as punctuation. Keep everything else the same.`,
+                previous: cv,
+                signal,
+              });
+              saveDoc({ cvData, cv: cvToText(cvData) });
+              draw();
+            })
+          : '',
       );
       gen.textContent = d.cvData ? 'Rewrite from scratch' : 'Create tailored CV';
       for (const el of [refine, actions]) el.hidden = !d.cvData;
@@ -777,7 +802,7 @@ function renderJob(id) {
       task: async (_onText, signal) => {
         status.replaceChildren(h('p', { class: 'muted' }, 'Claude is rewriting your CV for this job. This takes about a minute.'));
         const cvData = await ai.tailorCV(job, { signal });
-        saveDoc({ cvData, cv: cvToMarkdown(cvData) });
+        saveDoc({ cvData, cv: cvToText(cvData) });
         draw();
         return '';
       },
@@ -792,7 +817,7 @@ function renderJob(id) {
         if (!instructions) throw new Error('Say what you want changed first.');
         status.replaceChildren(h('p', { class: 'muted' }, 'Updating your CV…'));
         const cvData = await ai.tailorCV(job, { instructions, previous: docs().cvData, signal });
-        saveDoc({ cvData, cv: cvToMarkdown(cvData) });
+        saveDoc({ cvData, cv: cvToText(cvData) });
         ask.value = '';
         draw();
         return '';
@@ -811,7 +836,7 @@ function renderJob(id) {
     const cp = h('button', { class: 'btn small', type: 'button' }, 'Copy text');
     cp.addEventListener('click', () => copy(docs().cv || ''));
     const txt = h('button', { class: 'btn small', type: 'button' }, 'Download text');
-    txt.addEventListener('click', () => download(`${fileBase()}-cv.md`, docs().cv || ''));
+    txt.addEventListener('click', () => download(`${fileBase()}-cv.txt`, docs().cv || ''));
     const actions = h('div', { class: 'row wrap' }, pdfBtn, cp, txt);
 
     const card = h(
@@ -830,14 +855,29 @@ function renderJob(id) {
   function letterSection() {
     const out = h('div', { class: 'ai-output doc' });
     const editor = h('textarea', { class: 'doc-editor', rows: 18, hidden: true });
-    const render = () => out.replaceChildren(docs().coverLetter ? md(docs().coverLetter) : h('p', { class: 'muted' }, 'A specific, human-sounding letter for this role, built from your CV.'));
+    const check = h('div');
+    const render = () => {
+      const letter = docs().coverLetter;
+      out.replaceChildren(letter ? md(letter) : h('p', { class: 'muted' }, 'A specific, human-sounding letter for this role, built from your CV.'));
+      check.replaceChildren(
+        letter
+          ? writingCheck(letter, async (phrases, signal) => {
+              saveDoc({ coverLetter: await ai.reviseLetter(job, letter, phrases, { signal }) });
+              render();
+            })
+          : '',
+      );
+    };
     render();
 
     const tone = h('select', { 'aria-label': 'Tone' }, ...['professional', 'warm and enthusiastic', 'concise and direct', 'formal'].map((t) => h('option', { value: t }, t)));
     const gen = aiButton(docs().coverLetter ? 'Rewrite' : 'Write cover letter', {
       output: out,
       task: (onText, signal) => ai.writeCoverLetter(job, { tone: tone.value, onText, signal }),
-      onDone: (text) => saveDoc({ coverLetter: text }),
+      onDone: (text) => {
+        saveDoc({ coverLetter: text });
+        render();
+      },
     });
 
     const edit = h('button', { class: 'btn small', type: 'button' }, 'Edit');
@@ -869,6 +909,7 @@ function renderJob(id) {
       h('div', { class: 'row space wrap' }, h('h2', {}, 'Cover letter'), h('div', { class: 'row wrap' }, tone, gen, edit, cp, pdfBtn)),
       out,
       editor,
+      check,
     );
   }
 

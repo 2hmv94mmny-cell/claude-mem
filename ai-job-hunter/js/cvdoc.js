@@ -1,6 +1,6 @@
 // Structured CV documents: one JSON shape, rendered three ways.
 //   renderCV(data, template)   -> DOM preview (paper-style page)
-//   cvToMarkdown(data)         -> plain text for copying / pasting into forms
+//   cvToText(data)             -> plain text for copying / pasting into forms
 //   cvToPDF(data, template)    -> real-text PDF (ATS-readable), via pdfmake
 //
 // CV data shape (all fields optional):
@@ -162,26 +162,28 @@ export function renderCV(cv, template = 'modern') {
 // Plain text
 // ---------------------------------------------------------------------------
 
-export function cvToMarkdown(cv) {
-  const out = [`# ${cv.name}`];
+/** Plain text for pasting into application forms: no Markdown symbols, "•" bullets. */
+export function cvToText(cv) {
+  const out = [cv.name];
   if (cv.headline) out.push(cv.headline);
   out.push(contactParts(cv).join(' · '), '');
-  if (cv.summary) out.push('## Profile', cv.summary, '');
-  if (cv.skills.length) out.push('## Skills', ...cv.skills.map((s) => `- ${s.label ? `**${s.label}:** ` : ''}${s.items.join(', ')}`), '');
+  const head = (t) => out.push(t.toUpperCase());
+  if (cv.summary) head('Profile'), out.push(cv.summary, '');
+  if (cv.skills.length) head('Skills'), out.push(...cv.skills.map((s) => `${s.label ? `${s.label}: ` : ''}${s.items.join(', ')}`), '');
   if (cv.experience.length) {
-    out.push('## Experience');
+    head('Experience');
     for (const e of cv.experience) {
-      out.push(`### ${[e.title, e.company].filter(Boolean).join(' · ')}${dates(e) ? ` (${dates(e)})` : ''}`);
-      if (e.location) out.push(e.location);
-      out.push(...e.bullets.map((b) => `- ${b}`), '');
+      out.push([e.title, e.company, e.location].filter(Boolean).join(', ') + (dates(e) ? ` (${dates(e)})` : ''));
+      out.push(...e.bullets.map((b) => `• ${b}`), '');
     }
   }
-  if (cv.projects.length) out.push('## Projects', ...cv.projects.map((p) => `- **${p.name}**${p.description ? `: ${p.description}` : ''}${p.link ? ` (${p.link})` : ''}`), '');
+  if (cv.projects.length) head('Projects'), out.push(...cv.projects.map((p) => `• ${p.name}${p.description ? `: ${p.description}` : ''}${p.link ? ` (${p.link})` : ''}`), '');
   if (cv.education.length) {
-    out.push('## Education', ...cv.education.map((e) => `- **${e.degree}**${e.school ? `, ${e.school}` : ''}${dates(e) ? ` (${dates(e)})` : ''}${e.details ? ` · ${e.details}` : ''}`), '');
+    head('Education');
+    out.push(...cv.education.map((e) => `${e.degree}${e.school ? `, ${e.school}` : ''}${dates(e) ? ` (${dates(e)})` : ''}${e.details ? `. ${e.details}` : ''}`), '');
   }
-  if (cv.certifications.length) out.push('## Certifications', ...cv.certifications.map((c) => `- ${c}`), '');
-  if (cv.languages.length) out.push('## Languages', cv.languages.join(' · '), '');
+  if (cv.certifications.length) head('Certifications'), out.push(...cv.certifications.map((c) => `• ${c}`), '');
+  if (cv.languages.length) head('Languages'), out.push(cv.languages.join(' · '), '');
   return out.join('\n').trim();
 }
 

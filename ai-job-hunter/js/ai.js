@@ -12,6 +12,7 @@ import { store } from './store.js';
 import { caps, disable, SEARCH_SERVER, SEARCH_TOOL } from './runtime.js';
 import { portalsFor, portalForUrl } from './portals.js';
 import { normalizeCV } from './cvdoc.js';
+import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
 
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm';
 
@@ -419,8 +420,11 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
       : '';
   const raw = await ask({
     system:
-      'You are an expert CV writer and recruiter. You rewrite CVs so they win interviews for a specific job and pass applicant tracking systems. ' +
-      HONESTY,
+      'You are an experienced recruiter who helps people rewrite their own CV for a specific job. The result must pass applicant tracking systems ' +
+      'and read as if the candidate wrote it themselves. ' +
+      HONESTY +
+      '\n\n' +
+      HUMAN_STYLE,
     messages: [
       {
         role: 'user',
@@ -429,7 +433,7 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
           'Rewrite the master CV for this job:\n' +
           '- Lead with a 2-3 sentence profile aimed squarely at this role.\n' +
           '- Order sections and experience so the most relevant evidence comes first; trim or drop what does not help.\n' +
-          '- Rewrite bullets as achievements: strong verb, what you did, measurable result where the CV supports it. 3-5 bullets for recent roles, fewer for older ones.\n' +
+          '- Rewrite bullets so each one says what the person actually did and, where the CV supports it, what came of it. Vary how bullets are built. 3-5 bullets for recent roles, fewer for older ones.\n' +
           '- Use the job posting\'s own terms for skills and tools the CV genuinely shows. Group skills under short labels.\n' +
           '- Keep it to what fits on one or two A4 pages.\n' +
           `- Contact details: name "${p.name}", email "${p.email}", phone "${p.phone}", location "${p.location}" unless the CV says otherwise.` +
@@ -443,7 +447,7 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
     signal,
     onText,
   });
-  return normalizeCV(raw);
+  return cleanCV(normalizeCV(raw));
 }
 
 /**
@@ -477,21 +481,41 @@ export async function analyzeCV({ text = '', images = [] }, { signal, onText } =
   return reply;
 }
 
-export function writeCoverLetter(job, { tone = 'professional', ...opts } = {}) {
-  return ask({
-    system: 'You write concise, specific cover letters that sound like a real person, not a template. ' + HONESTY,
+export async function writeCoverLetter(job, { tone = 'professional', ...opts } = {}) {
+  const text = await ask({
+    system: 'You help people write their own cover letters. The letter must sound like the candidate wrote it, not a template. ' + HONESTY + '\n\n' + HUMAN_STYLE,
     messages: [
       {
         role: 'user',
         content:
           `${profileBlock()}\n\n${jobBlock(job)}\n\n` +
-          `Write a ${tone} cover letter for this job, 250-350 words. Open with why this specific role and company, ` +
-          'connect two or three concrete achievements from the CV to the job\'s needs, and close with a clear call to action. ' +
-          'No placeholders like [Company] — use the real details, or omit what is unknown. Output only the letter.',
+          `Write a ${tone} cover letter for this job, 220-320 words, in the first person. ` +
+          'Start with something specific about this role or company and why it fits the candidate, not with "I am writing to" or "I am excited to apply". ' +
+          'Connect two concrete things from the CV to what the job needs, in plain words. End with one simple, direct closing line and a sign-off with the candidate\'s name. ' +
+          'Contractions are fine. No placeholders like [Company]: use the real details, or leave out what is unknown. Output only the letter.',
       },
     ],
     ...opts,
   });
+  return cleanText(text);
+}
+
+/** Rewrite only the lines of a letter that contain the given phrases. */
+export async function reviseLetter(job, letter, phrases, opts = {}) {
+  const text = await ask({
+    system: 'You edit cover letters so they sound like the candidate wrote them. ' + HUMAN_STYLE,
+    messages: [
+      {
+        role: 'user',
+        content:
+          `${jobBlock(job)}\n\n<letter>\n${letter}\n</letter>\n\n` +
+          `Rewrite only the sentences that use these phrases: ${phrases.join(', ')}. Replace them with plain, specific wording. ` +
+          'Remove any dashes used as punctuation. Keep everything else exactly as it is. Output only the full letter.',
+      },
+    ],
+    ...opts,
+  });
+  return cleanText(text);
 }
 
 export function analyzeGap(job, opts) {
@@ -519,9 +543,9 @@ export function interviewQuestions(job, opts) {
         content:
           `${profileBlock()}\n\n${jobBlock(job)}\n\n` +
           'Prepare this candidate for interviews for this role. In Markdown, give:\n' +
-          '## Likely questions — 10 questions mixing behavioural, technical/role-specific and motivation questions, each followed by a 2-3 line suggested answer outline in STAR form drawn from the CV.\n' +
-          '## Questions to ask them — 5 sharp questions.\n' +
-          '## Research checklist — what to look up about the company before the interview.',
+          '## Likely questions: 10 questions mixing behavioural, technical/role-specific and motivation questions, each followed by a 2-3 line suggested answer outline in STAR form drawn from the CV.\n' +
+          '## Questions to ask them: 5 sharp questions.\n' +
+          '## Research checklist: what to look up about the company before the interview.',
       },
     ],
     ...opts,

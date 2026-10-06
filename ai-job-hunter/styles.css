@@ -389,3 +389,9 @@ input[type='checkbox'] { width: auto; accent-color: var(--accent); }
 .cv-page.t-compact h2 { font-size: 1.45rem; }
 .cv-page.t-compact .cv-section h3 { margin-top: 0.75rem; }
 @media (max-width: 560px) { .cv-page { padding: 1.3rem 1.1rem; } .cv-scroll { padding: 0.4rem; } }
+
+/* ---------- Writing check ---------- */
+.writing-check { margin-top: 0.9rem; padding: 0.6rem 0.75rem; border-radius: 8px; display: grid; gap: 0.5rem; justify-items: start; }
+.writing-check p { margin: 0; }
+.writing-check.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--text); }
+.writing-check.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--text); }
