@@ -21,6 +21,12 @@ export const TEMPLATES = [
   { id: 'awesome', name: 'Awesome CV', blurb: 'The well-known LaTeX CV with a bold colour accent.', ats: true, layout: 'single', font: 'sans', sep: '  |  ', accent: '#dc3522', accents: ['#dc3522', ...ACCENTS] },
   { id: 'moderncv', name: 'ModernCV', blurb: 'LaTeX classic with dates in a left column.', ats: true, layout: 'datecol', font: 'sans', sep: '  ·  ', accent: '#3873b3', accents: ['#3873b3', ...ACCENTS] },
   { id: 'europass', name: 'Europass', blurb: 'The EU standard layout with labels on the left.', ats: true, layout: 'europass', font: 'sans', sep: '  ·  ', accent: '#004494', accents: ['#004494', ...ACCENTS] },
+  { id: 'executive', name: 'Executive', blurb: 'Serif, left aligned, strong rules. For senior and corporate roles.', ats: true, layout: 'single', font: 'serif', sep: '  |  ', accent: '#1f3a5f', accents: ['#1f3a5f', ...ACCENTS] },
+  { id: 'elegant', name: 'Elegant', blurb: 'Centred serif with spaced capitals. Calm and classic.', ats: true, layout: 'single', font: 'serif', sep: '  ·  ', accent: '#7f1d1d', accents: ['#7f1d1d', ...ACCENTS] },
+  { id: 'professional', name: 'Professional', blurb: 'The popular builder look: shaded section bars and a coloured name.', ats: true, layout: 'single', font: 'sans', sep: '  |  ', accent: '#0f5c8c', accents: ['#0f5c8c', ...ACCENTS] },
+  { id: 'tech', name: 'Tech', blurb: 'Compact one-pager for engineers. Fits a lot on one page.', ats: true, layout: 'single', font: 'sans', sep: '  ·  ', accent: '#0d9488', accents: ['#0d9488', ...ACCENTS] },
+  { id: 'clean', name: 'Clean', blurb: 'Light name, coloured headings, no lines. Like the Google Docs résumés.', ats: true, layout: 'single', font: 'sans', sep: '  ·  ', accent: '#c2410c', accents: ['#c2410c', ...ACCENTS] },
+  { id: 'banner', name: 'Banner', blurb: 'A colour band across the top. Stands out and stays one column.', ats: true, layout: 'single', font: 'sans', sep: '  ·  ', accent: '#312e81', accents: ['#312e81', ...ACCENTS] },
   { id: 'sidebar', name: 'Sidebar', blurb: 'Coloured sidebar for contact and skills. Eye-catching, but some ATS read two columns poorly.', ats: false, layout: 'sidebar', font: 'sans', sep: '\n', accent: '#1e3a5f', accents: ['#1e3a5f', ...ACCENTS] },
 ];
 
@@ -39,8 +45,69 @@ export const FONT_CHOICES = [
   { id: 'Tinos', name: 'Times style', note: 'Tinos', css: "'Tinos', 'Times New Roman', serif", kind: 'Serif', builtin: true },
   { id: 'EBGaramond', name: 'Garamond', note: 'EB Garamond, elegant', css: "'EB Garamond', 'Garamond', serif", kind: 'Serif' },
   { id: 'Lora', name: 'Lora', note: 'Classic and soft', css: "'Lora', serif", kind: 'Serif' },
+  { id: 'OpenSans', name: 'Open Sans', note: 'The most used web font', css: "'Open Sans', sans-serif", kind: 'Sans' },
+  { id: 'Poppins', name: 'Poppins', note: 'Geometric and modern', css: "'Poppins', sans-serif", kind: 'Sans' },
+  { id: 'Raleway', name: 'Raleway', note: 'Elegant sans serif', css: "'Raleway', sans-serif", kind: 'Sans' },
+  { id: 'WorkSans', name: 'Work Sans', note: 'Plain and professional', css: "'Work Sans', sans-serif", kind: 'Sans' },
+  { id: 'IBMPlexSans', name: 'IBM Plex Sans', note: 'Technical and precise', css: "'IBM Plex Sans', sans-serif", kind: 'Sans' },
+  { id: 'NunitoSans', name: 'Nunito Sans', note: 'Soft and approachable', css: "'Nunito Sans', sans-serif", kind: 'Sans' },
+  { id: 'PTSans', name: 'PT Sans', note: 'Humanist, very readable', css: "'PT Sans', sans-serif", kind: 'Sans' },
+  { id: 'PTSerif', name: 'PT Serif', note: 'Sturdy serif for print', css: "'PT Serif', serif", kind: 'Serif' },
+  { id: 'SourceSerifPro', name: 'Source Serif', note: 'Modern book serif', css: "'Source Serif 4', 'Source Serif Pro', serif", kind: 'Serif' },
+  { id: 'LibreBaskerville', name: 'Baskerville', note: 'Libre Baskerville, traditional', css: "'Libre Baskerville', 'Baskerville', serif", kind: 'Serif' },
+  { id: 'CrimsonText', name: 'Crimson', note: 'Crimson Text, book style', css: "'Crimson Text', serif", kind: 'Serif' },
+  { id: 'PlayfairDisplay', name: 'Playfair', note: 'Playfair Display, stylish', css: "'Playfair Display', serif", kind: 'Serif' },
 ];
 export const fontChoice = (id) => FONT_CHOICES.find((f) => f.id === id) || FONT_CHOICES[0];
+
+// Page layout, like Word's Layout tab: text size, line spacing and margins.
+// Applied to the screen page here and to the PDF by applyLayout().
+const SIZE = { s: 0.92, m: 1, l: 1.08 };
+const SPACE = { compact: 0.86, normal: 1, roomy: 1.15 };
+const MARGIN = { narrow: 0.7, normal: 1, wide: 1.3 };
+const PADDING = { narrow: '1.4rem 1.5rem', wide: '3rem 3.4rem' };
+export const LAYOUT_OPTIONS = {
+  size: [['s', 'Small'], ['m', 'Normal'], ['l', 'Large']],
+  spacing: [['compact', 'Compact'], ['normal', 'Normal'], ['roomy', 'Roomy']],
+  margins: [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']],
+};
+function applyLayoutPage(page, layout) {
+  if (!layout) return;
+  const z = SIZE[layout.size] ?? 1;
+  const sp = SPACE[layout.spacing] ?? 1;
+  if (z !== 1) page.style.setProperty('--cv-zoom', String(z));
+  if (sp !== 1) page.style.lineHeight = String(+(1.5 * sp).toFixed(3));
+  if (sp !== 1) page.style.setProperty('--cv-gap', String(sp));
+  if (PADDING[layout.margins]) page.style.padding = PADDING[layout.margins];
+}
+
+/** The same layout for a PDF definition: font sizes, vertical spacing and page margins. */
+export function applyLayout(def, layout) {
+  if (!layout) return def;
+  const z = SIZE[layout.size] ?? 1;
+  const sp = SPACE[layout.spacing] ?? 1;
+  const m = def.background ? 1 : MARGIN[layout.margins] ?? 1; // the sidebar paints its own column
+  if (z === 1 && sp === 1 && m === 1) return def;
+  const pm = def.pageMargins || [40, 40, 40, 40];
+  const oldW = A4_W - pm[0] - pm[2];
+  const newPm = pm.map((v) => Math.round(v * m));
+  const newW = A4_W - newPm[0] - newPm[2];
+  const walk = (n) => {
+    if (Array.isArray(n)) return n.forEach(walk);
+    if (!n || typeof n !== 'object') return;
+    if (typeof n.fontSize === 'number') n.fontSize = +(n.fontSize * z).toFixed(2);
+    if (Array.isArray(n.margin) && n.margin.length === 4 && sp !== 1) n.margin = [n.margin[0], n.margin[1] * sp, n.margin[2], n.margin[3] * sp];
+    if (Array.isArray(n.canvas)) for (const c of n.canvas) if (typeof c.x2 === 'number' && Math.abs(c.x2 - oldW) < 1.5) c.x2 = newW;
+    for (const k of ['content', 'stack', 'columns', 'ul', 'ol', 'text', 'table', 'body']) if (n[k] && typeof n[k] === 'object') walk(n[k]);
+  };
+  walk(def.content);
+  if (def.defaultStyle) {
+    if (typeof def.defaultStyle.fontSize === 'number') def.defaultStyle.fontSize = +(def.defaultStyle.fontSize * z).toFixed(2);
+    if (typeof def.defaultStyle.lineHeight === 'number') def.defaultStyle.lineHeight = +(def.defaultStyle.lineHeight * (1 + (sp - 1) * 0.7)).toFixed(3);
+  }
+  def.pageMargins = newPm;
+  return def;
+}
 
 /** Put the picked font on a page (screen). */
 function applyFont(page, fontId) {
@@ -213,11 +280,12 @@ const splitName = (name) => {
  * The CV on an A4 page in a template.
  * @param {object} [opts] { editable } draw every text as an editable field
  */
-export function renderCV(cv, templateId = 'harvard', pickedAccent, { editable = false, font = '' } = {}) {
+export function renderCV(cv, templateId = 'harvard', pickedAccent, { editable = false, font = '', layout = null } = {}) {
   const t = getTemplate(templateId);
   const accent = accentFor(t, pickedAccent);
   const page = h('article', { class: `cv-page tpl-${t.id} lay-${t.layout}${editable ? ' editing' : ''}`, style: `--cv-accent:${accent}` });
   applyFont(page, font);
+  applyLayoutPage(page, layout);
   EDIT = editable;
   try {
     if (t.layout === 'sidebar') {
@@ -439,15 +507,15 @@ export async function makePDF(definition, { font = '' } = {}) {
 
 function pdfLook(t, accent, font = '') {
   const serif = t.font === 'serif';
-  const base = t.id === 'jakes' ? 9.5 : serif ? 10.5 : 10;
+  const base = t.id === 'jakes' || t.id === 'tech' ? 9.5 : serif ? 10.5 : 10;
   return {
     font: fontChoice(font).id || FAMILY[t.font],
     picked: Boolean(fontChoice(font).id),
     base,
     accent,
-    headColor: { harvard: '#111111', jakes: '#111111', modern: accent, minimal: '#6b7280', awesome: '#222222', moderncv: accent, europass: accent, sidebar: accent }[t.id],
-    nameSize: { harvard: 20, jakes: 24, modern: 22, minimal: 24, awesome: 28, moderncv: 26, europass: 20, sidebar: 24 }[t.id],
-    center: ['harvard', 'jakes', 'awesome'].includes(t.id),
+    headColor: { harvard: '#111111', jakes: '#111111', modern: accent, minimal: '#6b7280', awesome: '#222222', moderncv: accent, europass: accent, sidebar: accent, executive: accent, elegant: accent, professional: accent, tech: accent, clean: accent, banner: accent }[t.id],
+    nameSize: { harvard: 20, jakes: 24, modern: 22, minimal: 24, awesome: 28, moderncv: 26, europass: 20, sidebar: 24, executive: 22, elegant: 24, professional: 24, tech: 20, clean: 28, banner: 24 }[t.id],
+    center: ['harvard', 'jakes', 'awesome', 'elegant'].includes(t.id),
   };
 }
 
@@ -464,6 +532,16 @@ function pdfHeading(t, L, title, width) {
       return [{ text: [{ text: title.slice(0, 3), color: L.accent }, title.slice(3)], bold: true, fontSize: L.base + 5, margin: [0, 12, 0, 1] }, rule('#999999', 0.5)];
     case 'sidebar':
       return [{ text: title.toUpperCase(), bold: true, fontSize: L.base + 1, color: L.accent, characterSpacing: 1, margin: [0, 12, 0, 1] }, rule(L.accent, 1.2)];
+    case 'executive':
+      return [{ text: title.toUpperCase(), bold: true, fontSize: L.base + 0.5, color: L.accent, characterSpacing: 1.2, margin: [0, 12, 0, 1] }, rule(L.accent, 1.6)];
+    case 'elegant':
+      return [{ text: title.toUpperCase(), fontSize: L.base, color: L.accent, characterSpacing: 2.4, alignment: 'center', margin: [0, 13, 0, 2] }, rule('#c9c9c9', 0.5)];
+    case 'professional':
+      return [{ table: { widths: ['*'], body: [[{ text: title.toUpperCase(), bold: true, fontSize: L.base, color: L.accent, characterSpacing: 0.8, fillColor: '#eef2f6', margin: [6, 3, 6, 3] }]] }, layout: 'noBorders', margin: [0, 12, 0, 4] }];
+    case 'tech':
+      return [{ text: title.toUpperCase(), bold: true, fontSize: L.base - 0.5, color: L.accent, characterSpacing: 1, margin: [0, 9, 0, 1] }, rule('#d1d5db', 0.6)];
+    case 'clean':
+      return [{ text: title, bold: true, fontSize: L.base + 2.5, color: L.accent, margin: [0, 14, 0, 4] }];
     default:
       return [{ text: title, bold: true, fontSize: L.base + 2, color: L.headColor, margin: [0, 12, 0, 1] }, rule(L.accent, 0.8)];
   }
@@ -525,6 +603,10 @@ function pdfName(cv, t, L) {
   }
   if (t.id === 'minimal') return { text: cv.name, font: L.picked ? L.font : 'SourceSansLight', fontSize: L.nameSize, color: INK };
   if (t.id === 'jakes') return { text: cv.name, fontSize: L.nameSize, alignment: 'center' };
+  if (t.id === 'executive') return { text: (cv.name || '').toUpperCase(), bold: true, fontSize: L.nameSize, color: L.accent, characterSpacing: 1.5 };
+  if (t.id === 'elegant') return { text: (cv.name || '').toUpperCase(), fontSize: L.nameSize, color: '#1f1f1f', characterSpacing: 3, alignment: 'center' };
+  if (t.id === 'professional' || t.id === 'banner') return { text: cv.name, bold: true, fontSize: L.nameSize, color: L.accent };
+  if (t.id === 'clean') return { text: cv.name, font: L.picked ? L.font : 'SourceSansLight', fontSize: L.nameSize, color: INK };
   return { text: cv.name, bold: true, fontSize: L.nameSize, color: t.id === 'moderncv' ? '#333333' : t.id === 'modern' ? L.accent : '#111111', alignment: L.center ? 'center' : 'left' };
 }
 
@@ -536,12 +618,21 @@ export function cvPDFDefinition(cv, templateId = 'harvard', pickedAccent, { font
 
   if (t.layout === 'sidebar') return sidebarPDF(cv, t, L, defaults, info);
 
-  const margins = t.id === 'jakes' ? [40, 34, 40, 34] : [48, 42, 48, 42];
+  const margins = t.id === 'jakes' || t.id === 'tech' ? [40, 34, 40, 34] : [48, 42, 48, 42];
   const width = A4_W - margins[0] - margins[2];
   const content = [];
 
   if (t.layout === 'europass' || t.layout === 'datecol') return gridPDF(cv, t, L, defaults, info, margins, width);
 
+  if (t.id === 'banner') {
+    // A colour band across the top with the name, headline and contact in white.
+    const band = [{ text: cv.name, bold: true, fontSize: L.nameSize, color: '#ffffff' }];
+    if (cv.headline) band.push({ text: cv.headline, color: '#e0e7ff', fontSize: L.base + 1.5, margin: [0, 2, 0, 0] });
+    band.push({ text: contactParts(cv).join(t.sep), color: '#ffffff', fontSize: L.base - 0.5, margin: [0, 6, 0, 0] });
+    content.push({ table: { widths: ['*'], body: [[{ stack: band, fillColor: L.accent, margin: [16, 14, 16, 14] }]] }, layout: 'noBorders', margin: [0, 0, 0, 4] });
+    for (const key of sectionsFor(cv, t)) content.push(...pdfHeading(t, L, sectionTitle(cv, key), width), ...pdfBody(cv, t, L, key));
+    return { pageSize: 'A4', pageMargins: margins, info, content, defaultStyle: defaults };
+  }
   content.push(pdfName(cv, t, L));
   if (cv.headline) {
     content.push({
@@ -707,12 +798,13 @@ function letterBodyPreview(parts) {
 }
 
 /** On-screen cover letter in a template. */
-export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}, { editable = false, font = '' } = {}) {
+export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}, { editable = false, font = '', layout = null } = {}) {
   const t = getTemplate(templateId);
   const accent = accentFor(t, pickedAccent);
   const parts = letterParts(cv, letterText, meta);
   const page = h('article', { class: `cv-page letter-page tpl-${t.id} lay-${t.layout}${editable ? ' editing' : ''}`, style: `--cv-accent:${accent}` });
   applyFont(page, font);
+  applyLayoutPage(page, layout);
   EDIT = editable;
   try {
     if (t.layout === 'sidebar') {

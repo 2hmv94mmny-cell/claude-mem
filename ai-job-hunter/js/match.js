@@ -1100,7 +1100,10 @@ export async function moreJobsForYou(profile, { signal, exclude = [] } = {}) {
 // About the company, from the posting itself
 // ---------------------------------------------------------------------------
 
-const ABOUT_HEADING = /^(?:#+\s*)?(?:uber uns|about us|about the company|about the team|wer wir sind|who we are|a propos(?: de nous)?|qui sommes-nous|unser unternehmen|das unternehmen|the company|company description|company overview|unternehmensprofil|uber (?:die|das|den)?\s*\S+|about \S+)\s*:?/;
+const ABOUT_HEADING = /^(?:#+\s*)?(?:uber uns|about us|about the company|wer wir sind|who we are|a propos(?: de nous)?|qui sommes-nous|unser unternehmen|das unternehmen|the company|company description|company overview|unternehmensprofil|chi siamo|quienes somos|sobre nosotros|uber (?:die|das|den)?\s*\S+|about \S+)\s*:?/;
+// Headings and lines about the job itself, never about the employer.
+const ROLE_HEADING = /^(?:#+\s*)?(?:uber|about|a propos de)\s+(?:the\s+|die\s+|das\s+|den\s+|this\s+|le\s+|la\s+)?(?:role|job|position|opportunity|team|stelle|aufgabe|funktion|rolle|job|poste|you|dich|sie|uns als arbeitgeber)\b/;
+const JOB_LINE = /\b(you will|you'll|your tasks|your role|responsibilit|requirements|we are looking for|we're looking for|we offer|what you bring|your profile|du wirst|deine aufgaben|ihre aufgaben|ihr profil|dein profil|wir suchen|wir bieten|anforderungen|vous serez|vos missions|votre profil|nous recherchons|apply|bewirb|bewerben|postulez)/;
 const COMPANY_FACT = /gegrundet|founded|fondee|mitarbeitende|mitarbeiter|employees|collaborateurs|hauptsitz|headquarter|siege|standorte|locations|marktfuhrer|market leader|weltweit|worldwide|international|familienunternehmen|family[- ]owned|kotiert|listed|seit \d{4}|since \d{4}/;
 
 /**
@@ -1109,11 +1112,12 @@ const COMPANY_FACT = /gegrundet|founded|fondee|mitarbeitende|mitarbeiter|employe
  */
 export function aboutFromPosting(job) {
   const lines = String(job.description || '').split('\n').map((l) => l.trim()).filter(Boolean);
-  const name = norm(String(job.company || '').split(/\s+/)[0] || '');
+  const company = resolveCompany(job);
+  const name = norm(String(company || '').split(/\s+/)[0] || '');
   // 1. A heading like "Über uns" / "About us" / "Über Medartis", and what follows it.
   for (let i = 0; i < lines.length; i++) {
     const n = norm(lines[i]);
-    if (!ABOUT_HEADING.test(n)) continue;
+    if (!ABOUT_HEADING.test(n) || ROLE_HEADING.test(n)) continue;
     if (/^uber (?:die|das|den)?\s*\S+/.test(n) && name && !n.includes(name) && !/^uber uns/.test(n)) continue;
     // The heading may be glued to the text ("Über MedartisBei Medartis …").
     const glued = lines[i].replace(/^#+\s*/, '').replace(/^(?:Über|About|À propos de)\s+\S+?(?=[A-ZÄÖÜ][a-zäöü])/, '');
@@ -1122,11 +1126,46 @@ export function aboutFromPosting(job) {
     for (let j = i + 1; j < lines.length && out.join(' ').length < 700; j++) {
       const l = lines[j];
       if (l.length < 45 && !/[.!]$/.test(l) && out.length) break; // next heading
+      if (JOB_LINE.test(norm(l))) break; // the job part starts
       if (l.length >= 45) out.push(l.replace(/^[-*•]\s*/, ''));
     }
     if (out.length) return out.join(' ').slice(0, 900);
   }
-  // 2. Sentences that state company facts and name the company.
-  const facts = lines.filter((l) => l.length > 60 && COMPANY_FACT.test(norm(l)) && (!name || norm(l).includes(name) || /\b(wir|we|nous)\b/.test(norm(l))));
+  // 2. Sentences that state hard company facts (founded, employees, headquarters …),
+  //    name the company, and are not about the job.
+  const STRONG = /gegrundet|founded|fondee|mitarbeitende|mitarbeiter|employees|collaborateurs|hauptsitz|headquarter|siege|familienunternehmen|family[- ]owned|kotiert|listed on|seit \d{4}|since \d{4}|depuis \d{4}|marktfuhrer|market leader|leader mondial/;
+  const facts = lines.filter((l) => {
+    const n = norm(l);
+    return l.length > 60 && STRONG.test(n) && !JOB_LINE.test(n) && (name ? n.includes(name) : /\b(wir sind|we are|nous sommes)\b/.test(n));
+  });
   return facts.slice(0, 2).join(' ').slice(0, 900);
+}
+
+// Names that are a job site, a placeholder or a staffing label, not the employer.
+const NOT_EMPLOYER = /^(?:jobs?\.ch|jobup(?:\.ch)?|linkedin|indeed|glassdoor|xing|stepstone|monster|google jobs|jobscout24|jobagent|jobs|careers?|confidential|vertraulich|anonym(?:ous)?|unknown|n\/a|company|unternehmen|firma|employer|arbeitgeber|recruiter|personalberatung|staffing|hiring)$/i;
+const LEGAL = '(?:AG|GmbH|SA|S\\.A\\.|Sàrl|SARL|Ltd\\.?|Limited|Inc\\.?|LLC|SE|plc|PLC|AB|BV|B\\.V\\.|NV|N\\.V\\.|KG|GmbH & Co\\. KG|S\\.p\\.A\\.|SpA|S\\.L\\.|Oy|AS|A\\/S)';
+
+/**
+ * The employer's real name: the posting's company field when it is a real
+ * name, otherwise the name the description itself uses most ("Bei Roche …",
+ * "Medartis AG", "About Lonza", "Roche is looking for …").
+ */
+export function resolveCompany(job) {
+  const given = String(job.company || '').trim();
+  const text = `${job.title || ''}\n${job.description || ''}`;
+  const usable = given && !NOT_EMPLOYER.test(given) && given.length > 1;
+  if (usable && text.toLowerCase().includes(given.split(/\s+/)[0].toLowerCase())) return given;
+  const counts = new Map();
+  const add = (n, w = 1) => {
+    const c = String(n || '').trim().replace(/[.,;:]+$/, '').replace(/^(?:(?:Die|Der|Das|The|La|Le|Les|L'|Il|El|Our|Unser|Unsere|Notre|Ihre|Your)\s+)+/, '');
+    if (!c || c.length < 2 || c.length > 60 || NOT_EMPLOYER.test(c) || /^(?:Wir|We|Our|Unser|Die|Der|Das|The|Ihre|Your|Du|Sie|Nous|Notre)$/i.test(c)) return;
+    counts.set(c, (counts.get(c) || 0) + w);
+  };
+  const CAP = "\\p{Lu}[\\p{L}\\p{N}&+'’.\\-]*";
+  for (const m of text.matchAll(new RegExp(`(?<![\\p{L}])(${CAP}(?:[ \\t]+${CAP}){0,3})[ \\t]+${LEGAL}(?=[\\s,.)]|$)`, 'gu'))) add(`${m[1]} ${m[0].slice(m[1].length).trim()}`, 3);
+  for (const m of text.matchAll(new RegExp(`(?<![\\p{L}])(?:Bei|Über|At|About|Join|Joining|Chez|À propos de|Presso)[ \\t]+(${CAP}(?:[ \\t]+${CAP}){0,2})`, 'gu'))) add(m[1], 2);
+  for (const m of text.matchAll(new RegExp(`(?:^|[.!\\n]\\s*)(${CAP}(?:[ \\t]+${CAP}){0,2})[ \\t]+(?:is|ist|est|sucht|is looking|is hiring|recherche|cerca|busca)(?![\\p{L}])`, 'gu'))) add(m[1], 2);
+  const best = [...counts].sort((a, b) => b[1] - a[1])[0];
+  if (best && best[1] >= 2) return best[0];
+  return usable ? given : '';
 }

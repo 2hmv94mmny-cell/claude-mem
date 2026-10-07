@@ -904,8 +904,9 @@ export function analyzeGap(job, opts) {
 // ---------------------------------------------------------------------------
 
 const COMPANY_FORMAT =
-  'Reply with only a JSON object: {"name": string, "oneLiner": string (max 14 words: what the company is), ' +
-  '"whatTheyDo": string (2-3 plain sentences), "industry": string, "founded": string, "headquarters": string, ' +
+  'Reply with only a JSON object: {"name": string (the employer\'s official name), "confirmed": boolean (true only if the sources clearly describe this same employer), ' +
+  '"oneLiner": string (max 14 words: what the company is), ' +
+  '"whatTheyDo": string (2-3 plain sentences about the company\'s business: what it makes or offers, for whom, where. Never describe the job, its tasks or requirements), "industry": string, "founded": string, "headquarters": string, ' +
   '"employees": string (e.g. "about 1,400"), "ownership": string (e.g. "listed on SIX Swiss Exchange", "family owned", "startup, Series B"), ' +
   '"website": string (official homepage URL), "products": string[] (max 4, short), "culture": string[] (max 3: what working there is like, from the company or reviews), ' +
   '"rating": string (employee rating with its source, e.g. "4.1/5 on kununu (230 reviews)", or ""), ' +
@@ -922,21 +923,27 @@ export async function companyProfile(job, { signal } = {}) {
   if (!name) throw new Error('This posting does not name the company.');
   const where = job.location ? ` (${job.location})` : '';
   const system =
-    'You research employers for job seekers. Use only facts that appear in the sources or the job posting, and keep them current. ' +
-    'If the sources are about a different company with a similar name, ignore them. Write plainly, no dashes as punctuation, no marketing language.' + uiLanguage(' (keep company and product names as they are)');
+    'You research employers for job seekers. First make sure who the employer is: the company that hires for this job, named in the posting ' +
+    '(a job site such as jobs.ch, LinkedIn or Indeed, or a recruitment agency, is not the employer unless the posting says so). ' +
+    'Then describe that company itself: its business, products, size, history and reputation. The job posting is only there to identify the employer; ' +
+    'never copy or summarise the job description, the tasks or the requirements as if they were about the company. ' +
+    'Use only facts that appear in the sources or in the posting\'s own words about the company, and keep them current. ' +
+    'If the sources are about a different company with a similar name, ignore them; if you cannot confirm the employer, set "confirmed" to false and leave the fields empty rather than guessing. ' +
+    'Write plainly, no dashes as punctuation, no marketing language.' + uiLanguage(' (keep company and product names as they are)');
   const posting = `<job_posting>\nCompany: ${name}${where}\nTitle: ${job.title}\n${String(job.description || '').slice(0, 4000)}\n</job_posting>`;
 
   let reply;
   if (!caps.mcp && caps.sample && !activeProvider()) throw new Error('Company lookup needs the Exa connector. Add it in claude.ai Settings → Connectors, then reload.');
   if (caps.mcp && (caps.sample || activeProvider())) {
     const searches = [
-      { query: `${name}${where} official website about the company`, objective: `The official website and "about us" page of the employer ${name}${where}: what it does, founding year, headquarters, number of employees, ownership.` },
+      { query: `"${name}" company${where} official website about us`, objective: `The official website and "about us" page of the company ${name}${where}: what the company does (products, services, customers), founding year, headquarters, number of employees, ownership. Not job ads.` },
+      { query: `"${name}" company profile industry headquarters employees`, objective: `A company profile of ${name}${where} (Wikipedia, Moneyhouse, Zefix, Crunchbase, LinkedIn company page or similar): industry, size, founding year, headquarters.` },
       { query: `${name} company news 2026`, objective: `Recent news about the company ${name}${where} from the last 12 months: results, launches, acquisitions, layoffs, leadership changes. Include dates.` },
       { query: `${name} employee reviews rating kununu glassdoor`, objective: `Employee reviews and the overall rating of ${name}${where} as an employer, with the number of reviews.` },
     ];
     const settled = await Promise.allSettled(searches.map((q) => caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { ...q, numResults: 6 }, { signal })));
     const blocks = settled
-      .map((r, i) => (r.status === 'fulfilled' ? `<results topic="${['about', 'news', 'reviews'][i]}">\n${(typeof r.value.payload === 'string' ? r.value.payload : JSON.stringify(r.value.payload ?? r.value.content)).slice(0, 12000)}\n</results>` : ''))
+      .map((r, i) => (r.status === 'fulfilled' ? `<results topic="${['about', 'profile', 'news', 'reviews'][i]}">\n${(typeof r.value.payload === 'string' ? r.value.payload : JSON.stringify(r.value.payload ?? r.value.content)).slice(0, 12000)}\n</results>` : ''))
       .filter(Boolean);
     if (!blocks.length) throw mcpError(settled.find((r) => r.status === 'rejected')?.reason);
     reply = await ask({ system, messages: [{ role: 'user', content: `${posting}\n\n${blocks.join('\n\n')}\n\n${COMPANY_FORMAT}` }], json: true, signal });
@@ -951,6 +958,10 @@ export async function companyProfile(job, { signal } = {}) {
   }
   if (!reply || typeof reply !== 'object' || Array.isArray(reply)) throw new Error('Claude replied in an unexpected format. Try again.');
   const str = (v) => cleanText(String(v ?? '')).trim();
+  // Nothing reliable found: say so instead of showing guesses or the job text.
+  if (reply.confirmed === false && !str(reply.website) && !str(reply.founded) && !str(reply.headquarters)) {
+    throw Object.assign(new Error(`Vora could not find reliable information about ${name} on the web.`), { code: 'not_found' });
+  }
   const list = (v, n) => (Array.isArray(v) ? v : []).map(str).filter(Boolean).slice(0, n);
   return {
     name: str(reply.name) || name,

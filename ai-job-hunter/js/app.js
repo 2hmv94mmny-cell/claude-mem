@@ -8,13 +8,13 @@ import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
-import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPages, isStale, knownClosed } from './match.js';
+import { jobsForYou, moreJobsForYou, aboutFromPosting, resolveCompany, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPages, isStale, knownClosed } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage, setBrand, locale, t as tr } from './i18n.js';
 import { attachSuggest, rememberSearch, recentSearches } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
-import { TEMPLATES, FONT_CHOICES, fontChoice, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
+import { TEMPLATES, FONT_CHOICES, LAYOUT_OPTIONS, applyLayout, fontChoice, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
 
 const view = document.getElementById('view');
 
@@ -959,6 +959,7 @@ function matchedSkills(job) {
 
 /** A filter chip that opens a short list of choices (Date posted, Match …). */
 function dropChip(label, options, value, onPick) {
+  for (const stray of document.querySelectorAll('body > .drop-menu')) stray.remove();
   const current = options.find(([v]) => v === value);
   const active = Boolean(value) && current;
   const d = h('details', { class: 'drop-chip' });
@@ -966,18 +967,26 @@ function dropChip(label, options, value, onPick) {
   for (const [v, text] of options) {
     const b = h('button', { type: 'button', role: 'menuitemradio', 'aria-checked': String(v === value) }, text);
     b.addEventListener('click', () => {
-      d.open = false;
+      shut();
       onPick(v);
     });
     list.append(b);
+  }
+  // Close right away and put the sheet back, before the filters redraw: some browsers never
+  // send "toggle" to a chip that was just replaced, which left the sheet covering the page.
+  function shut() {
+    d.open = false;
+    document.removeEventListener('pointerdown', close);
+    window.removeEventListener('scroll', onScroll);
+    if (list.parentNode !== d) d.append(list);
   }
   d.append(h('summary', { class: 'chip', 'aria-pressed': String(Boolean(active)) }, active ? current[1].replace(/\s*\(\d+\)$/, '') : label, h('span', { class: 'caret', 'aria-hidden': 'true' }, '▾')), list);
   // On a phone the choices open as a sheet from the bottom; on a computer, under the chip.
   const sheet = () => window.innerWidth <= 700;
   const close = (e) => {
-    if (!list.contains(e.target) && !d.firstChild.contains(e.target)) d.open = false;
+    if (!list.contains(e.target) && !d.firstChild.contains(e.target)) shut();
   };
-  const onScroll = () => (d.open = false);
+  const onScroll = () => shut();
   d.addEventListener('toggle', () => {
     if (!d.open) {
       document.removeEventListener('pointerdown', close);
@@ -987,6 +996,7 @@ function dropChip(label, options, value, onPick) {
     }
     // Above the tab bar and sticky search: the sheet lives on the page itself while open.
     if (sheet()) document.body.append(list);
+    list.addEventListener('keydown', (e) => e.key === 'Escape' && shut(), { once: true });
     for (const o of document.querySelectorAll('details.drop-chip[open]')) if (o !== d) o.open = false;
     if (!sheet()) {
       const r = d.firstChild.getBoundingClientRect();
@@ -2008,8 +2018,8 @@ const A4_HEIGHT = 1123;
 // The screen fonts for the font picker (the PDF embeds the same fonts).
 function ensureEditorFonts() {
   if (document.getElementById('vora-doc-fonts')) return;
-  const fams = ['Arimo', 'Carlito', 'Inter', 'Lato', 'Roboto', 'Montserrat', 'EB+Garamond', 'Lora'].map((f) => `family=${f}:ital,wght@0,400;0,700;1,400;1,700`).join('&');
-  document.head.append(h('link', { id: 'vora-doc-fonts', rel: 'stylesheet', href: `https://fonts.googleapis.com/css2?${fams}&display=swap` }));
+  const fams = ['Arimo', 'Carlito', 'Inter', 'Lato', 'Roboto', 'Montserrat', 'EB+Garamond', 'Lora', 'Open+Sans', 'Poppins', 'Raleway', 'Work+Sans', 'IBM+Plex+Sans', 'Nunito+Sans', 'PT+Sans', 'PT+Serif', 'Source+Serif+4', 'Libre+Baskerville', 'Crimson+Text', 'Playfair+Display'].map((f) => `${f}:400,400i,700,700i`).join('|');
+  document.head.append(h('link', { id: 'vora-doc-fonts', rel: 'stylesheet', href: `https://fonts.googleapis.com/css?family=${fams}&subset=latin,latin-ext&display=swap` }));
 }
 
 // The Documents hub: the main CV and the general cover letter as cards, plus
@@ -2037,7 +2047,7 @@ function renderDocumentsHub() {
         kind === 'cv'
           ? cvPDFDefinition(cvData, getTemplate(m.template).id, accentFor(getTemplate(m.template), m.accent), { font })
           : letterPDFDefinition(cvData || cvFromProfile(st.profile), L.body || '', letterTpl.id, letterAccent, { title: '', company: '', location: '', date: L.date, dateLine: L.dateLine, recipient: L.to, subject: L.subject }, { font });
-      await download(`${base}.pdf`, await makePDF(def, { font }), 'application/pdf');
+      await download(`${base}.pdf`, await makePDF(applyLayout(def, (kind === 'cv' ? m.layout : L.layout || m.layout) || null), { font }), 'application/pdf');
     } catch (err) {
       console.error(err);
       toast('Could not make the PDF. Check your connection and try again.');
@@ -2156,7 +2166,9 @@ function renderDocuments(initialKind) {
   const hasDoc = () => (kind === 'cv' ? Boolean(cv()) : typeof letterOf().body === 'string');
   // The font: the CV's pick; the letter follows the CV unless it has its own.
   const fontId = () => (kind === 'cv' ? master().font || '' : letterOf().font ?? master().font ?? '');
-  const page = (id, color, opts = {}) => (kind === 'cv' ? renderCV(cv(), id, color, { font: fontId(), ...opts }) : renderLetter(letterCV(), letterOf().body || '', id, color, letterMeta(), { font: fontId(), ...opts }));
+  // Page layout (text size, spacing, margins): the letter follows the CV unless it has its own.
+  const layoutOf = () => (kind === 'cv' ? master().layout : letterOf().layout || master().layout) || null;
+  const page = (id, color, opts = {}) => (kind === 'cv' ? renderCV(cv(), id, color, { font: fontId(), layout: layoutOf(), ...opts }) : renderLetter(letterCV(), letterOf().body || '', id, color, letterMeta(), { font: fontId(), layout: layoutOf(), ...opts }));
 
   // ----- undo / redo: snapshots of the content of each document -----
   const hist = { cv: { stack: [], i: -1 }, letter: { stack: [], i: -1 } };
@@ -2461,6 +2473,14 @@ function renderDocuments(initialKind) {
   // ----- design panel: templates and colours -----
   function drawDesign() {
     if (!hasDoc()) return design.replaceChildren(h('p', { class: 'panel-label' }, 'Design'), h('p', { class: 'small muted' }, 'Pick a template once your document is started.'));
+    // Keep the panel where it was: picking a template must not jump back to the top.
+    const keepTop = design.scrollTop;
+    const keepLeft = design.querySelector('.docs-gallery')?.scrollLeft || 0;
+    requestAnimationFrame(() => {
+      design.scrollTop = keepTop;
+      const g = design.querySelector('.docs-gallery');
+      if (g) g.scrollLeft = keepLeft;
+    });
     const t = getTemplate(tplId());
     const pick = (patch) => {
       if (kind === 'cv') saveMaster(patch);
@@ -2497,6 +2517,8 @@ function renderDocuments(initialKind) {
             }),
           )
         : '',
+      pageControls(),
+      h('p', { class: 'panel-label tpl-label' }, `Templates (${TEMPLATES.length})`),
       h('p', { class: 'tpl-info' }, h('strong', {}, `${t.name}. `), t.blurb),
       kind === 'letter' && letterOf().template
         ? (() => {
@@ -2510,6 +2532,99 @@ function renderDocuments(initialKind) {
         : '',
       gallery,
     );
+  }
+
+  // ----- page layout: text size, spacing, margins, fit to one page -----
+  function setLayout(patch) {
+    record();
+    const next = { size: 'm', spacing: 'normal', margins: 'normal', ...(layoutOf() || {}), ...patch };
+    if (kind === 'cv') saveMaster({ layout: next });
+    else saveLetter({ layout: next });
+    refresh();
+    record();
+    showSaved();
+  }
+  // Pages of the current document at A4 width, measured off-screen.
+  function measurePages(layout) {
+    const probe = h('div', { class: 'page-probe', 'aria-hidden': 'true' });
+    const el = kind === 'cv' ? renderCV(cv(), tplId(), accent(), { font: fontId(), layout }) : renderLetter(letterCV(), letterOf().body || '', tplId(), accent(), letterMeta(), { font: fontId(), layout });
+    probe.append(el);
+    document.body.append(probe);
+    const pages = Math.max(1, Math.ceil((el.offsetHeight - 4) / A4_HEIGHT));
+    probe.remove();
+    return pages;
+  }
+  function fitToPages(target) {
+    const tries = [
+      { size: 'm', spacing: 'normal', margins: 'normal' },
+      { size: 'm', spacing: 'compact', margins: 'normal' },
+      { size: 'm', spacing: 'compact', margins: 'narrow' },
+      { size: 's', spacing: 'compact', margins: 'normal' },
+      { size: 's', spacing: 'compact', margins: 'narrow' },
+    ];
+    const ok = tries.find((l) => measurePages(l) <= target);
+    if (!ok) {
+      toast(target === 1 ? 'Still more than one page at the smallest size. Ask Vora to shorten it.' : 'Still too long. Ask Vora to shorten it.');
+      setLayout(tries.at(-1));
+      return;
+    }
+    setLayout(ok);
+    toast(target === 1 ? 'Fits on one page now' : `Fits on ${target} pages now`);
+  }
+  function pageControls() {
+    const L = { size: 'm', spacing: 'normal', margins: 'normal', ...(layoutOf() || {}) };
+    const seg = (key, label) =>
+      h(
+        'div',
+        { class: 'pg-row' },
+        h('span', { class: 'pg-label' }, label),
+        h(
+          'div',
+          { class: 'segmented pg-seg', role: 'radiogroup', 'aria-label': label },
+          ...LAYOUT_OPTIONS[key].map(([v, text]) => {
+            const b = h('button', { type: 'button', role: 'radio', class: 'seg-btn', 'aria-checked': String(L[key] === v), 'aria-pressed': String(L[key] === v) }, text);
+            b.addEventListener('click', () => L[key] !== v && setLayout({ [key]: v }));
+            return b;
+          }),
+        ),
+      );
+    const pages = measurePages(layoutOf());
+    const fit1 = h('button', { type: 'button', class: 'btn small' }, 'Fit to one page');
+    fit1.addEventListener('click', () => fitToPages(1));
+    const fit2 = kind === 'cv' ? h('button', { type: 'button', class: 'btn small' }, 'Fit to two pages') : '';
+    if (fit2) fit2.addEventListener('click', () => fitToPages(2));
+    const reset = h('button', { type: 'button', class: 'link-btn small' }, 'Reset');
+    reset.addEventListener('click', () => setLayout({ size: 'm', spacing: 'normal', margins: 'normal' }));
+    return h(
+      'section',
+      { class: 'pg' },
+      h('div', { class: 'pg-head' }, h('p', { class: 'panel-label' }, 'Page'), h('span', { class: `pg-count${pages > (kind === 'cv' ? 2 : 1) ? ' warn' : ''}` }, `${pages} ${pages === 1 ? 'page' : 'pages'}`)),
+      seg('size', 'Text size'),
+      seg('spacing', 'Spacing'),
+      seg('margins', 'Margins'),
+      h('div', { class: 'pg-actions' }, pages > 1 ? fit1 : '', pages > 2 && fit2 ? fit2 : '', reset),
+    );
+  }
+
+  // A Word file of the page (Word opens HTML documents saved as .doc).
+  function downloadWord() {
+    const el = page(tplId(), accent());
+    const vars = { '--cv-accent': accent(), '--ink': '#111827', '--ink-muted': '#4b5563', '--paper': '#ffffff', '--f-serif': "'Times New Roman', Times, serif", '--f-sans': "Calibri, Arial, sans-serif", '--cv-font': fontChoice(fontId()).css || 'inherit', '--cv-zoom': '1', '--cv-gap': '1' };
+    const resolve = (css) => css.replace(/var\((--[\w-]+)(?:,[^)]*)?\)/g, (_, v) => vars[v] || 'inherit');
+    const css = [...document.styleSheets]
+      .flatMap((ss) => {
+        try {
+          return [...ss.cssRules];
+        } catch {
+          return [];
+        }
+      })
+      .filter((r) => r.selectorText && /cv-|tpl-|letter-/.test(r.selectorText) && !/editing|ed-|docs-|hub-|jd-|tpl-thumb|tpl-card/.test(r.selectorText))
+      .map((r) => resolve(r.cssText))
+      .join('\n');
+    const title = kind === 'cv' ? `${cv().name || 'CV'}` : 'Cover letter';
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${title.replace(/</g, '')}</title><style>@page { size: 21cm 29.7cm; margin: 1.8cm 2cm; } body { margin: 0; } ${css} .cv-page { box-shadow: none; max-width: none; padding: 0; background: #fff; }</style></head><body>${resolve(el.outerHTML)}</body></html>`;
+    download(`${fileBase()}.doc`, html, 'application/msword');
   }
 
   // ----- ribbon content -----
@@ -2814,6 +2929,7 @@ function renderDocuments(initialKind) {
         { class: 'menu', role: 'menu' },
         ...[
           ['Copy as plain text', copyText],
+          ['Download as Word (.doc)', downloadWord],
           ['Download as text file', txt],
           kind === 'cv' && store.get().profile.cv.trim() ? ['Lay out again from my profile CV', () => withAI({ kind: 'layout' }, async (signal) => (async () => { const cvData = await ai.structureCV({ signal }); stopIfCancelled(signal); saveMaster({ cvData }); })())] : null,
           ['Start over (blank)', () => startBlank(true)],
@@ -2860,7 +2976,7 @@ function renderDocuments(initialKind) {
     pdfBtn.lastChild.textContent = 'Making PDF…';
     try {
       const font = fontId();
-      const def = kind === 'cv' ? cvPDFDefinition(cv(), tplId(), accent(), { font }) : letterPDFDefinition(letterCV(), letterOf().body || '', tplId(), accent(), letterMeta(), { font });
+      const def = applyLayout(kind === 'cv' ? cvPDFDefinition(cv(), tplId(), accent(), { font }) : letterPDFDefinition(letterCV(), letterOf().body || '', tplId(), accent(), letterMeta(), { font }), layoutOf());
       await download(`${fileBase()}.pdf`, await makePDF(def, { font }), 'application/pdf');
     } catch (err) {
       console.error(err);
@@ -3322,7 +3438,7 @@ function lookupCompany(job) {
         .then((data) => {
           store.update((s) => {
             s.companies = s.companies || {};
-            s.companies[key] = { data, at: Date.now(), lang: currentLanguage() };
+            s.companies[key] = { data, at: Date.now(), lang: currentLanguage(), v: 2 };
             // Keep the cache small: the 40 most recent companies.
             const keys = Object.keys(s.companies).sort((a, b) => s.companies[b].at - s.companies[a].at);
             for (const k of keys.slice(40)) delete s.companies[k];
@@ -3335,7 +3451,10 @@ function lookupCompany(job) {
   return companyRuns.get(key);
 }
 
-function companySection(job) {
+function companySection(posting) {
+  // The real employer: job sites, "Confidential" or an empty field are replaced by
+  // the name the description itself uses ("Bei Medartis …", "Novartis AG").
+  const job = { ...posting, company: resolveCompany(posting) };
   const card = h('section', { class: 'card company-card', 'aria-live': 'polite' });
   const key = companyKey(job.company);
   const fromPosting = aboutFromPosting(job);
@@ -3427,11 +3546,12 @@ function companySection(job) {
     }
   }
 
+  // Profiles from before the employer check (v2) may describe the job instead of the company: look them up again.
   const cachedEntry = store.get().companies?.[key];
+  const cached = cachedEntry?.v === 2 ? cachedEntry : null;
   // A profile written in another interface language is shown, then refreshed.
-  const cached = cachedEntry;
   const otherLanguage = cachedEntry && (cachedEntry.lang || 'en') !== currentLanguage();
-  if (!job.company) postingOnly('The posting does not name the company.');
+  if (!job.company) postingOnly('The posting does not name the company, and Vora could not find the employer\'s name in the description.');
   else if (cached) draw(cached);
   else if (ai.canSearchWeb()) {
     // Look it up straight away; the answer is cached for every job at this company.
@@ -3701,6 +3821,7 @@ function renderJob(id) {
   const accent = () => accentFor(getTemplate(template()), docs().accent);
   // Documents for a job use the font picked in Documents.
   const jobFont = () => store.get().master?.font || '';
+  const jobLayout = () => store.get().master?.layout || null;
   const fileBase = () => slug(`${store.get().profile.name || 'cv'}-${job.company}`);
 
   // -----------------------------------------------------------------
@@ -3966,7 +4087,7 @@ function renderJob(id) {
     btn.disabled = true;
     btn.textContent = 'Making PDF…';
     try {
-      await download(filename, await makePDF(definition, { font: jobFont() }), 'application/pdf');
+      await download(filename, await makePDF(applyLayout(definition, jobLayout()), { font: jobFont() }), 'application/pdf');
     } catch (err) {
       console.error(err);
       toast('Could not make the PDF. Check your connection and try again.');
@@ -4019,7 +4140,7 @@ function renderJob(id) {
         ...docCard({
           kind: 'cv',
           ready: Boolean(d.cvData),
-          preview: d.cvData ? renderCV(d.cvData, t.id, accent(), { font: jobFont() }) : '',
+          preview: d.cvData ? renderCV(d.cvData, t.id, accent(), { font: jobFont(), layout: jobLayout() }) : '',
           onOpen: openStudio,
           title: 'Tailored CV',
           meta: `${t.name} template${jobFont() ? ` · ${fontChoice(jobFont()).name}` : ''}${d.updatedAt ? ` · updated ${fmtDate(d.updatedAt)}` : ''}`,
@@ -4032,7 +4153,7 @@ function renderJob(id) {
     }
 
     async function downloadCV(btn) {
-      await savePDF(cvPDFDefinition(docs().cvData, template(), accent(), { font: jobFont() }), `${fileBase()}-cv-${template()}.pdf`, btn);
+      await savePDF(cvPDFDefinition(docs().cvData, template(), accent(), { font: jobFont(), layout: jobLayout() }), `${fileBase()}-cv-${template()}.pdf`, btn);
     }
 
     // -----------------------------------------------------------------
@@ -4046,7 +4167,7 @@ function renderJob(id) {
         content: () => docs().cvData,
         tplId: template,
         accent,
-        page: (id, color, opts) => renderCV(docs().cvData, id, color, { font: jobFont(), ...opts }),
+        page: (id, color, opts) => renderCV(docs().cvData, id, color, { font: jobFont(), layout: jobLayout(), ...opts }),
         pick: (patch) => saveDoc(patch),
         download: downloadCV,
         setField(path, value, list) {
@@ -4142,7 +4263,7 @@ function renderJob(id) {
       recipient: docs().letterRecipient,
       subject: docs().letterSubject,
     });
-    const page = (id, color, opts) => renderLetter(letterCV(), docs().coverLetter || '', id, color, meta(), { font: jobFont(), ...opts });
+    const page = (id, color, opts) => renderLetter(letterCV(), docs().coverLetter || '', id, color, meta(), { font: jobFont(), layout: jobLayout(), ...opts });
     // Header fields on the letter belong to the person: the tailored CV for this job, or the profile.
     const PROFILE_FIELD = { name: 'name', headline: 'headline', 'contact.email': 'email', 'contact.phone': 'phone', 'contact.location': 'location' };
     function setLetterField(path, value, list) {
@@ -4183,7 +4304,7 @@ function renderJob(id) {
 
     async function downloadLetter(btn) {
       if (!docs().coverLetter) return toast('Write the letter first');
-      await savePDF(letterPDFDefinition(letterCV(), docs().coverLetter, letterTpl(), letterAccent(), meta(), { font: jobFont() }), `${fileBase()}-cover-letter-${letterTpl()}.pdf`, btn);
+      await savePDF(letterPDFDefinition(letterCV(), docs().coverLetter, letterTpl(), letterAccent(), meta(), { font: jobFont(), layout: jobLayout() }), `${fileBase()}-cover-letter-${letterTpl()}.pdf`, btn);
     }
 
     function draw() {
