@@ -16,7 +16,7 @@ import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
 import { currentLanguage, languageName } from './i18n.js';
 import { providerById, askProvider } from './providers.js';
 import { searchJobs } from './jobs.js';
-import { postedAt, portalQueries, RESULTS_PER_SEARCH, parseSearchResults, sameJob, readProfile, scoreJob } from './match.js';
+import { postedAt, portalQueries, RESULTS_PER_SEARCH, parseSearchResults, sameJob, readProfile, scoreJob, isClosed } from './match.js';
 
 // Every task runs with the same senior HR persona and quality bar, whichever
 // AI does the work (Claude, ChatGPT, Gemini, DeepSeek or Grok).
@@ -408,7 +408,13 @@ async function viewerSearch(what, where, remoteOnly, portals, { onText, onFound,
     signal,
   });
   if (!Array.isArray(list)) throw new Error('Claude replied in an unexpected format. Try again.');
-  const picked = list.filter((j) => j && j.title).map(toJob);
+  // Results whose page text says the job is closed, even if the AI kept them.
+  const closed = new Set();
+  for (const block of bodies.join('\n---\n').split(/\n-{3,}\n/)) {
+    const url = block.match(/^URL:\s*(\S+)/m)?.[1];
+    if (url && isClosed(block)) closed.add(url);
+  }
+  const picked = list.filter((j) => j && j.title && !closed.has(String(j.url || ''))).map(toJob);
   return [...picked, ...alsoFound(bodies, picked, where, rank)];
 }
 

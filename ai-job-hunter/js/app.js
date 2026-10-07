@@ -8,7 +8,7 @@ import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
-import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPostedDates } from './match.js';
+import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPages, isStale } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage, setBrand } from './i18n.js';
 import { attachSuggest, rememberSearch } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
@@ -168,7 +168,7 @@ function feedSection() {
   const counts = new Map();
   for (const j of feed.jobs) counts.set(j.source, (counts.get(j.source) || 0) + 1);
   if (feedFilter && !counts.has(feedFilter)) feedFilter = '';
-  const list = [...(feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs)].sort(byBestMatch);
+  const list = (feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs).filter((j) => !isStale(j)).sort(byBestMatch);
   const grid = h('div', { class: 'feed-grid' });
   const more = h('button', { class: 'btn feed-more', type: 'button' });
   const chips = h('div', { class: 'chip-row feed-chips', role: 'group', 'aria-label': 'Filter by job site' });
@@ -670,7 +670,7 @@ function renderFind() {
     }
     if (!session.results.some((j) => !j.extra) && !session.errors.length) session.errors = [NO_RESULTS];
     drawResults();
-    addDates(ctl.signal);
+    checkResults(ctl.signal);
   }
 
   // Add jobs to the main results: only the searched place, no repeats, scored
@@ -683,6 +683,7 @@ function renderFind() {
     const main = session.results.filter((j) => !j.extra);
     const fresh = [];
     for (const j of onlyIn(jobs, p)) {
+      if (isStale(j)) continue; // posted too long ago to still be open
       const seen = [...main, ...fresh].some((r) => (r.url && r.url === j.url) || sameJob(r, j) || (norm(r.title) === norm(j.title) && norm(r.company) === norm(j.company)));
       if (seen) continue;
       let match = j.match || session.scores[j.id];
@@ -703,19 +704,20 @@ function renderFind() {
     return true;
   }
 
-  // Most sites put the posting date on the job page, not in search results:
-  // read the pages of the undated jobs, then re-sort (best match, then newest).
-  async function addDates(signal) {
-    const run = (session.datesRun = Symbol('dates'));
+  // Open the job pages (best matches first): take out jobs whose page says
+  // they are closed or no longer exists, and fill in missing posting dates.
+  async function checkResults(signal) {
+    if (session.searching) return; // runs again when the search is done
+    const run = (session.datesRun = Symbol('check'));
     try {
-      const dates = await checkPostedDates(session.results.filter((j) => !j.extra), { signal });
-      if (session.datesRun !== run || !results.isConnected || !dates.size) return;
+      const { dates, gone } = await checkPages(session.results, { signal });
+      if (session.datesRun !== run || !results.isConnected || (!dates.size && !gone.size)) return;
       const dated = (j) => (!j.postedAt && dates.has(j.url) ? { ...j, postedAt: dates.get(j.url) } : j);
-      const main = session.results.filter((j) => !j.extra).map(dated).sort(byBestMatch);
-      session.results = [...main, ...session.results.filter((j) => j.extra).map(dated)];
+      const open = session.results.filter((j) => !gone.has(j.url) && !isStale(j)).map(dated);
+      session.results = [...open.filter((j) => !j.extra).sort(byBestMatch), ...open.filter((j) => j.extra)];
       drawResults();
     } catch {
-      // Jobs without a date simply stay after the dated ones.
+      // Unchecked jobs stay listed.
     }
   }
 
@@ -737,7 +739,7 @@ function renderFind() {
         const twin = known.find((k) => sameJob(k, j));
         if (twin) j.postedAt = jobPostedAt(twin);
       }
-      mergeMain(found, p);
+      if (mergeMain(found, p)) checkResults(signal);
     } catch {
       // Indeed is a bonus source; the search results stand on their own.
     }
@@ -783,6 +785,7 @@ function renderFind() {
       session.extraPlace = p.remoteOnly ? 'remote' : place;
       session.errors = session.errors.filter((e) => e !== NO_RESULTS);
       drawResults();
+      checkResults();
     } catch {
       // Extra matches are a bonus; the search results stand on their own.
     }

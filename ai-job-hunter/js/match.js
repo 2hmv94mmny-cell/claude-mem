@@ -463,40 +463,101 @@ export function byBestMatch(a, b) {
   return (jobPostedAt(b) || 0) - (jobPostedAt(a) || 0);
 }
 
+// ---------------------------------------------------------------------------
+// Is the job still open?
+// ---------------------------------------------------------------------------
+
+// What job pages say once a posting is closed, in the six interface languages.
+const CLOSED = new RegExp(
+  [
+    'no longer (?:accepting applications|available|active|open)',
+    '(?:job|position|posting|vacancy|role|listing) (?:has )?(?:expired|been filled|been closed|been removed|is closed|is filled|is no longer)',
+    'this job (?:has )?expired',
+    'applications? (?:are |is )?(?:now )?closed',
+    'position (?:has been )?filled',
+    'nicht mehr (?:verfügbar|aktiv|online|ausgeschrieben|gültig)',
+    '(?:stelle|position|vakanz) (?:ist |wurde )?(?:bereits )?besetzt',
+    'bereits besetzt',
+    '(?:ausschreibung|inserat|stellenanzeige|anzeige|stellenangebot) (?:ist |wurde )?(?:beendet|abgelaufen|deaktiviert|nicht mehr)',
+    'bewerbungsfrist (?:ist )?(?:abgelaufen|vorbei)',
+    'nimmt keine bewerbungen mehr',
+    'n[’\']est plus (?:disponible|en ligne|active|pourvu)',
+    "(?:offre|annonce) (?:a |est )?(?:expirée?|clôturée?|pourvue)",
+    "n[’']accepte plus de candidatures",
+    'non è più (?:disponibile|attiva|attivo)',
+    '(?:offerta|annuncio|posizione) (?:è )?(?:scadut[oa]|chius[oa])',
+    'ya no (?:está disponible|está activa|acepta (?:solicitudes|candidaturas))',
+    'oferta (?:ha )?(?:caducado|expirado|cerrada|finalizada)',
+    'não está mais disponível',
+    'vaga (?:encerrada|expirada|preenchida|fechada)',
+    'não aceita mais candidaturas',
+  ].join('|'),
+  'i',
+);
+
+/** True when a page or search result says the posting is closed. */
+export function isClosed(text) {
+  return CLOSED.test(String(text || '').slice(0, 6000));
+}
+
+/** Postings older than this are taken as closed (most portals end them after 30–60 days). */
+export const MAX_AGE_DAYS = 90;
+export function isStale(job, now = Date.now()) {
+  const ts = jobPostedAt(job);
+  return Boolean(ts) && now - ts > MAX_AGE_DAYS * DAY;
+}
+
 /**
- * Read the posting pages of jobs that came without a date and look for one.
- * One batched page read; a page that times out or shows no date stays undated.
- * @returns {Promise<Map<string, number>>} url → posting time
+ * Read the posting pages of the jobs shown (best first): drop the ones that
+ * are gone (the page says the job is closed, or the page no longer exists)
+ * and find the posting date where the search result had none. Each page is
+ * read at most once a day; a closed job is remembered as closed.
+ * @returns {Promise<{dates: Map<string, number>, gone: Set<string>}>} by url
  */
-export async function checkPostedDates(jobs, { signal, max = 12 } = {}) {
-  const found = new Map();
+export async function checkPages(jobs, { signal, max = 24 } = {}) {
+  const dates = new Map();
+  const gone = new Set();
   const memo = readDateMemo();
   const now = Date.now();
   const urls = [];
-  for (const url of new Set(jobs.filter((j) => !jobPostedAt(j) && j.source !== 'Indeed' && /^https?:\/\//.test(j.url || '')).map((j) => j.url))) {
-    const known = memo[url];
-    if (known?.[0]) found.set(url, known[0]); // a posting date never changes
-    else if (!known || now - known[1] > DATE_RECHECK) urls.push(url);
+  for (const url of new Set(jobs.filter((j) => j.source !== 'Indeed' && /^https?:\/\//.test(j.url || '')).map((j) => j.url))) {
+    const [posted = 0, checked = 0, closed = false] = memo[url] || [];
+    if (posted) dates.set(url, posted); // a posting date never changes
+    if (closed) gone.add(url);
+    else if (!checked || now - checked > PAGE_RECHECK) urls.push(url);
   }
-  if (!caps.mcp || !urls.length) return found;
+  if (!caps.mcp || !urls.length) return { dates, gone };
   const asked = urls.slice(0, max);
-  const res = await caps.mcp.callTool(SEARCH_SERVER, FETCH_TOOL, { urls: asked, maxCharacters: 2500 }, { signal });
-  for (const block of payloadText(res).split(/\n(?=# [^\n]*\n+URL: )/)) {
+  // Two reads at once, a dozen pages each.
+  const batches = [asked.slice(0, 12), asked.slice(12)].filter((b) => b.length);
+  const texts = await Promise.all(
+    batches.map((b) =>
+      caps.mcp
+        .callTool(SEARCH_SERVER, FETCH_TOOL, { urls: b, maxCharacters: 2500 }, { signal })
+        .then(payloadText)
+        .catch((err) => (err?.name === 'AbortError' ? Promise.reject(err) : String(err?.message || err || ''))),
+    ),
+  );
+  const text = texts.join('\n');
+  for (const block of text.split(/\n(?=# [^\n]*\n+URL: )/)) {
     const url = block.match(/^URL:\s*(\S+)/m)?.[1];
     if (!url || !asked.includes(url)) continue;
-    const ts = findPostedAt(block.split('\n').slice(2).join('\n'), now);
-    if (ts) found.set(url, ts);
+    const page = block.split('\n').slice(2).join('\n');
+    if (isClosed(page)) gone.add(url);
+    const ts = findPostedAt(page, now);
+    if (ts) dates.set(url, ts);
   }
-  // Remember the answer for every page read, dated or not, so it is not read again.
-  for (const url of asked) memo[url] = [found.get(url) || 0, now];
+  // "Error fetching URL(s): <url>: CRAWL_NOT_FOUND; …": the page was taken down.
+  for (const m of text.matchAll(/(https?:\/\/\S+?):\s*CRAWL_(?:NOT_FOUND|HTTP_404|HTTP_410)\b/g)) if (asked.includes(m[1])) gone.add(m[1]);
+  for (const url of asked) memo[url] = [dates.get(url) || 0, now, gone.has(url)];
   saveDateMemo(memo);
-  return found;
+  return { dates, gone };
 }
 
-// Posting dates already looked up: url -> [posted, checkedAt]. Pages without a
-// date are asked again after a few days (some sites add it later).
+// Pages already read: url -> [posted, checkedAt, closed]. Open jobs are read
+// again after a day, in case they closed since.
 const DATE_MEMO = 'ajh:dates';
-const DATE_RECHECK = 3 * DAY;
+const PAGE_RECHECK = DAY;
 function readDateMemo() {
   try {
     return JSON.parse(localStorage.getItem(DATE_MEMO) || '{}') || {};
@@ -523,6 +584,7 @@ export function parseSearchResults(text, { city = '' } = {}) {
     if (!title || !/^https?:\/\//.test(url || '')) continue;
     if (LIST_TITLE.test(title) || (LIST_URL.test(url) && !POSTING_URL.test(url))) continue;
     const body = (block.split(/^Highlights:\s*$/m)[1] || block.split(/^Text:\s*$/m)[1] || '').trim();
+    if (isClosed(`${title}\n${body}`)) continue; // the result already says the job is closed
     const looksLikeRole = find(ROLES, title).size > 0;
     if (!POSTING_URL.test(url) && !looksLikeRole) continue;
 
@@ -940,13 +1002,12 @@ export async function jobsForYou(profile, { signal, roles: searchRoles, exclude 
     })
     .filter((j) => j.match.score >= 30);
 
-  // Look up the posting date of the best undated matches, then best match first, newest first among equals.
-  const undated = [...ranked].sort((a, b) => b.match.score - a.match.score).filter((j) => !jobPostedAt(j));
-  const dates = await checkPostedDates(undated, { signal }).catch(() => new Map());
+  // Read the best matches' pages: leave out jobs that are closed, and find missing dates.
+  const { dates, gone } = await checkPages([...ranked].sort(byBestMatch), { signal }).catch(() => ({ dates: new Map(), gone: new Set() }));
   for (const j of ranked) if (!j.postedAt && dates.has(j.url)) j.postedAt = dates.get(j.url);
-  ranked.sort(byBestMatch);
+  const open = ranked.filter((j) => !gone.has(j.url) && !isStale(j)).sort(byBestMatch);
 
-  return { jobs: ranked, roles: me.roles, country: found.country, via, searched: found.searched || [] };
+  return { jobs: open, roles: me.roles, country: found.country, via, searched: found.searched || [] };
 }
 
 /**
