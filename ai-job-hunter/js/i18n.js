@@ -262,7 +262,7 @@ const DICT = {
 
   // Home
   'Find your next job': ['Finde deinen nächsten Job', 'Trouvez votre prochain emploi', 'Trova il tuo prossimo lavoro', 'Encuentra tu próximo empleo', 'Encontre seu próximo emprego'],
-  'One search covers the job portals near you. Claude ranks every role against your CV, then helps you tailor your application and practise the interview.': [
+  'One search covers the job portals near you. Vora ranks every role against your CV, then helps you tailor your application and practise the interview.': [
     'Eine Suche deckt die Jobportale in deiner Nähe ab. Claude vergleicht jede Stelle mit deinem Lebenslauf und hilft dir dann, deine Bewerbung anzupassen und das Interview zu üben.',
     'Une seule recherche couvre les sites d’emploi près de chez vous. Claude compare chaque poste à votre CV, puis vous aide à adapter votre candidature et à préparer l’entretien.',
     'Una sola ricerca copre i portali di lavoro vicino a te. Claude confronta ogni posizione con il tuo CV, poi ti aiuta ad adattare la candidatura e a prepararti al colloquio.',

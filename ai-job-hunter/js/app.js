@@ -380,7 +380,7 @@ function feedCard(job) {
       h('h3', {}, h('a', { href }, job.title)),
       h('p', { class: 'pick-company' }, [job.company, job.location].filter(Boolean).join(' · ')),
       h('div', { class: 'pick-meta' }, postedTag(job), h('span', { class: 'pick-source' }, job.source)),
-      job.match?.reason ? h('p', { class: 'pick-reason' }, job.match.reason) : '',
+      job.match?.reason ? h('p', { class: 'pick-reason', translate: 'no' }, job.match.reason) : '',
     ),
     h('div', { class: 'pick-side' }, scorePill(job.match), h('div', { class: 'row' }, bookmarkButton(job), h('span', { class: 'pick-go', 'aria-hidden': 'true' }, svgIcon(ICON_CHEVRON)))),
   );
@@ -1421,7 +1421,7 @@ function renderFind() {
           fresh ? h('span', { class: 'jc-tag new' }, 'New') : '',
           score ? h('span', { class: 'jc-mb-inline' }, matchBadge(score)) : '',
         ),
-        score?.reason ? h('p', { class: 'jc-reason' }, score.reason) : h('p', { class: 'jc-reason muted' }, job.description || ''),
+        score?.reason ? h('p', { class: 'jc-reason', translate: 'no' }, score.reason) : h('p', { class: 'jc-reason muted' }, job.description || ''),
         h('p', { class: 'jc-foot' }, postedLabel(job) || '', postedLabel(job) ? h('span', { 'aria-hidden': 'true' }, ' · ') : '', h('span', {}, `via ${job.source}`)),
       ),
       h('div', { class: 'jc-side' }, matchBadge(score), bookmarkButton({ ...job, match: score || job.match })),
@@ -1487,7 +1487,7 @@ function renderFind() {
               'section',
               { class: 'dt-match' },
               h('div', { class: `ring ring-${level}`, style: `--p:${pct}`, role: 'img', 'aria-label': `${pct}% match` }, h('strong', {}, `${pct}%`)),
-              h('div', {}, h('h3', {}, 'How you match'), h('p', {}, score.reason || 'Ranked against your CV.'), skills.length ? h('div', { class: 'dt-skills' }, ...skills.map((x) => h('span', { class: 'dt-skill' }, x))) : ''),
+              h('div', {}, h('h3', {}, 'How you match'), score.reason ? h('p', { translate: 'no' }, score.reason) : h('p', {}, 'Ranked against your CV.'), skills.length ? h('div', { class: 'dt-skills' }, ...skills.map((x) => h('span', { class: 'dt-skill' }, x))) : ''),
             )
           : '',
         h('section', { class: 'dt-facts' }, h('h3', {}, 'Job details'), h('dl', {}, ...facts.map(([k, v]) => h('div', { class: 'dt-fact' }, h('dt', {}, k), h('dd', {}, v))))),
@@ -3736,7 +3736,7 @@ function renderJob(id) {
               { class: 'cv-ready-info' },
               h('p', { class: 'cv-ready-state' }, 'Ready to send'),
               h('p', { class: 'muted small' }, `${t.name} template${d.updatedAt ? ` · updated ${fmtDate(d.updatedAt)}` : ''}`),
-              d.cvData.changes?.length ? h('p', { class: 'small' }, d.cvData.changes[0]) : '',
+              d.cvData.changes?.length ? h('p', { class: 'small', translate: 'no' }, d.cvData.changes[0]) : '',
               h('div', { class: 'row wrap' }, open, pdfBtn, gen),
             ),
           ),
@@ -3804,7 +3804,7 @@ function renderJob(id) {
               h(
                 'div',
                 { class: 'cv-notes' },
-                ...(cv.changes?.length ? [h('h3', {}, 'What changed for this job'), h('ul', {}, ...cv.changes.map((c) => h('li', {}, c)))] : [h('p', { class: 'muted' }, 'No change notes for this version.')]),
+                ...(cv.changes?.length ? [h('h3', {}, 'What changed for this job'), h('ul', { translate: 'no' }, ...cv.changes.map((c) => h('li', {}, c)))] : [h('p', { class: 'muted' }, 'No change notes for this version.')]),
                 ...(cv.keywords?.length ? [h('h3', {}, 'Keywords covered'), h('div', { class: 'tags' }, ...cv.keywords.map((k) => h('span', { class: 'tag' }, k)))] : []),
                 writingCheck(cvProse(cv), (phrases, signal) =>
                   reworkCV(`Rewrite only the lines that use these phrases: ${phrases.join(', ')}. Use plain, specific wording a person would use about their own work, and no dashes as punctuation. Keep everything else the same.`, signal, 'Rewording those lines…'),
@@ -4073,7 +4073,7 @@ function renderJob(id) {
         postedTag(job, 'Posting date not given'),
         saved() ? statusBadge(store.get().jobs[id].status) : '',
       ),
-      match?.reason ? h('p', { class: 'small', style: 'margin:var(--sp-3) 0 0;color:var(--text-2)' }, match.reason) : '',
+      match?.reason ? h('p', { class: 'small', translate: 'no', style: 'margin:var(--sp-3) 0 0;color:var(--text-2)' }, match.reason) : '',
       h('div', { class: 'detail-actions' }, applyBtn, saveBtn),
     ),
   );
