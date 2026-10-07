@@ -3219,6 +3219,25 @@ if (!inArtifact && 'serviceWorker' in navigator && location.protocol !== 'file:'
 setLanguage(store.get().settings.language || 'en');
 setBrand('Vora'); // the AI is called Vora, whichever provider powers it
 route();
+hideSplash();
+
+// The opening animation (inline in the page) leaves once the first screen is
+// drawn, the fonts are in and it has played for at least a moment.
+function hideSplash() {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const minShown = reduce ? 0 : 1600;
+  const fonts = Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 1500))]);
+  fonts.then(() =>
+    setTimeout(() => {
+      splash.classList.add('done');
+      splash.setAttribute('aria-hidden', 'true');
+      document.documentElement.classList.add('app-in');
+      setTimeout(() => splash.remove(), 700);
+    }, Math.max(0, minShown - performance.now())),
+  );
+}
 // In the artifact viewer, capabilities arrive a moment after load: redraw
 // once they do so AI and web search light up.
 if (inArtifact) runtimeReady.then((c) => (c.sample || c.mcp) && route());
