@@ -106,9 +106,20 @@ export function rememberSearch({ query = '', location = '' }) {
   const add = (list, v) => (v ? [v, ...list.filter((x) => norm(x) !== norm(v))].slice(0, 8) : list);
   r.what = add(r.what, query.trim());
   r.where = add(r.where, location.trim());
+  if (query.trim()) {
+    const key = norm(`${query}|${location}`);
+    r.pairs = [{ query: query.trim(), location: location.trim() }, ...(r.pairs || []).filter((x) => norm(`${x.query}|${x.location}`) !== key)].slice(0, 6);
+  }
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(r));
   } catch {}
+}
+
+/** The last searches as {query, location} pairs, newest first. */
+export function recentSearches() {
+  const r = recent();
+  if (r.pairs?.length) return r.pairs;
+  return r.what.slice(0, 4).map((query) => ({ query, location: r.where[0] || '' }));
 }
 
 const split = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);

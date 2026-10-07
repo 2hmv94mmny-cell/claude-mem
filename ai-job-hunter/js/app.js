@@ -9,8 +9,8 @@ import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
 import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPages, isStale, knownClosed } from './match.js';
-import { LANGUAGES, setLanguage, currentLanguage, setBrand } from './i18n.js';
-import { attachSuggest, rememberSearch } from './suggest.js';
+import { LANGUAGES, setLanguage, currentLanguage, setBrand, locale } from './i18n.js';
+import { attachSuggest, rememberSearch, recentSearches } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
@@ -126,7 +126,12 @@ function feedSection() {
   const feed = stored && { ...stored, jobs: stored.jobs.filter((j) => !isStale(j) && !knownClosed(j.url)) };
   const where = remote ? 'remote' : location;
   const head = (sub, ...actions) =>
-    h('div', { class: 'feed-head' }, h('div', {}, h('h2', {}, where ? `Jobs for you ${remote ? '(remote)' : `in ${location}`}` : 'Jobs for you'), sub && h('p', { class: 'muted small' }, sub)), actions.length ? h('div', { class: 'row' }, ...actions) : '');
+    h(
+      'div',
+      { class: 'feed-head' },
+      h('div', {}, h('p', { class: 'eyebrow' }, where ? (remote ? 'Remote' : location) : 'For you'), h('h2', {}, 'Top picks for you'), sub && h('p', { class: 'muted small' }, sub)),
+      actions.length ? h('div', { class: 'row' }, ...actions) : '',
+    );
   const prompt = (text, href, label) => h('section', { class: 'card feed' }, head(''), h('div', { class: 'feed-empty' }, h('p', {}, text), h('a', { class: 'btn primary', href }, label)));
 
   if (!hasExperience) return prompt('Upload your CV and we will find jobs near you that fit your experience.', '#/profile', 'Upload your CV');
@@ -134,7 +139,7 @@ function feedSection() {
 
   if (feedNeedsRefresh() && !feedRun && feedError?.key !== key) runFeed();
 
-  const refresh = h('button', { class: 'btn small', type: 'button', disabled: Boolean(feedRun) }, feedRun ? 'Searching…' : 'Refresh');
+  const refresh = h('button', { class: 'btn small ghost', type: 'button', disabled: Boolean(feedRun), title: 'Look for new jobs now' }, svgIcon(ICON_REFRESH), feedRun ? 'Searching…' : 'Refresh');
   refresh.addEventListener('click', () => {
     feedError = null;
     skipCachedUntilNow(); // the user wants what is new right now
@@ -148,7 +153,7 @@ function feedSection() {
       'section',
       { class: 'card feed' },
       head(`Searching the job portals${where ? ` for ${where}` : ''} and matching what you find against your CV. This takes a few seconds.`),
-      h('div', { class: 'feed-grid' }, ...Array.from({ length: 3 }, () => h('div', { class: 'skeleton feed-skel' }))),
+      h('div', { class: 'pick-list' }, ...Array.from({ length: 4 }, () => h('div', { class: 'pick-skel' }, h('span', { class: 'skeleton' }), h('span', {}, h('span', { class: 'skeleton' }), h('span', { class: 'skeleton' }))))),
     );
   }
   if (feedError && !fresh) {
@@ -175,7 +180,7 @@ function feedSection() {
   for (const j of feed.jobs) counts.set(j.source, (counts.get(j.source) || 0) + 1);
   if (feedFilter && !counts.has(feedFilter)) feedFilter = '';
   const list = (feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs).sort(byBestMatch);
-  const grid = h('div', { class: 'feed-grid' });
+  const grid = h('div', { class: 'pick-list' });
   const more = h('button', { class: 'btn feed-more', type: 'button' });
   const chips = h('div', { class: 'chip-row feed-chips', role: 'group', 'aria-label': 'Filter by job site' });
   function drawChips() {
@@ -219,7 +224,7 @@ function feedSection() {
     'div',
     { class: 'feed-portals' },
     h('p', { class: 'small strong' }, 'See every listing on each job site'),
-    h('div', { class: 'row wrap' }, ...portals.map((x) => h('a', { class: 'btn small', href: safeUrl(x.url), target: '_blank', rel: 'noopener noreferrer' }, `${x.name} ↗`))),
+    h('div', { class: 'portal-row' }, ...portals.map((x) => h('a', { class: 'portal-pill', href: safeUrl(x.url), target: '_blank', rel: 'noopener noreferrer' }, x.name, h('span', { 'aria-hidden': 'true' }, '↗')))),
   );
 
   return h(
@@ -234,26 +239,61 @@ function feedSection() {
   );
 }
 
-function feedCard(job) {
-  const saved = Boolean(store.get().jobs[job.id]);
-  const save = h('button', { class: 'btn small', type: 'button', disabled: saved }, saved ? 'Saved' : 'Save');
-  save.addEventListener('click', () => {
-    store.saveJob(job);
-    save.textContent = 'Saved';
-    save.disabled = true;
-    toast('Saved to your tracker');
+const ICON_BOOKMARK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v17l-6-4-6 4z"/></svg>';
+const ICON_REFRESH = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.7-4.4M4 4v4h4M4 13a8 8 0 0 0 14.7 4.4M20 20v-4h-4"/></svg>';
+const ICON_CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+
+/** Save or unsave a job with one tap on a bookmark, like the big job sites. */
+function bookmarkButton(job) {
+  const state = () => store.get().jobs[job.id];
+  const b = h('button', { type: 'button', class: 'icon-btn bookmark' });
+  const paint = () => {
+    const on = Boolean(state());
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? `Saved: ${job.title}` : `Save ${job.title}`);
+    b.title = on ? 'Saved' : 'Save';
+  };
+  b.append(svgIcon(ICON_BOOKMARK));
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const s = state();
+    if (!s) {
+      store.saveJob(job);
+      toast('Saved to your applications');
+    } else if (s.status === 'saved') {
+      store.removeJob(job.id);
+      toast('Removed from saved jobs');
+    } else {
+      toast('Already in your applications');
+    }
+    paint();
   });
+  paint();
+  return b;
+}
+
+function feedCard(job) {
   const href = `#/job/${encodeURIComponent(job.id)}`;
-  return h(
+  const row = h(
     'article',
-    { class: 'feed-card' },
-    h('div', { class: 'feed-card-top' }, scorePill(job.match), h('span', { class: 'tag source' }, job.source)),
-    h('h3', {}, h('a', { href }, job.title)),
-    h('p', { class: 'muted small' }, [job.company, job.location].filter(Boolean).join(' · ')),
-    postedTag(job) ? h('p', { class: 'small feed-posted' }, postedTag(job)) : '',
-    job.match?.reason ? h('p', { class: 'small reason' }, job.match.reason) : '',
-    h('div', { class: 'feed-card-foot' }, save, h('a', { class: 'btn small primary', href }, 'Open')),
+    { class: 'feed-card pick' },
+    companyAvatar(job.company || job.source),
+    h(
+      'div',
+      { class: 'pick-main' },
+      h('h3', {}, h('a', { href }, job.title)),
+      h('p', { class: 'pick-company' }, [job.company, job.location].filter(Boolean).join(' · ')),
+      h('div', { class: 'pick-meta' }, postedTag(job), h('span', { class: 'pick-source' }, job.source)),
+      job.match?.reason ? h('p', { class: 'pick-reason' }, job.match.reason) : '',
+    ),
+    h('div', { class: 'pick-side' }, scorePill(job.match), h('div', { class: 'row' }, bookmarkButton(job), h('span', { class: 'pick-go', 'aria-hidden': 'true' }, svgIcon(ICON_CHEVRON)))),
   );
+  row.addEventListener('click', (e) => {
+    if (e.target.closest('a, button')) return;
+    go(`/job/${encodeURIComponent(job.id)}`);
+  });
+  return row;
 }
 
 // ---------------------------------------------------------------------------
@@ -463,26 +503,79 @@ function profileStrength(p) {
   return { score, next: items.find((x) => !x.done)?.label || '' };
 }
 
+function greeting() {
+  const hr = new Date().getHours();
+  return hr < 5 ? 'Good evening' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+}
+
 function renderHome() {
   const { jobs, profile, docs } = store.get();
   const all = Object.values(jobs);
   const count = (s) => all.filter((j) => j.status === s).length;
   const first = profile.name.split(' ')[0];
 
+  const runSearch = ({ query, location }) => {
+    const remoteOnly = /^remote$/i.test(location);
+    session.query = { query, location: remoteOnly ? '' : location, remoteOnly, sources: [...SOURCE_IDS] };
+    session.results = [];
+    session.autoSearch = true;
+    go('/find');
+  };
   const { form } = searchBar({
     what: profile.targetRoles.split(',')[0]?.trim() || '',
     where: profile.remoteOnly ? 'remote' : profile.location,
     idPrefix: 'home',
-    onSubmit: ({ query, location }) => {
-      const remoteOnly = /^remote$/i.test(location);
-      session.query = { query, location: remoteOnly ? '' : location, remoteOnly, sources: [...SOURCE_IDS] };
-      session.results = [];
-      session.autoSearch = true;
-      go('/find');
-    },
+    onSubmit: runSearch,
   });
+  const recents = recentSearches().slice(0, 4);
+  const recentRow = recents.length
+    ? h(
+        'div',
+        { class: 'recent-row' },
+        h('span', { class: 'recent-label' }, 'Recent searches'),
+        ...recents.map((r) => {
+          const b = h('button', { type: 'button', class: 'recent-chip' }, svgIcon(ICON_SEARCH), r.query, r.location ? h('span', { class: 'muted' }, ` · ${r.location}`) : '');
+          b.addEventListener('click', () => runSearch(r));
+          return b;
+        }),
+      )
+    : '';
 
-  // Side column: applications, profile strength, next steps.
+  // "Pick up where you left off": the most important next action per job, interviews first.
+  const ORDER = { interview: 0, offer: 1, applied: 2, saved: 3 };
+  const actions = all
+    .filter((j) => j.status in ORDER && !(j.status === 'applied' && nextStep(j).tone !== 'warn'))
+    .sort((a, b) => ORDER[a.status] - ORDER[b.status] || lastActivity(b) - lastActivity(a))
+    .slice(0, 3);
+  const upNext = actions.length
+    ? h(
+        'section',
+        { class: 'up-next', 'aria-label': 'Pick up where you left off' },
+        h('div', { class: 'section-title' }, h('h2', {}, 'Pick up where you left off'), h('a', { class: 'small', href: '#/tracker' }, 'All applications')),
+        h(
+          'div',
+          { class: 'up-next-row' },
+          ...actions.map((j) => {
+            const next = nextStep(j);
+            const tile = h(
+              'a',
+              { class: `up-tile status-${j.status}`, href: `#/job/${encodeURIComponent(j.id)}` },
+              h('div', { class: 'up-tile-head' }, companyAvatar(j.company, 'sm'), h('div', {}, h('strong', {}, j.title), h('span', {}, j.company || ''))),
+              h('span', { class: `up-action ${next.tone || ''}` }, next.text, svgIcon(ICON_CHEVRON)),
+            );
+            tile.addEventListener('click', () => {
+              if (!next.tab) return;
+              try {
+                sessionStorage.setItem('ajh:tab', next.tab);
+              } catch {}
+            });
+            return tile;
+          }),
+        ),
+      )
+    : '';
+
+  // Side rail: pipeline at a glance, profile strength, getting started.
   const strength = profileStrength(profile);
   const steps = [
     { done: Boolean(profile.cv.trim()), label: 'Upload your CV', href: '#/profile' },
@@ -491,55 +584,61 @@ function renderHome() {
     { done: count('applied') + count('interview') + count('offer') > 0, label: 'Apply and move it to Applied', href: '#/tracker' },
     { done: Object.values(store.get().prep).some((p) => p?.results?.length), label: 'Play an interview game', href: '#/tracker' },
   ];
-  const recent = [...all].sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)).slice(0, 3);
+  const doneSteps = steps.filter((x) => x.done).length;
+  const level = strength.score >= 80 ? 'high' : strength.score >= 50 ? 'mid' : 'low';
 
   const side = h(
     'aside',
     { class: 'home-side' },
     h(
       'section',
-      { class: 'card' },
-      h('div', { class: 'section-title' }, h('h2', {}, 'Your applications'), h('a', { class: 'small', href: '#/tracker' }, 'Open tracker')),
+      { class: 'card rail-card' },
+      h('div', { class: 'section-title' }, h('h2', {}, 'Your job search'), h('a', { class: 'small', href: '#/tracker' }, 'Open')),
       h(
         'div',
-        { class: 'pipeline' },
-        ...STATUSES.map((st) => h('a', { href: '#/tracker', class: `status-${st.id}` }, h('span', { class: 'dot' }), st.label, h('strong', {}, String(count(st.id))))),
+        { class: 'mini-stats' },
+        ...STATUSES.filter((st) => st.id !== 'rejected').map((st) => h('a', { href: '#/tracker', class: `mini-stat status-${st.id}` }, h('strong', {}, String(count(st.id))), h('span', {}, h('span', { class: 'dot' }), st.label))),
       ),
-      recent.length
-        ? h(
-            'ul',
-            { class: 'plain-list', style: 'margin-top:var(--sp-3)' },
-            ...recent.map((j) => h('li', {}, h('a', { href: `#/job/${encodeURIComponent(j.id)}` }, j.title), statusBadge(j.status))),
-          )
-        : '',
+      all.length
+        ? h('div', { class: 'pipe-bar' }, ...STATUSES.filter((st) => count(st.id)).map((st) => h('span', { class: `status-${st.id}`, style: `flex:${count(st.id)}`, title: `${st.label}: ${count(st.id)}` })))
+        : h('p', { class: 'small muted', style: 'margin:0' }, 'Save a job to start tracking your applications.'),
     ),
     h(
       'section',
-      { class: 'card' },
-      h('div', { class: 'section-title' }, h('h2', {}, 'Profile strength'), h('strong', {}, `${strength.score}%`)),
-      h('div', { class: 'meter', role: 'img', 'aria-label': `Profile ${strength.score}% complete` }, h('span', { style: `width:${strength.score}%` })),
-      strength.next
-        ? h('p', { class: 'small muted', style: 'margin:0' }, 'Next: ', h('a', { href: '#/profile' }, strength.next))
-        : h('p', { class: 'small muted', style: 'margin:0' }, 'Complete. Claude has everything it needs to match you.'),
+      { class: 'card rail-card strength-card' },
+      h('div', { class: `ring ring-${level}`, style: `--p:${strength.score}`, role: 'img', 'aria-label': `Profile ${strength.score}% complete` }, h('strong', {}, `${strength.score}%`)),
+      h(
+        'div',
+        {},
+        h('h2', {}, 'Profile strength'),
+        strength.next
+          ? h('p', { class: 'small muted' }, 'Next: ', h('a', { href: '#/profile' }, strength.next))
+          : h('p', { class: 'small muted' }, 'Complete. Vora has everything it needs to match you.'),
+      ),
     ),
-    steps.every((x) => x.done)
+    doneSteps === steps.length
       ? ''
       : h(
           'section',
-          { class: 'card' },
-          h('div', { class: 'section-title' }, h('h2', {}, 'Next steps')),
+          { class: 'card rail-card' },
+          h('div', { class: 'section-title' }, h('h2', {}, 'Getting started'), h('span', { class: 'small muted' }, `${doneSteps} of ${steps.length}`)),
+          h('div', { class: 'meter' }, h('span', { style: `width:${(doneSteps / steps.length) * 100}%` })),
           h('ol', { class: 'checklist' }, ...steps.map((x) => h('li', { class: x.done ? 'done' : '' }, h('a', { href: x.href }, x.label)))),
         ),
   );
 
+  const feedNew = store.get().feed?.jobs?.length;
   view.append(
     h(
       'section',
       { class: 'home-hero' },
-      h('h1', {}, first ? `Find your next job, ${first}` : 'Find your next job'),
-      h('p', {}, 'One search covers the job portals near you. Claude ranks every role against your CV, then helps you tailor your application and practise the interview.'),
+      h('p', { class: 'eyebrow' }, new Date().toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' })),
+      h('h1', {}, first ? `${greeting()}, ${first}` : 'Find your next job'),
+      h('p', {}, first && feedNew ? 'Here is what is new in your job search today.' : 'One search covers the job portals near you. Vora ranks every role against your CV, then helps you tailor your application and practise the interview.'),
       form,
+      recentRow,
     ),
+    upNext,
     h('div', { class: 'home-grid' }, h('div', {}, feedSection()), side),
   );
 }
