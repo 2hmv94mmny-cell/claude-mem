@@ -53,6 +53,9 @@ const DEFAULT_STATE = {
   feed: null,
   // "About the company" lookups, keyed by company name: { data, at }
   companies: {},
+  // Documents page: the main CV and a general cover letter, edited like a Word page.
+  // { cvData, template, accent, letter: { body, to, subject, dateLine, template, accent }, updatedAt }
+  master: {},
 };
 
 export const STATUSES = [

@@ -697,6 +697,72 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
 }
 
 /**
+ * Lay out the master CV as structured data for the Documents editor, word
+ * for word: nothing is rewritten, added or left out.
+ */
+export async function structureCV({ signal } = {}) {
+  const p = store.get().profile;
+  if (!p.cv.trim()) throw new Error('Add your CV in Profile first.');
+  const raw = await ask({
+    quick: true,
+    system: 'You convert CVs into structured data. Copy the wording exactly as written, in its original language. Do not rewrite, shorten, improve, translate or invent anything.',
+    messages: [
+      {
+        role: 'user',
+        content:
+          `<cv>\n${p.cv.slice(0, 60000)}\n</cv>\n\n` +
+          `Put every part of this CV into the fields below. Contact details missing from the CV: name "${p.name}", email "${p.email}", phone "${p.phone}", location "${p.location}". ` +
+          `Reply with only a JSON object: ${CV_SHAPE}}. Use empty strings or arrays for anything the CV does not have.`,
+      },
+    ],
+    json: true,
+    signal,
+  });
+  return normalizeCV(raw);
+}
+
+/** Change the main CV (structured) as the user asks, keeping everything else as it is. */
+export async function reviseCV(cv, instructions, { signal } = {}) {
+  const raw = await ask({
+    system: 'You edit the candidate\'s own CV exactly as they ask. ' + HONESTY + '\n\n' + HUMAN_STYLE,
+    messages: [
+      {
+        role: 'user',
+        content:
+          `<current_cv>\n${JSON.stringify({ ...cv, changes: undefined, keywords: undefined })}\n</current_cv>\n\n` +
+          `Change it as follows: ${instructions}\nKeep everything that was not mentioned exactly as it is, in the same language. ` +
+          `Reply with only a JSON object: ${CV_SHAPE}, "titles": object (keep as given)}.`,
+      },
+    ],
+    json: true,
+    signal,
+  });
+  const out = cleanCV(normalizeCV(raw));
+  out.titles = { ...(cv.titles || {}), ...(out.titles || {}) };
+  return out;
+}
+
+/** A general cover letter for the roles the user wants (not one job). */
+export async function writeGeneralLetter({ tone = 'professional', signal } = {}) {
+  const p = store.get().profile;
+  const role = p.targetRoles.split(',')[0]?.trim() || p.headline || 'the roles I am looking for';
+  return writeCoverLetter(
+    { title: role, company: '', location: p.location, description: `A general application for ${role} roles${p.location ? ` in or near ${p.location}` : ''}. No specific employer: write it so it can be sent to any company hiring for this role, without naming one.` },
+    { tone, signal },
+  );
+}
+
+/** Change a letter as the user asks. */
+export async function reviseText(letter, instructions, { signal } = {}) {
+  const text = await ask({
+    system: 'You edit cover letters exactly as the candidate asks, so they still sound like the candidate. ' + HONESTY + '\n\n' + HUMAN_STYLE,
+    messages: [{ role: 'user', content: `<letter>\n${letter}\n</letter>\n\nChange it as follows: ${instructions}\nKeep what was not mentioned and the same language. Output only the full letter.` }],
+    signal,
+  });
+  return cleanText(text);
+}
+
+/**
  * Read a CV (text, or page images for photos and scanned PDFs), review it,
  * and pull out profile details.
  */

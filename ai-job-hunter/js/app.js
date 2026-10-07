@@ -9,7 +9,7 @@ import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
 import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPages, isStale, knownClosed } from './match.js';
-import { LANGUAGES, setLanguage, currentLanguage, setBrand, locale } from './i18n.js';
+import { LANGUAGES, setLanguage, currentLanguage, setBrand, locale, t as tr } from './i18n.js';
 import { attachSuggest, rememberSearch, recentSearches } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
 import { readCVFile, ACCEPT } from './files.js';
@@ -306,6 +306,7 @@ const routes = [
   [/^\/tracker$/, renderTracker],
   [/^\/job\/(.+)$/, (id) => renderJob(decodeURIComponent(id))],
   [/^\/add$/, renderAddJob],
+  [/^\/documents$/, renderDocuments],
   [/^\/profile$/, renderProfile],
   [/^\/settings$/, renderSettings],
 ];
@@ -1537,6 +1538,676 @@ function renderTracker() {
     content,
   );
   draw();
+}
+
+// ---------------------------------------------------------------------------
+// Documents: the main CV and a general cover letter, edited like a Word page
+// ---------------------------------------------------------------------------
+
+const ICON_UNDO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
+const ICON_REDO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>';
+const ICON_DOC = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>';
+const ICON_MAIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
+const ICON_SPARK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>';
+const ICON_PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+const ICON_PALETTE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.9 1.2-1.8-.5-1-.1-2.2 1.2-2.2H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/></svg>';
+const ICON_OUTLINE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M8 12h12M8 18h12"/></svg>';
+const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
+const ICON_CLOUD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19.5 10 4 4 0 0 1 18 18z"/><path d="M9.5 13.5l2 2 3.5-3.5"/></svg>';
+const A4_HEIGHT = 1123;
+
+function renderDocuments() {
+  const master = () => store.get().master || {};
+  const saveMaster = (patch) => store.update((s) => (s.master = { ...(s.master || {}), ...patch, updatedAt: Date.now() }));
+  const letterOf = () => master().letter || {};
+  const saveLetter = (patch) => saveMaster({ letter: { ...letterOf(), ...patch } });
+
+  let kind = 'cv';
+  try {
+    kind = sessionStorage.getItem('ajh:doc') === 'letter' ? 'letter' : 'cv';
+  } catch {}
+  let zoom = 'fit';
+  let designOpen = window.innerWidth >= 1100;
+  let outlineOpen = window.innerWidth >= 1280;
+
+  // ----- the document being edited -----
+  const cv = () => master().cvData;
+  const letterCV = () => cv() || cvFromProfile(store.get().profile);
+  const tplId = () => (kind === 'cv' ? getTemplate(master().template).id : getTemplate(letterOf().template || master().template).id);
+  const accent = () => {
+    const t = getTemplate(tplId());
+    return accentFor(t, kind === 'cv' ? master().accent : letterOf().accent || (letterOf().template ? '' : master().accent));
+  };
+  const letterMeta = () => ({ title: '', company: '', location: '', date: letterOf().date, dateLine: letterOf().dateLine, recipient: letterOf().to, subject: letterOf().subject });
+  const hasDoc = () => (kind === 'cv' ? Boolean(cv()) : typeof letterOf().body === 'string');
+  const page = (id, color, opts) => (kind === 'cv' ? renderCV(cv(), id, color, opts) : renderLetter(letterCV(), letterOf().body || '', id, color, letterMeta(), opts));
+
+  // ----- undo / redo: snapshots of the content of each document -----
+  const hist = { cv: { stack: [], i: -1 }, letter: { stack: [], i: -1 } };
+  const snap = () => JSON.stringify(kind === 'cv' ? cv() : { ...letterOf(), template: undefined, accent: undefined });
+  function record() {
+    const hs = hist[kind];
+    const now = snap();
+    if (hs.stack[hs.i] === now) return;
+    hs.stack = hs.stack.slice(0, hs.i + 1);
+    hs.stack.push(now);
+    if (hs.stack.length > 100) hs.stack.shift();
+    hs.i = hs.stack.length - 1;
+    paintHistory();
+  }
+  const recordSoon = debounce(record, 450);
+  function travel(step) {
+    const hs = hist[kind];
+    record();
+    const j = hs.i + step;
+    if (j < 0 || j >= hs.stack.length) return;
+    hs.i = j;
+    const data = JSON.parse(hs.stack[j]);
+    if (kind === 'cv') saveMaster({ cvData: data });
+    else saveLetter({ ...data, template: letterOf().template, accent: letterOf().accent });
+    renderPaper();
+    paintHistory();
+    showSaved();
+  }
+
+  // ----- top bar -----
+  const docSwitch = h('div', { class: 'segmented docs-switch', role: 'tablist', 'aria-label': 'Document' });
+  const docTitle = h('strong', {});
+  const saveState = h('span', { class: 'doc-save', role: 'status' });
+  const undoBtn = h('button', { type: 'button', class: 'icon-btn', title: 'Undo (Ctrl+Z)', 'aria-label': 'Undo' }, svgIcon(ICON_UNDO));
+  const redoBtn = h('button', { type: 'button', class: 'icon-btn', title: 'Redo (Ctrl+Shift+Z)', 'aria-label': 'Redo' }, svgIcon(ICON_REDO));
+  undoBtn.addEventListener('click', () => travel(-1));
+  redoBtn.addEventListener('click', () => travel(1));
+  const zoomSel = h('select', { class: 'docs-zoom', 'aria-label': 'Zoom' }, ...[['fit', 'Fit'], ['0.75', '75%'], ['1', '100%'], ['1.25', '125%']].map(([v, l]) => h('option', { value: v }, l)));
+  zoomSel.addEventListener('change', () => {
+    zoom = zoomSel.value;
+    fit();
+  });
+  const pdfBtn = h('button', { type: 'button', class: 'btn primary small docs-pdf' }, svgIcon(ICON_DOWNLOAD), h('span', {}, 'Download PDF'));
+  pdfBtn.addEventListener('click', downloadPDF);
+  const moreMenu = h('details', { class: 'tb-menu docs-more' });
+
+  // ----- ribbon -----
+  const ribbon = h('div', { class: 'docs-ribbon', role: 'toolbar', 'aria-label': 'Formatting' });
+  const outlineBtn = h('button', { type: 'button', class: 'rb-btn rb-outline', 'aria-pressed': String(outlineOpen) }, svgIcon(ICON_OUTLINE), h('span', {}, 'Outline'));
+  outlineBtn.addEventListener('click', () => {
+    outlineOpen = !outlineOpen;
+    layout();
+  });
+  const designBtn = h('button', { type: 'button', class: 'rb-btn', 'aria-pressed': String(designOpen) }, svgIcon(ICON_PALETTE), h('span', { class: 'rb-tpl' }));
+  designBtn.addEventListener('click', () => {
+    designOpen = !designOpen;
+    layout();
+  });
+
+  // ----- body -----
+  const paperScale = h('div', { class: 'paper-scale' });
+  const paperFit = h('div', { class: 'paper-fit' }, paperScale);
+  const busy = h('div', { class: 'studio-busy', hidden: true }, h('div', { class: 'studio-busy-msg', role: 'status' }));
+  const canvas = h('main', { class: 'docs-canvas' }, paperFit, busy);
+  const outline = h('nav', { class: 'docs-outline', 'aria-label': 'Outline' });
+  const design = h('aside', { class: 'docs-design', 'aria-label': 'Design' });
+  const status = h('footer', { class: 'docs-status' });
+  const appEl = h(
+    'div',
+    { class: 'docs-app' },
+    h(
+      'div',
+      { class: 'docs-top' },
+      docSwitch,
+      h('div', { class: 'docs-name' }, docTitle, saveState),
+      h('div', { class: 'docs-top-actions' }, undoBtn, redoBtn, h('span', { class: 'tb-sep' }), zoomSel, moreMenu, pdfBtn),
+    ),
+    ribbon,
+    h('div', { class: 'docs-body' }, outline, canvas, design),
+    status,
+  );
+
+  // ----- saving indicator -----
+  let savedTimer = 0;
+  function showSaving() {
+    saveState.replaceChildren(h('span', { class: 'saving-dot' }), 'Saving…');
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(showSaved, 700);
+  }
+  function showSaved() {
+    saveState.replaceChildren(svgIcon(ICON_CLOUD), 'All changes saved');
+  }
+
+  // ----- the page -----
+  function fit() {
+    const pageEl = paperScale.firstElementChild;
+    if (!pageEl) return;
+    const avail = canvas.clientWidth - (window.innerWidth < 760 ? 16 : 64);
+    const scale = zoom === 'fit' ? Math.min(1, avail / pageEl.offsetWidth) : Number(zoom);
+    paperScale.style.transform = `scale(${scale})`;
+    paperFit.style.width = `${pageEl.offsetWidth * scale}px`;
+    paperFit.style.height = `${pageEl.offsetHeight * scale}px`;
+    drawStatus(scale);
+  }
+  const ro = new ResizeObserver(() => fit());
+  ro.observe(canvas);
+
+  function focusPath(path, atEnd = true) {
+    const el = [...paperScale.querySelectorAll('[data-path]')].find((x) => x.dataset.path === path);
+    if (!el) return;
+    el.focus();
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(!atEnd);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  function renderPaper(focus) {
+    appEl.classList.toggle('docs-reflow', window.innerWidth < 760 && hasDoc());
+    if (!hasDoc()) {
+      paperScale.replaceChildren();
+      paperFit.style.width = paperFit.style.height = '';
+      canvas.querySelector('.docs-start')?.remove();
+      canvas.prepend(startCard());
+      drawStatus();
+      return;
+    }
+    canvas.querySelector('.docs-start')?.remove();
+    paperScale.replaceChildren(page(tplId(), accent(), { editable: true }));
+    if (focus) requestAnimationFrame(() => focusPath(focus));
+    requestAnimationFrame(fit);
+    drawOutline();
+  }
+
+  // Typing on the page writes straight into the document.
+  paperScale.addEventListener('input', (e) => {
+    const el = e.target.closest?.('[data-path]');
+    if (!el) return;
+    setField(el.dataset.path, fieldText(el), el.dataset.list || '');
+    showSaving();
+    recordSoon();
+    requestAnimationFrame(fit);
+  });
+  paperScale.addEventListener('keydown', (e) => {
+    const el = e.target.closest?.('[data-path]');
+    if (!el) return;
+    const path = el.dataset.path;
+    const bullet = /\.bullets\.\d+$/.test(path);
+    if (e.key === 'Enter' && !e.shiftKey && !el.dataset.multi) {
+      e.preventDefault();
+      if (bullet && kind === 'cv') act('bullet-after', path);
+    } else if (e.key === 'Backspace' && bullet && !fieldText(el).trim() && kind === 'cv') {
+      e.preventDefault();
+      act('bullet-remove', path);
+    }
+  });
+  paperScale.addEventListener('click', (e) => {
+    const b = e.target.closest?.('.ed-ctl');
+    if (b && kind === 'cv') act(b.dataset.action, b.dataset.path);
+  });
+  paperScale.addEventListener('paste', (e) => {
+    if (!e.target.closest?.('[data-path]')) return;
+    const text = e.clipboardData?.getData('text/plain');
+    if (text == null) return;
+    e.preventDefault();
+    document.execCommand('insertText', false, text);
+  });
+  // Undo / redo / save shortcuts work anywhere on this page (focus can be on a
+  // toolbar button), except while typing in a box like the Vora AI request.
+  const onShortcut = (e) => {
+    if (!appEl.isConnected) return document.removeEventListener('keydown', onShortcut);
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod || !hasDoc() || e.target.closest?.('textarea, input, select')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' || k === 'y') {
+      e.preventDefault();
+      travel(k === 'y' || e.shiftKey ? 1 : -1);
+    } else if (k === 's') {
+      e.preventDefault();
+      showSaved();
+      toast('Saved. Vora saves as you type.');
+    }
+  };
+  document.addEventListener('keydown', onShortcut);
+
+  const LETTER_FIELD = { 'letter.date': 'dateLine', 'letter.to': 'to', 'letter.subject': 'subject', 'letter.body': 'body' };
+  const PROFILE_FIELD = { name: 'name', headline: 'headline', 'contact.email': 'email', 'contact.phone': 'phone', 'contact.location': 'location' };
+  function setField(path, value, list) {
+    if (kind === 'letter' && LETTER_FIELD[path]) return saveLetter({ [LETTER_FIELD[path]]: value });
+    if (cv()) {
+      const data = structuredClone(cv());
+      setAt(data, path, value, list);
+      return saveMaster({ cvData: data });
+    }
+    if (PROFILE_FIELD[path]) store.update((st) => (st.profile[PROFILE_FIELD[path]] = value.trim()));
+  }
+  function act(action, path) {
+    record();
+    const data = structuredClone(cv());
+    const next = cvAction(data, action, path);
+    saveMaster({ cvData: data });
+    renderPaper(next);
+    record();
+    showSaving();
+  }
+
+  // ----- outline -----
+  const CV_PARTS = [
+    ['name', 'Name and contact', () => true],
+    ['summary', 'Profile', (c) => c.summary || true],
+    ['experience', 'Experience', (c) => c.experience.length],
+    ['projects', 'Projects', (c) => c.projects.length],
+    ['education', 'Education', (c) => c.education.length],
+    ['skills', 'Skills', (c) => c.skills.length],
+    ['certifications', 'Certifications', (c) => c.certifications.length],
+    ['languages', 'Languages', (c) => c.languages.length],
+  ];
+  const LETTER_PARTS = [
+    ['name', 'Letterhead'],
+    ['letter.date', 'Place and date'],
+    ['letter.to', 'Recipient'],
+    ['letter.subject', 'Subject'],
+    ['letter.body', 'Letter'],
+  ];
+  function drawOutline() {
+    if (!hasDoc()) return outline.replaceChildren();
+    const item = (path, label, sub = '') => {
+      const b = h('button', { type: 'button', class: 'ol-item' }, h('span', {}, label), sub ? h('small', {}, sub) : '');
+      b.addEventListener('click', () => {
+        const el = [...paperScale.querySelectorAll('[data-path]')].find((x) => x.dataset.path === path || x.dataset.path.startsWith(`${path}.`));
+        if (el) focusPath(el.dataset.path);
+      });
+      return b;
+    };
+    const c = cv();
+    const items =
+      kind === 'cv'
+        ? CV_PARTS.filter(([, , has]) => has(c)).flatMap(([key, label]) => {
+            const title = c.titles?.[key] || label;
+            if (key === 'experience') return [item(key, title), ...c.experience.map((e, i) => h('div', { class: 'ol-sub' }, item(`experience.${i}`, e.title || 'Job', e.company)))];
+            return [item(key, title)];
+          })
+        : LETTER_PARTS.map(([p, l]) => item(p, l));
+    outline.replaceChildren(h('p', { class: 'panel-label' }, 'Outline'), ...items);
+  }
+
+  // ----- design panel: templates and colours -----
+  function drawDesign() {
+    if (!hasDoc()) return design.replaceChildren(h('p', { class: 'panel-label' }, 'Design'), h('p', { class: 'small muted' }, 'Pick a template once your document is started.'));
+    const t = getTemplate(tplId());
+    const pick = (patch) => {
+      if (kind === 'cv') saveMaster(patch);
+      else saveLetter('template' in patch ? { template: patch.template, accent: '' } : { accent: patch.accent });
+      refresh();
+    };
+    const gallery = h(
+      'div',
+      { class: 'tpl-gallery docs-gallery', role: 'group', 'aria-label': 'Template' },
+      ...TEMPLATES.map((x) => {
+        const b = h(
+          'button',
+          { type: 'button', class: 'tpl-card', 'aria-pressed': String(x.id === t.id), 'aria-label': `${x.name} template` },
+          h('div', { class: 'tpl-thumb', 'aria-hidden': 'true' }, page(x.id, x.accent)),
+          h('strong', {}, x.name),
+          h('span', { class: `tpl-badge ${x.ats ? '' : 'warn'}` }, x.ats ? 'ATS friendly' : 'Less ATS friendly'),
+        );
+        b.addEventListener('click', () => pick({ template: x.id }));
+        return b;
+      }),
+    );
+    design.replaceChildren(
+      h('p', { class: 'panel-label' }, 'Design'),
+      t.accents
+        ? h(
+            'div',
+            { class: 'swatches', role: 'group', 'aria-label': 'Colour' },
+            h('span', { class: 'muted small' }, 'Colour'),
+            ...t.accents.map((c) => {
+              const sw = h('button', { type: 'button', class: 'swatch', style: `background:${c}`, 'aria-label': `Colour ${c}`, 'aria-pressed': String(accent() === c) });
+              sw.addEventListener('click', () => pick({ accent: c }));
+              return sw;
+            }),
+          )
+        : '',
+      h('p', { class: 'tpl-info' }, h('strong', {}, `${t.name}. `), t.blurb),
+      kind === 'letter' && letterOf().template
+        ? (() => {
+            const same = h('button', { type: 'button', class: 'btn small' }, 'Match my CV template');
+            same.addEventListener('click', () => {
+              saveLetter({ template: '', accent: '' });
+              refresh();
+            });
+            return same;
+          })()
+        : '',
+      gallery,
+    );
+  }
+
+  // ----- ribbon content -----
+  function menu(label, icon, items, cls = '') {
+    const d = h('details', { class: `tb-menu ${cls}` });
+    const list = h('div', { class: 'menu', role: 'menu' });
+    for (const it of items) {
+      if (it === '-') {
+        list.append(h('hr'));
+        continue;
+      }
+      if (it.node) {
+        list.append(it.node);
+        continue;
+      }
+      const b = h('button', { type: 'button', role: 'menuitem', disabled: it.disabled || null }, it.icon ? svgIcon(it.icon) : '', h('span', {}, it.label), it.hint ? h('small', {}, it.hint) : '');
+      b.addEventListener('click', () => {
+        d.open = false;
+        it.run();
+      });
+      list.append(b);
+    }
+    d.append(h('summary', { class: 'rb-btn' }, svgIcon(icon), h('span', {}, label), h('span', { class: 'caret', 'aria-hidden': 'true' }, '▾')), list);
+    d.addEventListener('toggle', () => {
+      if (!d.open) return;
+      for (const o of appEl.querySelectorAll('details.tb-menu[open]')) if (o !== d) o.open = false;
+    });
+    return d;
+  }
+
+  async function withAI(message, fn) {
+    if (!ai.hasKey()) return toast('Set up the AI in Settings to use Vora AI.');
+    record();
+    busy.hidden = false;
+    busy.firstChild.textContent = message;
+    const ctl = newAbort();
+    try {
+      await fn(ctl.signal);
+      refresh();
+      record();
+      showSaved();
+    } catch (err) {
+      if (!ctl.signal.aborted) toast(err.message || 'Vora could not finish that. Try again.');
+    } finally {
+      busy.hidden = true;
+    }
+  }
+  const reviseWith = (instructions, message) =>
+    withAI(message, async (signal) => {
+      if (kind === 'cv') saveMaster({ cvData: await ai.reviseCV(cv(), instructions, { signal }) });
+      else saveLetter({ body: await ai.reviseText(letterOf().body || '', instructions, { signal }) });
+    });
+
+  function aiMenu() {
+    const ask = h('textarea', { rows: 3, placeholder: kind === 'cv' ? 'e.g. stress leadership, shorten the 2016 job' : 'e.g. mention I can start in March' });
+    const go2 = h('button', { type: 'button', class: 'btn primary small' }, 'Apply');
+    go2.addEventListener('click', () => {
+      const v = ask.value.trim();
+      if (!v) return ask.focus();
+      go2.closest('details').open = false;
+      reviseWith(v, 'Vora is editing your document…');
+    });
+    const custom = { node: h('div', { class: 'menu-form' }, h('label', { class: 'small strong' }, 'Ask Vora to change something'), ask, go2) };
+    const items =
+      kind === 'cv'
+        ? [
+            { label: 'Improve the wording', hint: 'Clearer, stronger bullets', run: () => reviseWith('Improve the wording of every bullet and the profile: clear, specific and active, without inventing anything.', 'Improving the wording…') },
+            { label: 'Fit on one page', hint: 'Trim older and weaker points', run: () => reviseWith('Shorten it so it fits on one A4 page: trim older roles and weaker bullets first.', 'Making it fit on one page…') },
+            { label: 'Fix spelling and grammar', run: () => reviseWith('Fix spelling, grammar and punctuation only. Change nothing else.', 'Checking spelling and grammar…') },
+            { label: 'Write a profile summary', run: () => reviseWith('Write a 2-3 sentence profile summary from the experience in the CV.', 'Writing your profile…') },
+            '-',
+            custom,
+          ]
+        : [
+            { label: 'Write a new general letter', hint: 'For your target roles', run: () => withAI('Vora is writing your letter…', async (signal) => saveLetter({ body: await ai.writeGeneralLetter({ signal }), date: Date.now() })) },
+            { label: 'Make it shorter', run: () => reviseWith('Make it about a third shorter without losing the main points.', 'Shortening your letter…') },
+            { label: 'More formal', run: () => reviseWith('Make the tone more formal.', 'Adjusting the tone…') },
+            { label: 'Warmer and more personal', run: () => reviseWith('Make it warmer and more personal, still professional.', 'Adjusting the tone…') },
+            { label: 'Fix spelling and grammar', run: () => reviseWith('Fix spelling, grammar and punctuation only. Change nothing else.', 'Checking spelling and grammar…') },
+            '-',
+            custom,
+          ];
+    return menu('Vora AI', ICON_SPARK, items, 'tb-ai');
+  }
+
+  function insertMenu() {
+    const add = (key) => () => act('add', key);
+    return menu('Insert', ICON_PLUS, [
+      { label: 'Job', run: add('experience') },
+      { label: 'Education', run: add('education') },
+      { label: 'Project', run: add('projects') },
+      { label: 'Skill group', run: add('skills') },
+      '-',
+      {
+        label: 'Profile summary',
+        disabled: Boolean(cv()?.summary),
+        run: () => {
+          record();
+          const data = structuredClone(cv());
+          data.summary = data.summary || ' ';
+          saveMaster({ cvData: data });
+          renderPaper('summary');
+          record();
+        },
+      },
+    ]);
+  }
+
+  function drawRibbon() {
+    const t = getTemplate(tplId());
+    designBtn.lastChild.textContent = hasDoc() ? t.name : 'Design';
+    designBtn.setAttribute('aria-pressed', String(designOpen));
+    outlineBtn.setAttribute('aria-pressed', String(outlineOpen));
+    const swatches = hasDoc() && t.accents
+      ? h(
+          'div',
+          { class: 'rb-swatches', role: 'group', 'aria-label': 'Colour' },
+          ...t.accents.slice(0, 5).map((c) => {
+            const sw = h('button', { type: 'button', class: 'swatch sm', style: `background:${c}`, 'aria-label': `Colour ${c}`, 'aria-pressed': String(accent() === c) });
+            sw.addEventListener('click', () => {
+              if (kind === 'cv') saveMaster({ accent: c });
+              else saveLetter({ accent: c });
+              refresh();
+            });
+            return sw;
+          }),
+        )
+      : '';
+    if (!hasDoc()) return ribbon.replaceChildren(h('span', { class: 'rb-hint', style: 'margin-left:0;padding-left:4px' }, kind === 'cv' ? 'Start your CV to see the editing tools.' : 'Start your letter to see the editing tools.'));
+    ribbon.replaceChildren(
+      outlineBtn,
+      h('span', { class: 'tb-sep' }),
+      designBtn,
+      swatches,
+      h('span', { class: 'tb-sep' }),
+      kind === 'cv' && hasDoc() ? insertMenu() : '',
+      hasDoc() ? aiMenu() : '',
+      h('span', { class: 'rb-hint' }, hasDoc() ? (kind === 'cv' ? 'Click any text to edit. Enter adds a bullet.' : 'Click any text to edit. Leave an empty line between paragraphs.') : ''),
+    );
+  }
+
+  function drawTop() {
+    docSwitch.replaceChildren(
+      ...[
+        ['cv', 'CV', ICON_DOC],
+        ['letter', 'Cover letter', ICON_MAIL],
+      ].map(([k, label, icon]) => {
+        const b = h('button', { type: 'button', role: 'tab', class: 'seg-btn', 'aria-selected': String(kind === k), 'aria-pressed': String(kind === k) }, svgIcon(icon), h('span', {}, label));
+        b.addEventListener('click', () => {
+          if (kind === k) return;
+          record();
+          kind = k;
+          try {
+            sessionStorage.setItem('ajh:doc', k);
+          } catch {}
+          refresh();
+          record();
+        });
+        return b;
+      }),
+    );
+    const name = store.get().profile.name.trim();
+    docTitle.textContent = kind === 'cv' ? (name ? `${name} · CV` : 'My CV') : name ? `${name} · Cover letter` : 'My cover letter';
+    pdfBtn.disabled = !hasDoc();
+    undoBtn.disabled = !hasDoc();
+    redoBtn.disabled = !hasDoc();
+    paintHistory();
+    // "More" menu
+    const copyText = () => copy(kind === 'cv' ? cvToText(cv()) : letterOf().body || '');
+    const txt = () => download(`${fileBase()}.txt`, kind === 'cv' ? cvToText(cv()) : letterOf().body || '');
+    moreMenu.replaceChildren(
+      h('summary', { class: 'icon-btn', 'aria-label': 'More', title: 'More' }, '⋯'),
+      h(
+        'div',
+        { class: 'menu', role: 'menu' },
+        ...[
+          ['Copy as plain text', copyText],
+          ['Download as text file', txt],
+          kind === 'cv' && store.get().profile.cv.trim() ? ['Lay out again from my profile CV', () => withAI('Laying out your CV…', async (signal) => saveMaster({ cvData: await ai.structureCV({ signal }) }))] : null,
+          ['Start over (blank)', () => startBlank(true)],
+        ]
+          .filter(Boolean)
+          .map(([label, fn]) => {
+            const b = h('button', { type: 'button', role: 'menuitem', disabled: !hasDoc() && !/blank/.test(label) ? true : null }, label);
+            b.addEventListener('click', () => {
+              moreMenu.open = false;
+              fn();
+            });
+            return b;
+          }),
+      ),
+    );
+  }
+  function paintHistory() {
+    const hs = hist[kind];
+    undoBtn.disabled = !hasDoc() || hs.i <= 0;
+    redoBtn.disabled = !hasDoc() || hs.i >= hs.stack.length - 1;
+  }
+
+  function drawStatus(scale) {
+    if (!hasDoc()) return status.replaceChildren(h('span', {}, kind === 'cv' ? 'No CV yet' : 'No letter yet'));
+    const text = kind === 'cv' ? cvToText(cv()) : letterOf().body || '';
+    const words = (text.match(/\S+/g) || []).length;
+    const pageEl = paperScale.firstElementChild;
+    const pages = pageEl ? Math.max(1, Math.ceil((pageEl.offsetHeight - 4) / A4_HEIGHT)) : 1;
+    const zoomPct = scale ? Math.round(scale * 100) : null;
+    status.replaceChildren(
+      h('span', {}, `${pages} ${pages === 1 ? 'page' : 'pages'}`),
+      h('span', {}, `${words} words`),
+      h('span', {}, `${getTemplate(tplId()).name} template`),
+      h('span', { class: 'ats' }, getTemplate(tplId()).ats ? 'ATS friendly' : 'Less ATS friendly'),
+      zoomPct ? h('span', { class: 'st-zoom' }, `${zoomPct}%`) : '',
+    );
+  }
+
+  const fileBase = () => slug(`${store.get().profile.name || 'my'}-${kind === 'cv' ? 'cv' : 'cover-letter'}-${tplId()}`);
+  async function downloadPDF() {
+    if (!hasDoc()) return;
+    const label = pdfBtn.lastChild.textContent;
+    pdfBtn.disabled = true;
+    pdfBtn.lastChild.textContent = 'Making PDF…';
+    try {
+      const def = kind === 'cv' ? cvPDFDefinition(cv(), tplId(), accent()) : letterPDFDefinition(letterCV(), letterOf().body || '', tplId(), accent(), letterMeta());
+      await download(`${fileBase()}.pdf`, await makePDF(def), 'application/pdf');
+    } catch (err) {
+      console.error(err);
+      toast('Could not make the PDF. Check your connection and try again.');
+    } finally {
+      pdfBtn.disabled = false;
+      pdfBtn.lastChild.textContent = label;
+    }
+  }
+
+  // ----- starting a document -----
+  function startBlank(confirmFirst = false) {
+    if (confirmFirst && hasDoc() && !confirm(tr(kind === 'cv' ? 'Start a blank CV? Your current one is replaced (Undo brings it back).' : 'Start a blank letter? The current one is replaced (Undo brings it back).'))) return;
+    record();
+    const p = store.get().profile;
+    if (kind === 'cv') {
+      const data = cvFromProfile(p);
+      data.summary = '';
+      data.experience = [{ title: '', company: '', location: '', start: '', end: '', bullets: [''] }];
+      data.education = [{ degree: '', school: '', location: '', start: '', end: '', details: '' }];
+      saveMaster({ cvData: data });
+      refresh('name');
+    } else {
+      const first = p.name.trim();
+      saveLetter({ body: `Dear Hiring Manager,\n\n\n\nKind regards,\n${first}`, date: Date.now() });
+      refresh('letter.body');
+    }
+    record();
+  }
+
+  function startCard() {
+    const p = store.get().profile;
+    const tailored = Object.entries(store.get().docs || {})
+      .filter(([, d]) => d?.cvData)
+      .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))[0];
+    const btn = (label, cls, fn) => {
+      const b = h('button', { type: 'button', class: `btn ${cls}` }, label);
+      b.addEventListener('click', fn);
+      return b;
+    };
+    const tone = h('select', { 'aria-label': 'Tone' }, ...['professional', 'warm and enthusiastic', 'concise and direct', 'formal'].map((t) => h('option', { value: t }, t)));
+    const actions =
+      kind === 'cv'
+        ? [
+            p.cv.trim() ? btn('Lay out my CV with Vora', 'primary', () => withAI('Vora is laying out your CV…', async (signal) => saveMaster({ cvData: await ai.structureCV({ signal }) }))) : h('a', { class: 'btn primary', href: '#/profile' }, 'Upload your CV first'),
+            tailored ? btn(`Start from my CV for ${store.get().jobs[tailored[0]]?.company || 'a job'}`, '', () => (record(), saveMaster({ cvData: structuredClone(tailored[1].cvData), template: tailored[1].template, accent: tailored[1].accent }), refresh(), record())) : '',
+            btn('Start from a blank page', 'ghost', () => startBlank()),
+          ]
+        : [
+            h('div', { class: 'row wrap', style: 'justify-content:center' }, tone, btn('Write a general letter with Vora', 'primary', () => withAI('Vora is writing your letter…', async (signal) => saveLetter({ body: await ai.writeGeneralLetter({ tone: tone.value, signal }), date: Date.now() })))),
+            btn('Start from a blank page', 'ghost', () => startBlank()),
+          ];
+    return h(
+      'section',
+      { class: 'docs-start' },
+      h('div', { class: 'docs-start-icon' }, svgIcon(kind === 'cv' ? ICON_DOC : ICON_MAIL)),
+      h('h2', {}, kind === 'cv' ? 'Your CV, ready to edit like a Word page' : 'A cover letter you can send anywhere'),
+      h(
+        'p',
+        { class: 'muted' },
+        kind === 'cv'
+          ? 'Vora lays out the CV from your profile in a professional template, word for word. Then click any text to change it, switch templates and colours, and download a PDF.'
+          : 'A general letter for the roles you want, laid out as a proper business letter in the same template as your CV. Edit it on the page and download it as a PDF.',
+      ),
+      h('div', { class: 'docs-start-actions' }, ...actions.filter(Boolean)),
+    );
+  }
+
+  function layout() {
+    const wide = window.innerWidth >= 900;
+    appEl.classList.toggle('with-outline', outlineOpen && wide && hasDoc());
+    appEl.classList.toggle('with-design', designOpen && hasDoc());
+    design.classList.toggle('open', designOpen && hasDoc());
+    outline.hidden = !(outlineOpen && wide && hasDoc());
+    drawRibbon();
+    requestAnimationFrame(fit);
+  }
+
+  function refresh(focus) {
+    drawTop();
+    renderPaper(focus);
+    drawOutline();
+    drawDesign();
+    layout();
+  }
+
+  // Close menus when clicking elsewhere; leave cleanly when the page changes.
+  const onDocClick = (e) => {
+    if (!appEl.isConnected) return document.removeEventListener('click', onDocClick);
+    for (const d of appEl.querySelectorAll('details.tb-menu[open]')) if (!d.contains(e.target)) d.open = false;
+  };
+  document.addEventListener('click', onDocClick);
+  const gone = new MutationObserver(() => {
+    if (!appEl.isConnected) {
+      gone.disconnect();
+      ro.disconnect();
+    }
+  });
+  gone.observe(view, { childList: true });
+
+  view.append(appEl);
+  refresh();
+  record();
+  showSaved();
 }
 
 // ---------------------------------------------------------------------------
