@@ -60,32 +60,121 @@ function feedNeedsRefresh() {
   return !f || f.key !== key || Date.now() - (f.at || 0) > FEED_TTL;
 }
 
+// The home feed runs the same search as the Find page, in layers, and shows
+// what it has after each one:
+//   1. your roles near you, matched by rules on this device (fast, no AI)
+//   2. your other role families and strongest skills ("also matching your CV")
+//   3. with an AI set up: the AI reads the same search results (cached, so no
+//      new searches) and adds postings the rules missed
+// Everything is merged without repeats, scored against the CV, checked for
+// closed postings, and sorted best match first, newest among equals.
+const FEED_MAX = 160; // jobs kept on the home page
+const FEED_BYTES = 220000; // the synced feed must stay under 256 KiB
+
 function runFeed() {
   if (feedRun) return feedRun;
-  const { roles: given, location, remote, key } = feedInputs();
+  const { location, remote, key } = feedInputs();
   feedError = null;
+  const profile = store.get().profile;
+  const me = readProfile(profile);
+  const place = remote ? 'remote' : location;
+  let all = [];
+  let meta = { roles: me.roles, country: null, searched: [] };
+  let usedAI = false;
+
+  // Add jobs we have not seen, scored the same way as everything else.
+  // `near`: only jobs that name the user's city (or remote, when wanted).
+  const city = norm(location.split(',')[0]);
+  const isNear = (j) => {
+    if (remote) return j.remote || /remote|home ?office/i.test(`${j.location} ${j.title}`);
+    return !city || norm(`${j.location} ${j.title} ${String(j.description || '').slice(0, 600)}`).includes(city);
+  };
+  const add = (jobs, { near = false } = {}) => {
+    let added = 0;
+    for (const j of jobs || []) {
+      if (!j?.title) continue;
+      if (near && !isNear(j)) continue;
+      if (all.some((r) => (r.url && r.url === j.url) || sameJob(r, j) || (norm(r.title) === norm(j.title) && norm(r.company) === norm(j.company)))) continue;
+      if (isStale(j) || knownClosed(j.url)) continue;
+      const rule = scoreJob(j, me, profile.prefs || {}, place);
+      const match = j.match?.score > rule.score ? j.match : rule;
+      if (match.score < 30) continue;
+      const { _text, ...job } = j;
+      void _text;
+      all.push({ ...job, match });
+      added++;
+    }
+    return added;
+  };
+  const publish = (final) => {
+    let kept = [...all]
+      .sort(byBestMatch)
+      .slice(0, FEED_MAX)
+      .map((j) => ({ ...j, description: String(j.description || '').slice(0, 700) }));
+    // Stay inside the sync limit: drop the weakest matches until it fits.
+    while (kept.length > 20 && JSON.stringify(kept).length > FEED_BYTES) kept = kept.slice(0, Math.floor(kept.length * 0.9));
+    if (final) {
+      feedFilter = feedFilter && kept.some((j) => j.source === feedFilter) ? feedFilter : '';
+    }
+    store.update((s) => (s.feed = { key, at: Date.now(), jobs: kept, roles: meta.roles, location: remote ? 'Remote' : location, country: meta.country, searched: meta.searched, noAI: !usedAI, partial: !final }));
+    refreshFeed();
+  };
+
   feedRun = (async () => {
-    // Plain matching rules on this device (js/match.js), no AI.
-    void given;
-    const found = await jobsForYou(store.get().profile);
-    const { roles, country, searched } = found;
-    // The AI double-checks the matches the rules could not vouch for (only when an AI is set up).
-    const closed = ai.hasKey() ? await ai.checkStillOpen(found.jobs.slice(0, 40)).catch(() => new Set()) : new Set();
-    const jobs = found.jobs.filter((j) => !closed.has(j.url));
-    // Keep every match (trimmed so the feed stays small enough to sync).
-    const kept = jobs.slice(0, 80).map((j) => ({ ...j, description: String(j.description || '').slice(0, 1500) }));
-    feedFilter = '';
+    // 1. Your roles near you (rules, no AI).
+    const first = await jobsForYou(profile);
+    meta = { roles: first.roles, country: first.country, searched: first.searched || [] };
+    add(first.jobs);
     feedShown = FEED_PAGE;
-    store.update((s) => (s.feed = { key, at: Date.now(), jobs: kept, roles, location: remote ? 'Remote' : location, country, searched, noAI: true }));
+    publish(false);
+
+    // 2 and 3 run side by side; each shows its jobs as soon as it has them.
+    const layers = [
+      moreJobsForYou(profile, { exclude: all })
+        .then((r) => add(r.jobs) && publish(false))
+        .catch(() => {}),
+    ];
+    if (ai.hasKey() && ai.canSearchWeb()) {
+      for (const role of me.roles.slice(0, 2)) {
+        layers.push(
+          ai
+            .searchEverywhere({ query: role, location: remote ? '' : location, remoteOnly: remote }, { rank: Boolean(profile.cv.trim()) })
+            .then((r) => {
+              usedAI = true;
+              if (add(r.jobs, { near: true })) publish(false);
+            })
+            .catch(() => {}),
+        );
+      }
+    }
+    await Promise.all(layers);
+
+    // Read the pages of the best new matches (closed postings, missing dates),
+    // then the AI double-checks what the rules could not vouch for.
+    const best = [...all].sort(byBestMatch).slice(0, 60);
+    const { dates, gone } = await checkPages(best).catch(() => ({ dates: new Map(), gone: new Set() }));
+    for (const j of all) if (!j.postedAt && dates.has(j.url)) j.postedAt = dates.get(j.url);
+    const closed = ai.hasKey() ? await ai.checkStillOpen(best.filter((j) => !gone.has(j.url))).catch(() => new Set()) : new Set();
+    all = all.filter((j) => !gone.has(j.url) && !closed.has(j.url) && !isStale(j));
+    publish(true);
   })()
     .catch((err) => {
       if (err?.name !== 'AbortError') feedError = { key, message: err.message || 'Could not load jobs.' };
     })
     .finally(() => {
       feedRun = null;
-      if (currentPath === '/') route();
+      refreshFeed();
     });
   return feedRun;
+}
+
+// Redraw only the feed on the home page (not the whole page), so the list
+// grows while the visitor reads, without jumping to the top.
+function refreshFeed() {
+  if (currentPath !== '/') return;
+  const old = view.querySelector('.card.feed');
+  if (old) old.replaceWith(feedSection());
+  else route();
 }
 
 function timeAgo(ts) {
@@ -235,7 +324,13 @@ function feedSection() {
     grid,
     more,
     portalLinks,
-    h('p', { class: 'small muted feed-note' }, `Searched ${feed.searched?.length ? `${feed.searched.join(', ')}, ` : ''}the open web and free job boards, then matched on this device by job title, skills, location and experience. No AI is used for these picks.`),
+    h(
+      'p',
+      { class: 'small muted feed-note' },
+      feed.noAI === false
+        ? `Searched ${feed.searched?.length ? `${feed.searched.join(', ')}, ` : ''}the open web and free job boards for your roles, other roles that fit your CV and your strongest skills. Matched against your CV by job title, skills, location and experience; Vora AI also read the results to find postings the rules missed.`
+        : `Searched ${feed.searched?.length ? `${feed.searched.join(', ')}, ` : ''}the open web and free job boards, then matched on this device by job title, skills, location and experience. No AI is used for these picks.`,
+    ),
   );
 }
 
