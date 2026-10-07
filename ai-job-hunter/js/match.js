@@ -404,6 +404,18 @@ const YESTERDAY = /\b(?:yesterday|gestern|hier|ieri|ayer|ontem)\b/i;
 const DATE_TEXT = /\b(\d{1,2})\.?\s+([A-Za-zäéûç]{3,10}\.?)\s+(20\d{2})\b|\b([A-Za-z]{3,9}\.?)\s+(\d{1,2}),?\s+(20\d{2})\b|\b(20\d{2})-(\d{2})-(\d{2})(?!\d)|\b(\d{1,2})[./](\d{1,2})[./](20\d{2})\b/;
 const POSTED_LABEL = /\b(?:posted|published|date posted|posting date|listed|veröffentlicht|publiziert|ausgeschrieben|online seit|erschienen|inseriert|publié|mis en ligne|pubblicato|publicado|publicada)\b/i;
 
+/** A written calendar date ("24 September 2026", "Sep 24, 2026", "2026-09-24", "24.09.2026"), or 0. */
+function calendarDate(text) {
+  const d = String(text || '').match(DATE_TEXT);
+  if (!d) return 0;
+  let y, m, day;
+  if (d[1]) [day, m, y] = [Number(d[1]), monthIndex(d[2]), Number(d[3])];
+  else if (d[4]) [m, day, y] = [monthIndex(d[4]), Number(d[5]), Number(d[6])];
+  else if (d[7]) [y, m, day] = [Number(d[7]), Number(d[8]) - 1, Number(d[9])];
+  else [day, m, y] = [Number(d[10]), Number(d[11]) - 1, Number(d[12])];
+  return m >= 0 && m < 12 && day >= 1 && day <= 31 ? Date.UTC(y, m, day, 12) : 0;
+}
+
 /** A date written on a page ("24 September 2026", "2026-09-24", "24.09.2026", "3 days ago"), as a timestamp, or 0. */
 export function postedAt(text, now = Date.now()) {
   const s = String(text || '').trim();
@@ -414,19 +426,22 @@ export function postedAt(text, now = Date.now()) {
     const unit = UNIT_MS.find(([re]) => re.test(rel[2].toLowerCase()))?.[1];
     if (unit) ts = now - Number(rel[1]) * unit;
   } else if (DATE_TEXT.test(s)) {
-    const d = s.match(DATE_TEXT);
-    {
-      let y, m, day;
-      if (d[1]) [day, m, y] = [Number(d[1]), monthIndex(d[2]), Number(d[3])];
-      else if (d[4]) [m, day, y] = [monthIndex(d[4]), Number(d[5]), Number(d[6])];
-      else if (d[7]) [y, m, day] = [Number(d[7]), Number(d[8]) - 1, Number(d[9])];
-      else [day, m, y] = [Number(d[10]), Number(d[11]) - 1, Number(d[12])];
-      if (m >= 0 && m < 12 && day >= 1 && day <= 31) ts = Date.UTC(y, m, day, 12);
-    }
+    ts = calendarDate(s);
   } else if (YESTERDAY.test(s)) ts = now - DAY;
   else if (TODAY.test(s)) ts = now;
-  // A date in the future, or more than two years back, is not a posting date.
-  if (!ts || ts > now + DAY || ts < now - 730 * DAY) return 0;
+  // A date in the future, or years back, is not a posting date ("Founded 1997").
+  if (!ts || ts > now + DAY || ts < now - 5 * 365 * DAY) return 0;
+  return ts;
+}
+
+/** "Inserat online seit: 5 Mai": a day and month without a year, taken as the last time that date came round. */
+function withoutYear(text, now = Date.now()) {
+  const m = String(text || '').match(/\b(\d{1,2})\.?\s+([A-Za-zäéûç]{3,10})\.?(?!\s*\d)/);
+  const month = m ? monthIndex(m[2]) : -1;
+  if (month < 0 || Number(m[1]) < 1 || Number(m[1]) > 31) return 0;
+  const year = new Date(now).getUTCFullYear();
+  let ts = Date.UTC(year, month, Number(m[1]), 12);
+  if (ts > now + DAY) ts = Date.UTC(year - 1, month, Number(m[1]), 12);
   return ts;
 }
 
@@ -440,7 +455,8 @@ export function findPostedAt(text, now = Date.now()) {
     if (!POSTED_LABEL.test(l)) continue;
     // "Posted 3 days ago", "Veröffentlicht: 24.09.2026", or the date on the next line.
     const after = l.slice(l.search(POSTED_LABEL));
-    const ts = postedAt(after, now) || (after.length < 30 ? postedAt(lines[i + 1] || '', now) : 0);
+    const next = after.length < 30 ? lines[i + 1] || '' : '';
+    const ts = postedAt(after, now) || postedAt(next, now) || withoutYear(after, now) || withoutYear(next, now);
     if (ts) return ts;
   }
   for (const l of lines.slice(0, 40)) {
@@ -495,13 +511,22 @@ const CLOSED = new RegExp(
   'i',
 );
 
-/** True when a page or search result says the posting is closed. */
-export function isClosed(text) {
-  return CLOSED.test(String(text || '').slice(0, 6000));
+// "Bewerbungsfrist: 15.08.2026", "Apply by 30 September 2026", …
+const DEADLINE = /\b(?:bewerbungsfrist|bewerbungsschluss|bewerbung bis|bewerbungen bis|anmeldeschluss|einsendeschluss|eingabefrist|application deadline|deadline for applications|apply by|apply before|closing date|applications close|date limite|délai de candidature|candidatures jusqu[’']au|postuler avant|scadenza|termine (?:per le )?candidature|candidature entro|fecha límite|plazo de (?:solicitud|inscripción)|prazo (?:de|para) candidatura|inscrições até)\b[^\n]{0,40}/i;
+
+/** True when a page or search result says the posting is closed, or its application deadline has passed. */
+export function isClosed(text, now = Date.now()) {
+  const t = String(text || '').slice(0, 6000);
+  if (CLOSED.test(t)) return true;
+  const d = t.match(DEADLINE);
+  if (!d) return false;
+  const until = calendarDate(d[0]);
+  return Boolean(until) && until < now - DAY;
 }
 
-/** Postings older than this are taken as closed (most portals end them after 30–60 days). */
-export const MAX_AGE_DAYS = 90;
+
+/** Postings older than this are taken as closed (most portals end them after 30–60 days, and many are filled sooner). */
+export const MAX_AGE_DAYS = 60;
 export function isStale(job, now = Date.now()) {
   const ts = jobPostedAt(job);
   return Boolean(ts) && now - ts > MAX_AGE_DAYS * DAY;
@@ -543,16 +568,48 @@ export async function checkPages(jobs, { signal, max = 24 } = {}) {
     const url = block.match(/^URL:\s*(\S+)/m)?.[1];
     if (!url || !asked.includes(url)) continue;
     const page = block.split('\n').slice(2).join('\n');
-    if (isClosed(page)) gone.add(url);
+    if (isClosed(page, now)) gone.add(url);
     const ts = findPostedAt(page, now);
     if (ts) dates.set(url, ts);
   }
   // "Error fetching URL(s): <url>: CRAWL_NOT_FOUND; …": the page was taken down.
   for (const m of text.matchAll(/(https?:\/\/\S+?):\s*CRAWL_(?:NOT_FOUND|HTTP_404|HTTP_410)\b/g)) if (asked.includes(m[1])) gone.add(m[1]);
-  for (const url of asked) memo[url] = [dates.get(url) || 0, now, gone.has(url)];
+  for (const url of asked) memo[url] = [dates.get(url) || 0, now, gone.has(url), memo[url]?.[3] || 0];
   saveDateMemo(memo);
   return { dates, gone };
 }
+
+/**
+ * The jobs the rules above cannot vouch for: no posting date, or posted over
+ * a month ago, and not looked at by the AI in the last few days. Only these
+ * go to the AI double check (js/ai.js checkStillOpen).
+ */
+export function needsAiCheck(jobs, now = Date.now()) {
+  const memo = readDateMemo();
+  return jobs.filter((j) => {
+    const m = memo[j.url];
+    if (m?.[2] || (m?.[3] && now - m[3] < AI_RECHECK)) return false;
+    const ts = jobPostedAt(j) || m?.[0] || 0;
+    return !ts || now - ts > 30 * DAY;
+  });
+}
+
+/** Remember the AI's verdicts: closed jobs stay hidden, open ones are not asked about again for a few days. */
+export function rememberAiCheck(jobs, closedUrls, now = Date.now()) {
+  const memo = readDateMemo();
+  for (const j of jobs) {
+    if (!j.url) continue;
+    const m = memo[j.url] || [0, 0, false, 0];
+    memo[j.url] = [m[0], m[1], m[2] || closedUrls.has(j.url), now];
+  }
+  saveDateMemo(memo);
+}
+
+/** Jobs already known to be closed (by a page read or the AI). */
+export function knownClosed(url) {
+  return Boolean(readDateMemo()[url]?.[2]);
+}
+const AI_RECHECK = 3 * DAY;
 
 // Pages already read: url -> [posted, checkedAt, closed]. Open jobs are read
 // again after a day, in case they closed since.

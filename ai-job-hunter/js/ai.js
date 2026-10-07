@@ -16,7 +16,7 @@ import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
 import { currentLanguage, languageName } from './i18n.js';
 import { providerById, askProvider } from './providers.js';
 import { searchJobs } from './jobs.js';
-import { postedAt, portalQueries, RESULTS_PER_SEARCH, parseSearchResults, sameJob, readProfile, scoreJob, isClosed } from './match.js';
+import { postedAt, portalQueries, RESULTS_PER_SEARCH, parseSearchResults, sameJob, readProfile, scoreJob, isClosed, needsAiCheck, rememberAiCheck, jobPostedAt } from './match.js';
 
 // Every task runs with the same senior HR persona and quality bar, whichever
 // AI does the work (Claude, ChatGPT, Gemini, DeepSeek or Grok).
@@ -511,6 +511,48 @@ function toJob(j) {
       ? { match: { score: Math.max(0, Math.min(100, Math.round(Number(j.match)))), reason: cleanText(String(j.why || '')) } }
       : {}),
   };
+}
+
+/**
+ * Last resort for "is this job still open?". The rules in match.js read each
+ * page for closed notices, passed deadlines and dates; only the jobs they
+ * cannot vouch for (no date, or over a month old) come here, in one quick
+ * request, and each answer is remembered for a few days.
+ * @returns {Promise<Set<string>>} urls of the jobs judged closed
+ */
+export async function checkStillOpen(jobs, { signal } = {}) {
+  const closed = new Set();
+  const doubtful = needsAiCheck(jobs.filter((j) => j.url)).slice(0, 15);
+  if (!doubtful.length || !hasKey()) return closed;
+  const today = new Date().toISOString().slice(0, 10);
+  const list = doubtful
+    .map((j, i) => {
+      const ts = jobPostedAt(j);
+      return `[${i}] ${j.title} at ${j.company || 'unknown'} (${j.source})${ts ? `, posted ${new Date(ts).toISOString().slice(0, 10)}` : ', posting date not shown'}\nURL: ${j.url}\n${String(j.description || '').slice(0, 900)}`;
+    })
+    .join('\n\n');
+  const reply = await ask({
+    quick: true,
+    json: true,
+    system:
+      'You check whether job postings are still open, for a job seeker who does not want to waste time on closed ones. ' +
+      'Judge only from the text given. Say "closed" only when the text clearly shows it: it says the job is closed, filled, expired or no longer accepting applications; ' +
+      'an application deadline or a fixed start date has clearly passed; or its dates or years are clearly old (for example a posting from an earlier year). ' +
+      'A posting that simply gives no date is "open". When unsure, say "open".',
+    messages: [
+      {
+        role: 'user',
+        content: `Today is ${today}.\n\n<postings>\n${list}\n</postings>\n\nReply with ONLY a JSON array of {"index": number, "status": "open" | "closed", "why": string (max 12 words)}.`,
+      },
+    ],
+    signal,
+  });
+  for (const row of Array.isArray(reply) ? reply : []) {
+    const job = doubtful[row?.index];
+    if (job && String(row.status).toLowerCase() === 'closed') closed.add(job.url);
+  }
+  rememberAiCheck(doubtful, closed);
+  return closed;
 }
 
 /** Score how well the candidate fits a set of jobs. Returns {id: {score, reason}}. */

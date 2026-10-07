@@ -8,7 +8,7 @@ import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
-import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPages, isStale } from './match.js';
+import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPages, isStale, knownClosed } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage, setBrand } from './i18n.js';
 import { attachSuggest, rememberSearch } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
@@ -67,7 +67,11 @@ function runFeed() {
   feedRun = (async () => {
     // Plain matching rules on this device (js/match.js), no AI.
     void given;
-    const { jobs, roles, country, searched } = await jobsForYou(store.get().profile);
+    const found = await jobsForYou(store.get().profile);
+    const { roles, country, searched } = found;
+    // The AI double-checks the matches the rules could not vouch for (only when an AI is set up).
+    const closed = ai.hasKey() ? await ai.checkStillOpen(found.jobs.slice(0, 40)).catch(() => new Set()) : new Set();
+    const jobs = found.jobs.filter((j) => !closed.has(j.url));
     // Keep every match (trimmed so the feed stays small enough to sync).
     const kept = jobs.slice(0, 80).map((j) => ({ ...j, description: String(j.description || '').slice(0, 1500) }));
     feedFilter = '';
@@ -117,7 +121,9 @@ function postedTag(job, empty = '') {
 
 function feedSection() {
   const { location, remote, hasExperience, key } = feedInputs();
-  const feed = store.get().feed;
+  const stored = store.get().feed;
+  // Jobs found closed since the feed was made (or now too old) are left out.
+  const feed = stored && { ...stored, jobs: stored.jobs.filter((j) => !isStale(j) && !knownClosed(j.url)) };
   const where = remote ? 'remote' : location;
   const head = (sub, ...actions) =>
     h('div', { class: 'feed-head' }, h('div', {}, h('h2', {}, where ? `Jobs for you ${remote ? '(remote)' : `in ${location}`}` : 'Jobs for you'), sub && h('p', { class: 'muted small' }, sub)), actions.length ? h('div', { class: 'row' }, ...actions) : '');
@@ -168,7 +174,7 @@ function feedSection() {
   const counts = new Map();
   for (const j of feed.jobs) counts.set(j.source, (counts.get(j.source) || 0) + 1);
   if (feedFilter && !counts.has(feedFilter)) feedFilter = '';
-  const list = (feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs).filter((j) => !isStale(j)).sort(byBestMatch);
+  const list = (feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs).sort(byBestMatch);
   const grid = h('div', { class: 'feed-grid' });
   const more = h('button', { class: 'btn feed-more', type: 'button' });
   const chips = h('div', { class: 'chip-row feed-chips', role: 'group', 'aria-label': 'Filter by job site' });
@@ -683,7 +689,7 @@ function renderFind() {
     const main = session.results.filter((j) => !j.extra);
     const fresh = [];
     for (const j of onlyIn(jobs, p)) {
-      if (isStale(j)) continue; // posted too long ago to still be open
+      if (isStale(j) || knownClosed(j.url)) continue; // posted too long ago, or found closed before
       const seen = [...main, ...fresh].some((r) => (r.url && r.url === j.url) || sameJob(r, j) || (norm(r.title) === norm(j.title) && norm(r.company) === norm(j.company)));
       if (seen) continue;
       let match = j.match || session.scores[j.id];
@@ -709,13 +715,21 @@ function renderFind() {
   async function checkResults(signal) {
     if (session.searching) return; // runs again when the search is done
     const run = (session.datesRun = Symbol('check'));
-    try {
-      const { dates, gone } = await checkPages(session.results, { signal });
-      if (session.datesRun !== run || !results.isConnected || (!dates.size && !gone.size)) return;
+    const apply = (gone, dates = new Map()) => {
       const dated = (j) => (!j.postedAt && dates.has(j.url) ? { ...j, postedAt: dates.get(j.url) } : j);
       const open = session.results.filter((j) => !gone.has(j.url) && !isStale(j)).map(dated);
+      if (open.length === session.results.length && !dates.size) return;
       session.results = [...open.filter((j) => !j.extra).sort(byBestMatch), ...open.filter((j) => j.extra)];
       drawResults();
+    };
+    try {
+      const { dates, gone } = await checkPages(session.results, { signal });
+      if (session.datesRun !== run || !results.isConnected) return;
+      apply(gone, dates);
+      // What the rules could not settle (no date, or over a month old): the AI double-checks.
+      const closed = await ai.checkStillOpen(session.results, { signal });
+      if (session.datesRun !== run || !results.isConnected || !closed.size) return;
+      apply(closed);
     } catch {
       // Unchecked jobs stay listed.
     }
