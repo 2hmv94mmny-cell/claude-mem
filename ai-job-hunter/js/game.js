@@ -239,10 +239,84 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
     stopSpeech();
   }
 
-  // Stop everything when the game leaves the page.
+  // ---------------------------------------------------------------------
+  // The arena: the game in its own full-screen page, like a real game.
+  // Nothing else on screen; Exit (or Esc) leaves, and progress is kept.
+  // ---------------------------------------------------------------------
+  let playing = false;
+  let arena = null;
+  let play = null;
+  let hudSlot = null;
+  let returnFocus = null;
+  function openArena() {
+    if (arena?.isConnected) return;
+    returnFocus = document.activeElement;
+    const exit = h('button', { type: 'button', class: 'arena-exit', 'aria-label': 'Exit the game', title: 'Exit (Esc)' }, icon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'), h('span', {}, 'Exit'));
+    exit.addEventListener('click', askExit);
+    hudSlot = h('div', { class: 'arena-hud' });
+    play = h('main', { class: 'arena-play' });
+    arena = h(
+      'div',
+      { class: 'arena', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Interview Deck' },
+      h('div', { class: 'arena-bg', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
+      h('header', { class: 'arena-top' }, exit, h('div', { class: 'arena-title' }, h('strong', {}, 'Interview Deck'), h('span', {}, [job.company, job.title].filter(Boolean).join(' · '))), hudSlot),
+      play,
+    );
+    arena.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      const open = arena.querySelector('.arena-confirm');
+      if (open) open.remove();
+      else askExit();
+    });
+    document.body.append(arena);
+    document.body.classList.add('in-arena');
+    requestAnimationFrame(() => arena.classList.add('in'));
+  }
+  function closeArena() {
+    if (!arena) return;
+    const a = arena;
+    arena = play = hudSlot = null;
+    document.body.classList.remove('in-arena');
+    a.classList.remove('in');
+    a.classList.add('out');
+    setTimeout(() => a.remove(), reduceMotion() ? 0 : 260);
+    if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+  }
+  function setHud(node) {
+    hudSlot?.replaceChildren(node || '');
+  }
+  function leave() {
+    cleanup();
+    playing = false;
+    closeArena();
+    drawLobby();
+  }
+  // Leaving mid-game asks first; progress is saved either way.
+  function askExit() {
+    const st = state();
+    const mid = playing && st.deck?.cards?.length && (st.index ?? 0) < st.deck.cards.length;
+    if (!mid) return leave();
+    if (arena.querySelector('.arena-confirm')) return;
+    const stay = h('button', { type: 'button', class: 'btn primary' }, 'Keep playing');
+    const go = h('button', { type: 'button', class: 'btn' }, 'Leave game');
+    const box = h(
+      'div',
+      { class: 'arena-confirm', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': 'Leave the game?' },
+      h('div', { class: 'arena-confirm-card' }, h('span', { class: 'arena-confirm-emoji', 'aria-hidden': 'true' }, '🃏'), h('h2', {}, 'Leave the game?'), h('p', {}, `Your progress is saved. You can continue from card ${Math.min((st.index ?? 0) + 1, st.deck.cards.length)} any time.`), h('div', { class: 'arena-confirm-actions' }, stay, go)),
+    );
+    stay.addEventListener('click', () => box.remove());
+    go.addEventListener('click', leave);
+    box.addEventListener('click', (e) => e.target === box && box.remove());
+    arena.append(box);
+    stay.focus();
+  }
+
+  // Stop everything when the game leaves the page (navigating away closes the arena too).
   const watcher = new MutationObserver(() => {
     if (!root.isConnected) {
       cleanup();
+      closeArena();
       watcher.disconnect();
     }
   });
@@ -252,9 +326,20 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
     cleanup();
     const st = state();
     const deck = st.deck?.cards?.length ? st.deck : null;
-    if (!deck) return drawLobby();
+    if (!deck || !playing) {
+      closeArena();
+      return drawLobby();
+    }
+    openArena();
     if ((st.index ?? 0) >= deck.cards.length) return drawEnd();
     drawCard();
+  }
+  function enter() {
+    // A card already answered before leaving: continue with the next one.
+    const st = state();
+    if (st.deck && st.results?.[st.index ?? 0] && (st.index ?? 0) < st.deck.cards.length) save({ index: (st.index ?? 0) + 1, hintShown: false, draft: '' });
+    playing = true;
+    draw();
   }
 
   // ---------------------------------------------------------------------
@@ -262,9 +347,16 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
   // ---------------------------------------------------------------------
   function drawLobby(error) {
     const st = state();
-    const deal = h('button', { class: 'btn primary big gl-deal', type: 'button' }, 'Deal the cards');
     const status = h('p', { class: 'muted small', role: 'status' }, error || '');
-    deal.addEventListener('click', () => newDeck(deal, status));
+    const total = st.deck?.cards?.length || 0;
+    const at = st.index ?? 0;
+    const answered = Boolean(st.results?.[at]);
+    const inProgress = total && at < total;
+    const finished = total && at >= total;
+    const deal = h('button', { class: 'btn primary big gl-deal', type: 'button' }, inProgress ? (answered && at + 1 >= total ? 'See my results' : `Continue · card ${Math.min(at + (answered ? 2 : 1), total)} of ${total}`) : finished ? 'See my results' : 'Deal the cards');
+    deal.addEventListener('click', () => (total ? enter() : newDeck()));
+    const fresh = total ? h('button', { class: 'btn gl-fresh', type: 'button' }, 'New deck') : '';
+    if (fresh) fresh.addEventListener('click', () => newDeck());
     const cats = Object.keys(CAT_CLASS);
     const lv = levelOf(totalXP());
     const days = dayStreak();
@@ -296,7 +388,7 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
           h('div', {}, h('strong', {}, st.best ? String(st.best) : '–'), h('span', {}, 'best XP')),
         ),
         h('div', { class: 'gl-cats' }, ...cats.map((c) => h('span', { class: `cat ${CAT_CLASS[c]}` }, c))),
-        deal,
+        h('div', { class: 'gl-actions' }, deal, fresh),
         status,
         h(
           'ul',
@@ -309,25 +401,96 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
     );
   }
 
-  async function newDeck(btn, status) {
+  // While Vora writes the deck: a shuffling animation, what it is doing,
+  // a progress bar and interview tips. Cancel goes back to the lobby.
+  const TIPS = [
+    'Use STAR: the Situation, your Task, the Action you took and the Result.',
+    'End every story with a number: time saved, money, users, a grade.',
+    'It is fine to pause for two seconds before you answer.',
+    'Say "I", not "we", when you describe what you did.',
+    'Have one story about a mistake and what you changed after it.',
+    'Close with a question that shows you read about the company.',
+  ];
+  function drawLoading() {
+    const steps = ['Reading the job posting', 'Picking the question types', 'Writing your 8 cards', 'Shuffling the deck'];
+    const list = h('ol', { class: 'ld-steps' }, ...steps.map((t) => h('li', {}, h('span', { class: 'ld-dot', 'aria-hidden': 'true' }), h('span', {}, t))));
+    const bar = h('span');
+    const tip = h('p', { class: 'ld-tip' }, TIPS[0]);
+    const cancel = h('button', { type: 'button', class: 'btn ghost ld-cancel' }, 'Cancel');
+    cancel.addEventListener('click', () => {
+      ctl?.abort();
+      leave();
+    });
+    setHud('');
+    play.replaceChildren(
+      h(
+        'section',
+        { class: 'ld', role: 'status', 'aria-live': 'polite' },
+        h('div', { class: 'ld-deck', 'aria-hidden': 'true' }, ...Array.from({ length: 6 }, (_, i) => h('span', { class: `ld-card c${i}` }, h('i'), h('i'), h('i')))),
+        h('p', { class: 'ld-eyebrow' }, 'Vora is preparing your deck'),
+        h('h2', {}, `Writing questions for ${job.title}`),
+        list,
+        h('div', { class: 'ld-bar' }, bar),
+        h('div', { class: 'ld-tipbox' }, h('span', { class: 'ld-tip-label' }, 'Tip'), tip),
+        cancel,
+      ),
+    );
+    const t0 = Date.now();
+    let tipAt = 0;
+    const iv = setInterval(() => {
+      if (!bar.isConnected) return clearInterval(iv);
+      const sec = (Date.now() - t0) / 1000;
+      const pct = Math.min(92, 100 * (1 - Math.exp(-sec / 9))); // fast at first, never "done" before it is
+      bar.style.width = `${pct}%`;
+      const stepAt = pct < 18 ? 0 : pct < 40 ? 1 : pct < 85 ? 2 : 3;
+      [...list.children].forEach((li, i) => li.className = i < stepAt ? 'done' : i === stepAt ? 'now' : '');
+      const nextTip = Math.floor(sec / 5) % TIPS.length;
+      if (nextTip !== tipAt) {
+        tipAt = nextTip;
+        tip.classList.remove('swap');
+        void tip.offsetWidth;
+        tip.classList.add('swap');
+        tip.textContent = TIPS[tipAt];
+      }
+    }, 200);
+    return {
+      async done() {
+        clearInterval(iv);
+        bar.style.width = '100%';
+        [...list.children].forEach((li) => (li.className = 'done'));
+        play.querySelector('.ld')?.classList.add('ready');
+        sfx.win();
+        await new Promise((r) => setTimeout(r, reduceMotion() ? 150 : 750));
+      },
+      stop: () => clearInterval(iv),
+    };
+  }
+
+  async function newDeck() {
     if (!ai.hasKey()) {
       toast('Allow Claude for this page, or add an API key in Settings.');
       return;
     }
+    cleanup();
     ctl = new AbortController();
-    btn.disabled = true;
-    btn.textContent = 'Shuffling…';
-    status.textContent = 'Claude is writing questions for this job. About 20 seconds.';
+    const signal = ctl.signal;
+    playing = true;
+    openArena();
+    const loading = drawLoading();
     try {
-      const deck = await ai.interviewDeck(job, { signal: ctl.signal });
+      const deck = await ai.interviewDeck(job, { signal });
+      if (signal.aborted) return;
       if (!deck.cards.length) throw new Error('No questions came back. Try again.');
-      save({ deck, index: 0, results: [], xp: 0, streak: 0 });
+      await loading.done();
+      if (signal.aborted || !arena) return;
+      save({ deck, index: 0, results: [], xp: 0, streak: 0, hintShown: false, draft: '' });
       draw();
     } catch (err) {
-      if (ctl?.signal.aborted) return;
-      btn.disabled = false;
-      btn.textContent = 'Deal the cards';
-      status.textContent = err.message;
+      loading.stop();
+      if (signal.aborted) return;
+      playing = false;
+      closeArena();
+      drawLobby(err.message || 'Vora could not write the deck. Try again.');
     }
   }
 
@@ -459,7 +622,9 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
     const readToggle = canSpeak ? h('label', { class: 'check small' }, h('input', { type: 'checkbox', checked: prefs.readAloud }), 'Read questions aloud') : '';
     if (readToggle) readToggle.querySelector('input').addEventListener('change', (e) => (prefs.readAloud = e.target.checked));
 
-    root.replaceChildren(h('section', { class: 'game' }, hud(), cardEl, answerZone, h('div', { class: 'row space game-foot' }, readToggle, quitButton())));
+    setHud(hud());
+    play.replaceChildren(h('section', { class: 'game' }, cardEl, answerZone, h('div', { class: 'row space game-foot' }, readToggle, quitButton())));
+    play.scrollTop = 0;
 
     // Soft timer: a nudge, never a hard stop.
     const started = Date.now();
@@ -505,7 +670,7 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
         const newHud = hud();
         const xpEl = newHud.querySelector('.xp');
         xpEl.textContent = `${before} XP`;
-        root.querySelector('.hud')?.replaceWith(newHud);
+        setHud(newHud);
         setTimeout(() => flyXP(back.querySelector('.xp-gain'), xpEl, Math.max(0, xp), () => countUp(xpEl, before, state().xp || 0)), 650);
         if (res.stars >= 4) {
           setTimeout(() => confetti(cardEl, res.stars === 5 ? 48 : 28), 520);
@@ -694,9 +859,13 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
     });
     const fresh = h('button', { class: 'btn', type: 'button' }, 'New deck');
     const status = h('p', { class: 'muted small', role: 'status' });
-    fresh.addEventListener('click', () => newDeck(fresh, status));
+    fresh.addEventListener('click', () => newDeck());
 
-    root.replaceChildren(
+    setHud('');
+    const backToJob = h('button', { class: 'btn', type: 'button' }, 'Back to the job');
+    backToJob.addEventListener('click', leave);
+    play.scrollTop = 0;
+    play.replaceChildren(
       h(
         'section',
         { class: 'game-end' },
@@ -735,7 +904,7 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
         st.deck.askThem?.length
           ? h('div', { class: 'bonus-card' }, h('p', { class: 'rank-label' }, 'Bonus card'), h('h3', {}, 'Questions to ask them'), h('ul', {}, ...st.deck.askThem.map((q) => h('li', {}, q))))
           : '',
-        h('div', { class: 'row wrap' }, retry, fresh),
+        h('div', { class: 'row wrap end-actions' }, retry, fresh, backToJob),
         status,
       ),
     );
@@ -743,12 +912,12 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
     if (avg >= 3.5 || newBest) {
       setTimeout(() => {
         sfx.win();
-        confetti(root.querySelector('.rank-card'), 56);
+        confetti(play?.querySelector('.rank-card'), 56);
         buzz([20, 60, 20, 60, 40]);
       }, 350);
     }
     // XP counts up, like a score screen.
-    const el = root.querySelector('.count-up');
+    const el = play.querySelector('.count-up');
     if (el) {
       const to = Number(el.dataset.to) || 0;
       const t0 = performance.now();
