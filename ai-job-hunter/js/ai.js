@@ -742,6 +742,58 @@ export async function reviseCV(cv, instructions, { signal } = {}) {
   return out;
 }
 
+/**
+ * One message in the Documents chat: change the CV or the letter as the user
+ * asks, and nothing else. Off-topic requests leave the document unchanged.
+ * @param {'cv'|'letter'} kind
+ * @param {object} doc  the CV data, or { body, subject, to } for a letter
+ * @param {Array<{role, text}>} history  recent chat messages
+ * @returns {Promise<{changed: boolean, reply: string, doc: object}>}
+ */
+export async function chatEdit(kind, doc, history, message, { signal } = {}) {
+  const label = kind === 'cv' ? 'CV' : 'cover letter';
+  const recent = history
+    .slice(-8)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Vora'}: ${m.text}`)
+    .join('\n');
+  const current = kind === 'cv' ? JSON.stringify({ ...doc, changes: undefined, keywords: undefined }) : JSON.stringify({ body: doc.body || '', subject: doc.subject || '', to: doc.to || '' });
+  const shape = kind === 'cv' ? `${CV_SHAPE}, "titles": object (keep as given)}` : '{"body": string (the full letter text, paragraphs separated by an empty line), "subject": string, "to": string (recipient lines separated by \\n)}';
+  const reply = await ask({
+    json: true,
+    system:
+      `You are Vora, the editor inside the Vora job app. Your only job here is to change the user's ${label} the way they ask. ` +
+      `You do not answer general questions, give advice on other topics, write other documents, or do anything else. ` +
+      HONESTY +
+      '\n\n' +
+      HUMAN_STYLE,
+    messages: [
+      {
+        role: 'user',
+        content:
+          `<current_${kind}>\n${current}\n</current_${kind}>\n\n` +
+          (recent ? `<conversation_so_far>\n${recent}\n</conversation_so_far>\n\n` : '') +
+          `<request>\n${message}\n</request>\n\n` +
+          `If the request is about changing this ${label}, apply it and keep everything else exactly as it is, in the same language as the ${label}. ` +
+          `If it is not about changing this ${label}, change nothing and set "changed" to false, with a short friendly reply that you can only edit the ${label} here. ` +
+          `If the request is unclear, change nothing, set "changed" to false and ask one short question. ` +
+          `Reply with only a JSON object: {"changed": boolean, "reply": string (1-2 short sentences in the language the user wrote in: what you changed, or why not), "${kind}": ${shape}}.`,
+      },
+    ],
+    signal,
+  });
+  if (!reply || typeof reply !== 'object') throw new Error('Vora replied in an unexpected format. Try again.');
+  const changed = Boolean(reply.changed) && reply[kind] && typeof reply[kind] === 'object';
+  let out = doc;
+  if (changed && kind === 'cv') {
+    out = cleanCV(normalizeCV(reply.cv));
+    out.titles = { ...(doc.titles || {}), ...(out.titles || {}) };
+  } else if (changed) {
+    const l = reply.letter;
+    out = { body: cleanText(String(l.body ?? doc.body ?? '')), subject: String(l.subject ?? doc.subject ?? ''), to: String(l.to ?? doc.to ?? '') };
+  }
+  return { changed, reply: cleanText(String(reply.reply || (changed ? 'Done.' : ''))), doc: out };
+}
+
 /** A general cover letter for the roles the user wants (not one job). */
 export async function writeGeneralLetter({ tone = 'professional', signal } = {}) {
   const p = store.get().profile;

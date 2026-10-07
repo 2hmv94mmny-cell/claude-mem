@@ -1783,6 +1783,7 @@ function renderDocuments() {
   } catch {}
   let zoom = 'fit';
   let designOpen = window.innerWidth >= 1100;
+  let chatOpen = false;
   let outlineOpen = window.innerWidth >= 1280;
 
   // ----- the document being edited -----
@@ -1862,6 +1863,7 @@ function renderDocuments() {
   const canvas = h('main', { class: 'docs-canvas' }, paperFit, busy);
   const outline = h('nav', { class: 'docs-outline', 'aria-label': 'Outline' });
   const design = h('aside', { class: 'docs-design', 'aria-label': 'Design' });
+  const chat = h('aside', { class: 'docs-chat', 'aria-label': 'Vora AI chat' });
   const status = h('footer', { class: 'docs-status' });
   const appEl = h(
     'div',
@@ -1874,7 +1876,7 @@ function renderDocuments() {
       h('div', { class: 'docs-top-actions' }, undoBtn, redoBtn, h('span', { class: 'tb-sep' }), zoomSel, moreMenu, pdfBtn),
     ),
     ribbon,
-    h('div', { class: 'docs-body' }, outline, canvas, design),
+    h('div', { class: 'docs-body' }, outline, canvas, design, chat),
     status,
   );
 
@@ -2122,8 +2124,19 @@ function renderDocuments() {
     d.addEventListener('toggle', () => {
       if (!d.open) return;
       for (const o of appEl.querySelectorAll('details.tb-menu[open]')) if (o !== d) o.open = false;
+      floatMenu(d, list);
     });
     return d;
+  }
+
+  // The toolbar scrolls sideways on phones, which would cut a drop-down off:
+  // menus are placed on the page itself, under their button and on screen.
+  function floatMenu(d, list, alignRight = false) {
+    const r = d.firstChild.getBoundingClientRect();
+    const w = list.offsetWidth;
+    const left = alignRight ? r.right - w : r.left;
+    list.style.left = `${Math.max(8, Math.min(left, innerWidth - w - 8))}px`;
+    list.style.top = `${r.bottom + 6}px`;
   }
 
   // Run a Vora AI job on the document behind the writing screen.
@@ -2144,51 +2157,6 @@ function renderDocuments() {
       if (!signal.aborted) toast(err.message || 'Vora could not finish that. Try again.');
     }
   }
-  const reviseWith = (instructions, message) =>
-    withAI({ kind: 'edit', title: message }, async (signal) => {
-      if (kind === 'cv') {
-        const cvData = await ai.reviseCV(cv(), instructions, { signal });
-        stopIfCancelled(signal);
-        saveMaster({ cvData });
-      } else {
-        const body = await ai.reviseText(letterOf().body || '', instructions, { signal });
-        stopIfCancelled(signal);
-        saveLetter({ body });
-      }
-    });
-
-  function aiMenu() {
-    const ask = h('textarea', { rows: 3, placeholder: kind === 'cv' ? 'e.g. stress leadership, shorten the 2016 job' : 'e.g. mention I can start in March' });
-    const go2 = h('button', { type: 'button', class: 'btn primary small' }, 'Apply');
-    go2.addEventListener('click', () => {
-      const v = ask.value.trim();
-      if (!v) return ask.focus();
-      go2.closest('details').open = false;
-      reviseWith(v, 'Vora is editing your document…');
-    });
-    const custom = { node: h('div', { class: 'menu-form' }, h('label', { class: 'small strong' }, 'Ask Vora to change something'), ask, go2) };
-    const items =
-      kind === 'cv'
-        ? [
-            { label: 'Improve the wording', hint: 'Clearer, stronger bullets', run: () => reviseWith('Improve the wording of every bullet and the profile: clear, specific and active, without inventing anything.', 'Improving the wording…') },
-            { label: 'Fit on one page', hint: 'Trim older and weaker points', run: () => reviseWith('Shorten it so it fits on one A4 page: trim older roles and weaker bullets first.', 'Making it fit on one page…') },
-            { label: 'Fix spelling and grammar', run: () => reviseWith('Fix spelling, grammar and punctuation only. Change nothing else.', 'Checking spelling and grammar…') },
-            { label: 'Write a profile summary', run: () => reviseWith('Write a 2-3 sentence profile summary from the experience in the CV.', 'Writing your profile…') },
-            '-',
-            custom,
-          ]
-        : [
-            { label: 'Write a new general letter', hint: 'For your target roles', run: () => withAI({ kind: 'letter' }, async (signal) => (async () => { const body = await ai.writeGeneralLetter({ signal }); stopIfCancelled(signal); saveLetter({ body, date: Date.now() }); })()) },
-            { label: 'Make it shorter', run: () => reviseWith('Make it about a third shorter without losing the main points.', 'Shortening your letter…') },
-            { label: 'More formal', run: () => reviseWith('Make the tone more formal.', 'Adjusting the tone…') },
-            { label: 'Warmer and more personal', run: () => reviseWith('Make it warmer and more personal, still professional.', 'Adjusting the tone…') },
-            { label: 'Fix spelling and grammar', run: () => reviseWith('Fix spelling, grammar and punctuation only. Change nothing else.', 'Checking spelling and grammar…') },
-            '-',
-            custom,
-          ];
-    return menu('Vora AI', ICON_SPARK, items, 'tb-ai');
-  }
-
   function insertMenu() {
     const add = (key) => () => act('add', key);
     return menu('Insert', ICON_PLUS, [
@@ -2240,7 +2208,7 @@ function renderDocuments() {
       swatches,
       h('span', { class: 'tb-sep' }),
       kind === 'cv' && hasDoc() ? insertMenu() : '',
-      hasDoc() ? aiMenu() : '',
+      hasDoc() ? chatButton() : '',
       h('span', { class: 'rb-hint' }, hasDoc() ? (kind === 'cv' ? 'Click any text to edit. Enter adds a bullet.' : 'Click any text to edit. Leave an empty line between paragraphs.') : ''),
     );
   }
@@ -2274,6 +2242,10 @@ function renderDocuments() {
     // "More" menu
     const copyText = () => copy(kind === 'cv' ? cvToText(cv()) : letterOf().body || '');
     const txt = () => download(`${fileBase()}.txt`, kind === 'cv' ? cvToText(cv()) : letterOf().body || '');
+    if (!moreMenu.dataset.float) {
+      moreMenu.dataset.float = '1';
+      moreMenu.addEventListener('toggle', () => moreMenu.open && floatMenu(moreMenu, moreMenu.querySelector('.menu'), true));
+    }
     moreMenu.replaceChildren(
       h('summary', { class: 'icon-btn', 'aria-label': 'More', title: 'More' }, '⋯'),
       h(
@@ -2397,9 +2369,12 @@ function renderDocuments() {
 
   function layout() {
     const wide = window.innerWidth >= 900;
+    const chatting = chatOpen && hasDoc();
     appEl.classList.toggle('with-outline', outlineOpen && wide && hasDoc());
-    appEl.classList.toggle('with-design', designOpen && hasDoc());
-    design.classList.toggle('open', designOpen && hasDoc());
+    appEl.classList.toggle('with-design', designOpen && hasDoc() && !chatting);
+    appEl.classList.toggle('with-chat', chatting);
+    design.classList.toggle('open', designOpen && hasDoc() && !chatting);
+    chat.classList.toggle('open', chatting);
     outline.hidden = !(outlineOpen && wide && hasDoc());
     drawRibbon();
     requestAnimationFrame(fit);
@@ -2410,7 +2385,147 @@ function renderDocuments() {
     renderPaper(focus);
     drawOutline();
     drawDesign();
+    drawChat();
     layout();
+  }
+
+  // ----- Vora AI chat: change the CV or the letter by asking -----
+  const chatLog = () => master().chat?.[kind] || [];
+  const saveChat = (list, k = kind) => saveMaster({ chat: { ...(master().chat || {}), [k]: list.slice(-40) } });
+  let chatBusy = false;
+  const chatInput = h('textarea', { rows: 1, class: 'chat-input', placeholder: '' });
+  const sendBtn = h('button', { type: 'button', class: 'chat-send', 'aria-label': 'Send' }, svgIcon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>'));
+  const chatList = h('div', { class: 'chat-list', role: 'log', 'aria-live': 'polite', translate: 'no' });
+  chatInput.addEventListener('input', () => {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = `${Math.min(chatInput.scrollHeight, 140)}px`;
+  });
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+  sendBtn.addEventListener('click', () => send());
+
+  function chatButton() {
+    const b = h('button', { type: 'button', class: 'rb-btn tb-ai', 'aria-pressed': String(chatOpen), 'aria-expanded': String(chatOpen) }, svgIcon(ICON_SPARK), h('span', {}, 'Vora AI'));
+    b.addEventListener('click', () => toggleChat(!chatOpen));
+    return b;
+  }
+  function toggleChat(on) {
+    chatOpen = on;
+    if (on && window.innerWidth < 1100) designOpen = false;
+    drawChat();
+    layout();
+    if (on) requestAnimationFrame(() => chatInput.focus({ preventScroll: true }));
+  }
+
+  const SUGGEST = {
+    cv: ['Improve the wording', 'Make it fit on one page', 'Fix spelling and grammar', 'Write a profile summary from my experience'],
+    letter: ['Make it shorter', 'More formal', 'Warmer and more personal', 'Fix spelling and grammar'],
+  };
+  function drawChat() {
+    if (!hasDoc()) return chat.replaceChildren();
+    const first = store.get().profile.name.trim().split(' ')[0];
+    const label = kind === 'cv' ? 'CV' : 'cover letter';
+    chatInput.placeholder = kind === 'cv' ? 'Ask Vora to change your CV…' : 'Ask Vora to change your letter…';
+    const log = chatLog();
+    const bubbles = log.map((m, i) => {
+      const own = m.role === 'user';
+      const undo =
+        !own && m.changed && i === log.length - 1 && hist[kind].i > 0
+          ? (() => {
+              const u = h('button', { type: 'button', class: 'chat-undo' }, svgIcon(ICON_UNDO), 'Undo this change');
+              u.addEventListener('click', () => {
+                travel(-1);
+                saveChat(chatLog().map((x, j) => (j === chatLog().length - 1 ? { ...x, changed: false, undone: true } : x)));
+                drawChat();
+              });
+              return u;
+            })()
+          : '';
+      return h(
+        'div',
+        { class: `chat-msg ${own ? 'own' : 'vora'}${m.error ? ' error' : ''}` },
+        own ? '' : h('span', { class: 'chat-avatar', 'aria-hidden': 'true' }, svgIcon(ICON_SPARK)),
+        h('div', { class: 'chat-bubble' }, h('p', {}, m.text), m.undone ? h('small', { class: 'muted' }, 'Undone') : '', undo),
+      );
+    });
+    const empty = !log.length
+      ? h(
+          'div',
+          { class: 'chat-empty' },
+          h('div', { class: 'chat-empty-icon' }, svgIcon(ICON_SPARK)),
+          h('p', { class: 'chat-hello' }, first ? `Hi ${first}, what should I change in your ${label}?` : `What should I change in your ${label}?`),
+          h('p', { class: 'small muted' }, 'Tell me in your own words. I change the page for you, and you can undo any change.'),
+        )
+      : '';
+    const chips = h(
+      'div',
+      { class: 'chat-chips' },
+      ...SUGGEST[kind].map((t) => {
+        const c = h('button', { type: 'button', class: 'chat-chip' }, t);
+        c.addEventListener('click', () => send(tr(t)));
+        return c;
+      }),
+    );
+    const typing = chatBusy ? h('div', { class: 'chat-msg vora' }, h('span', { class: 'chat-avatar', 'aria-hidden': 'true' }, svgIcon(ICON_SPARK)), h('div', { class: 'chat-bubble typing', 'aria-label': 'Vora is editing' }, h('span'), h('span'), h('span'))) : '';
+    chatList.replaceChildren(empty, ...bubbles, typing);
+    const close = h('button', { type: 'button', class: 'icon-btn chat-close', 'aria-label': 'Close chat', title: 'Close' }, '×');
+    close.addEventListener('click', () => toggleChat(false));
+    sendBtn.disabled = chatBusy;
+    chat.replaceChildren(
+      h('div', { class: 'chat-grab', 'aria-hidden': 'true' }),
+      h('header', { class: 'chat-head' }, h('span', { class: 'chat-avatar lg', 'aria-hidden': 'true' }, svgIcon(ICON_SPARK)), h('div', {}, h('strong', {}, 'Vora AI'), h('span', {}, kind === 'cv' ? 'Edits your CV' : 'Edits your cover letter')), close),
+      chatList,
+      h('div', { class: 'chat-compose' }, log.length < 2 && !chatBusy ? chips : '', h('div', { class: 'chat-box' }, chatInput, sendBtn), h('p', { class: 'chat-note' }, `Vora only changes this ${label}.`)),
+    );
+    requestAnimationFrame(() => (chatList.scrollTop = chatList.scrollHeight));
+  }
+
+  async function send(text) {
+    const message = String(text ?? chatInput.value).trim();
+    if (!message || chatBusy) return;
+    if (!ai.hasKey()) return toast('Set up the AI in Settings to use Vora AI.');
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    const docKind = kind;
+    const history = chatLog();
+    saveChat([...history, { role: 'user', text: message, at: Date.now() }]);
+    chatBusy = true;
+    drawChat();
+    appEl.classList.add('ai-editing');
+    const signal = newAbort();
+    try {
+      const current = docKind === 'cv' ? cv() : { body: letterOf().body || '', subject: letterOf().subject || '', to: letterOf().to || '' };
+      const res = await ai.chatEdit(docKind, current, history, message, { signal });
+      stopIfCancelled(signal);
+      if (res.changed) {
+        record();
+        if (docKind === 'cv') saveMaster({ cvData: res.doc });
+        else saveLetter({ body: res.doc.body, subject: res.doc.subject, to: res.doc.to });
+        record();
+        if (kind === docKind) {
+          renderPaper();
+          drawOutline();
+        }
+        showSaved();
+        paperScale.classList.remove('flash');
+        void paperScale.offsetWidth;
+        paperScale.classList.add('flash');
+      }
+      const log = master().chat?.[docKind] || [];
+      saveChat([...log, { role: 'vora', text: res.reply || (res.changed ? 'Done.' : 'I can only edit this document.'), changed: res.changed, at: Date.now() }], docKind);
+    } catch (err) {
+      const log = master().chat?.[docKind] || [];
+      if (!signal.aborted) saveChat([...log, { role: 'vora', text: err.message || 'Vora could not finish that. Try again.', error: true, at: Date.now() }], docKind);
+    } finally {
+      chatBusy = false;
+      appEl.classList.remove('ai-editing');
+      drawChat();
+      paintHistory();
+    }
   }
 
   // Close menus when clicking elsewhere; leave cleanly when the page changes.
