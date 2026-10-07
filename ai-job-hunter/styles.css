@@ -2368,3 +2368,15 @@ body:has(.docs-app) { overflow: hidden; }
   .pf2 .pf-side { display: contents; }
   .pf2 .strength.has-todo { order: -1; }
 }
+
+/* Editing the profile header on a phone: photo row on top, then the fields full width. */
+@media (max-width: 760px) {
+  .profile-hero.editing { grid-template-columns: minmax(0, 1fr); padding: 56px var(--sp-5) var(--sp-5); gap: var(--sp-4); align-items: start; }
+  .profile-hero.editing .hero-photo { display: flex; align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap; }
+  .profile-hero.editing .hero-photo .avatar { width: 88px; height: 88px; font-size: 1.7rem; }
+  .profile-hero.editing .hero-photo .btn { margin-bottom: 4px; }
+  .profile-hero.editing .hero-form { grid-template-columns: minmax(0, 1fr); padding-top: 0; gap: var(--sp-3); }
+  .profile-hero.editing .hero-form input { width: 100%; min-width: 0; font-size: 16px; }
+  .profile-hero.editing .hero-form-actions { gap: var(--sp-3); }
+  .profile-hero.editing .hero-form-actions .btn { flex: none; min-height: 44px; padding-inline: var(--sp-6); }
+}
