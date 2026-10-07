@@ -24,6 +24,32 @@ export const TEMPLATES = [
   { id: 'sidebar', name: 'Sidebar', blurb: 'Coloured sidebar for contact and skills. Eye-catching, but some ATS read two columns poorly.', ats: false, layout: 'sidebar', font: 'sans', sep: '\n', accent: '#1e3a5f', accents: ['#1e3a5f', ...ACCENTS] },
 ];
 
+// Fonts the user can pick for a CV or letter. On screen they come from Google
+// Fonts; in the PDF the same fonts are embedded (js/cv-fonts.js for the two
+// built in, js/fonts/<id>.js for the rest, loaded only when picked).
+export const FONT_CHOICES = [
+  { id: '', name: 'Template font', note: 'As the template was designed' },
+  { id: 'Carlito', name: 'Calibri style', note: 'Carlito', css: "'Carlito', 'Calibri', sans-serif", kind: 'Sans' },
+  { id: 'Arimo', name: 'Arial style', note: 'Arimo', css: "'Arimo', 'Arial', sans-serif", kind: 'Sans' },
+  { id: 'Inter', name: 'Inter', note: 'Modern, very clear', css: "'Inter', sans-serif", kind: 'Sans' },
+  { id: 'Roboto', name: 'Roboto', note: 'Clean and neutral', css: "'Roboto', sans-serif", kind: 'Sans' },
+  { id: 'Lato', name: 'Lato', note: 'Friendly and warm', css: "'Lato', sans-serif", kind: 'Sans' },
+  { id: 'Montserrat', name: 'Montserrat', note: 'Bold and contemporary', css: "'Montserrat', sans-serif", kind: 'Sans' },
+  { id: 'SourceSans', name: 'Source Sans', note: 'Compact and readable', css: "'Source Sans 3', sans-serif", kind: 'Sans', builtin: true },
+  { id: 'Tinos', name: 'Times style', note: 'Tinos', css: "'Tinos', 'Times New Roman', serif", kind: 'Serif', builtin: true },
+  { id: 'EBGaramond', name: 'Garamond', note: 'EB Garamond, elegant', css: "'EB Garamond', 'Garamond', serif", kind: 'Serif' },
+  { id: 'Lora', name: 'Lora', note: 'Classic and soft', css: "'Lora', serif", kind: 'Serif' },
+];
+export const fontChoice = (id) => FONT_CHOICES.find((f) => f.id === id) || FONT_CHOICES[0];
+
+/** Put the picked font on a page (screen). */
+function applyFont(page, fontId) {
+  const f = fontChoice(fontId);
+  if (!f.id) return;
+  page.classList.add('custom-font');
+  page.style.setProperty('--cv-font', f.css);
+}
+
 // Earlier template ids, kept so saved choices still work.
 const ALIASES = { classic: 'harvard', compact: 'jakes' };
 
@@ -187,10 +213,11 @@ const splitName = (name) => {
  * The CV on an A4 page in a template.
  * @param {object} [opts] { editable } draw every text as an editable field
  */
-export function renderCV(cv, templateId = 'harvard', pickedAccent, { editable = false } = {}) {
+export function renderCV(cv, templateId = 'harvard', pickedAccent, { editable = false, font = '' } = {}) {
   const t = getTemplate(templateId);
   const accent = accentFor(t, pickedAccent);
   const page = h('article', { class: `cv-page tpl-${t.id} lay-${t.layout}${editable ? ' editing' : ''}`, style: `--cv-accent:${accent}` });
+  applyFont(page, font);
   EDIT = editable;
   try {
     if (t.layout === 'sidebar') {
@@ -385,15 +412,21 @@ const INK = '#1f2937';
 const MUTED = '#6b7280';
 const A4_W = 595.28;
 
-/** Build a PDF Blob from a pdfmake definition. */
-export async function makePDF(definition) {
+/** Build a PDF Blob from a pdfmake definition. `font`: a picked font id (FONT_CHOICES). */
+export async function makePDF(definition, { font = '' } = {}) {
   await loadScript(PDFMAKE);
   await loadScript(OWN_FONTS);
+  const extra = font && !fontChoice(font).builtin && fontChoice(font).id ? font : '';
+  if (extra) await loadScript(`js/fonts/${extra}.js`);
   const pm = window.pdfMake;
-  // addVirtualFileSystem replaces pdfmake's font set, so register ours once and only ours.
-  if (!pm.__ajhFonts) {
-    pm.addVirtualFileSystem(window.AJH_PDF_FONTS);
-    pm.__ajhFonts = true;
+  // addVirtualFileSystem replaces pdfmake's font set, so register ours (and any picked font) together.
+  const want = ['base', ...Object.keys(window.VORA_FONTS || {})].join(',');
+  if (pm.__ajhFonts !== want) {
+    pm.addVirtualFileSystem(Object.assign({}, window.AJH_PDF_FONTS, ...Object.values(window.VORA_FONTS || {})));
+    pm.__ajhFonts = want;
+  }
+  for (const id of Object.keys(window.VORA_FONTS || {})) {
+    FONTS[id] ||= { normal: `${id}-Regular.ttf`, bold: `${id}-Bold.ttf`, italics: `${id}-Italic.ttf`, bolditalics: `${id}-BoldItalic.ttf` };
   }
   return new Promise((resolve, reject) => {
     try {
@@ -404,11 +437,12 @@ export async function makePDF(definition) {
   });
 }
 
-function pdfLook(t, accent) {
+function pdfLook(t, accent, font = '') {
   const serif = t.font === 'serif';
   const base = t.id === 'jakes' ? 9.5 : serif ? 10.5 : 10;
   return {
-    font: FAMILY[t.font],
+    font: fontChoice(font).id || FAMILY[t.font],
+    picked: Boolean(fontChoice(font).id),
     base,
     accent,
     headColor: { harvard: '#111111', jakes: '#111111', modern: accent, minimal: '#6b7280', awesome: '#222222', moderncv: accent, europass: accent, sidebar: accent }[t.id],
@@ -487,16 +521,16 @@ function pdfBody(cv, t, L, key) {
 function pdfName(cv, t, L) {
   if (t.id === 'awesome') {
     const [first, last] = splitName(cv.name);
-    return { text: [{ text: first ? `${first} ` : '', font: 'SourceSansLight', color: '#555555' }, { text: last, bold: true }], fontSize: L.nameSize, alignment: 'center' };
+    return { text: [{ text: first ? `${first} ` : '', font: L.picked ? L.font : 'SourceSansLight', color: '#555555' }, { text: last, bold: true }], fontSize: L.nameSize, alignment: 'center' };
   }
-  if (t.id === 'minimal') return { text: cv.name, font: 'SourceSansLight', fontSize: L.nameSize, color: INK };
+  if (t.id === 'minimal') return { text: cv.name, font: L.picked ? L.font : 'SourceSansLight', fontSize: L.nameSize, color: INK };
   if (t.id === 'jakes') return { text: cv.name, fontSize: L.nameSize, alignment: 'center' };
   return { text: cv.name, bold: true, fontSize: L.nameSize, color: t.id === 'moderncv' ? '#333333' : t.id === 'modern' ? L.accent : '#111111', alignment: L.center ? 'center' : 'left' };
 }
 
-export function cvPDFDefinition(cv, templateId = 'harvard', pickedAccent) {
+export function cvPDFDefinition(cv, templateId = 'harvard', pickedAccent, { font = '' } = {}) {
   const t = getTemplate(templateId);
-  const L = pdfLook(t, accentFor(t, pickedAccent));
+  const L = pdfLook(t, accentFor(t, pickedAccent), font);
   const defaults = { font: L.font, fontSize: L.base, lineHeight: 1.22, color: INK };
   const info = { title: `${cv.name} CV`, author: cv.name };
 
@@ -673,11 +707,12 @@ function letterBodyPreview(parts) {
 }
 
 /** On-screen cover letter in a template. */
-export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}, { editable = false } = {}) {
+export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}, { editable = false, font = '' } = {}) {
   const t = getTemplate(templateId);
   const accent = accentFor(t, pickedAccent);
   const parts = letterParts(cv, letterText, meta);
   const page = h('article', { class: `cv-page letter-page tpl-${t.id} lay-${t.layout}${editable ? ' editing' : ''}`, style: `--cv-accent:${accent}` });
+  applyFont(page, font);
   EDIT = editable;
   try {
     if (t.layout === 'sidebar') {
@@ -703,9 +738,9 @@ export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccen
 }
 
 /** Cover letter PDF matching renderLetter. */
-export function letterPDFDefinition(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}) {
+export function letterPDFDefinition(cv, letterText, templateId = 'harvard', pickedAccent, meta = {}, { font = '' } = {}) {
   const t = getTemplate(templateId);
-  const L = pdfLook(t, accentFor(t, pickedAccent));
+  const L = pdfLook(t, accentFor(t, pickedAccent), font);
   const parts = letterParts(cv, letterText, meta);
   const info = { title: `${cv.name} cover letter`, author: cv.name };
   const defaults = { font: L.font, fontSize: L.base + 0.5, lineHeight: 1.35, color: INK };

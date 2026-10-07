@@ -14,7 +14,7 @@ import { attachSuggest, rememberSearch, recentSearches } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
-import { TEMPLATES, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
+import { TEMPLATES, FONT_CHOICES, fontChoice, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
 
 const view = document.getElementById('view');
 
@@ -401,7 +401,8 @@ const routes = [
   [/^\/tracker$/, renderTracker],
   [/^\/job\/(.+)$/, (id) => renderJob(decodeURIComponent(id))],
   [/^\/add$/, renderAddJob],
-  [/^\/documents$/, renderDocuments],
+  [/^\/documents$/, renderDocumentsHub],
+  [/^\/documents\/(cv|letter)$/, (k) => renderDocuments(k)],
   [/^\/profile$/, renderProfile],
   [/^\/settings$/, renderSettings],
 ];
@@ -1771,19 +1772,143 @@ const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 
 const ICON_CLOUD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19.5 10 4 4 0 0 1 18 18z"/><path d="M9.5 13.5l2 2 3.5-3.5"/></svg>';
 const A4_HEIGHT = 1123;
 
-function renderDocuments() {
+// The screen fonts for the font picker (the PDF embeds the same fonts).
+function ensureEditorFonts() {
+  if (document.getElementById('vora-doc-fonts')) return;
+  const fams = ['Arimo', 'Carlito', 'Inter', 'Lato', 'Roboto', 'Montserrat', 'EB+Garamond', 'Lora'].map((f) => `family=${f}:ital,wght@0,400;0,700;1,400;1,700`).join('&');
+  document.head.append(h('link', { id: 'vora-doc-fonts', rel: 'stylesheet', href: `https://fonts.googleapis.com/css2?${fams}&display=swap` }));
+}
+
+// The Documents hub: the main CV and the general cover letter as cards, plus
+// everything written for a specific job. Opening one goes to the editor.
+function renderDocumentsHub() {
+  ensureEditorFonts();
+  const st = store.get();
+  const m = st.master || {};
+  const L = m.letter || {};
+  const name = st.profile.name.trim();
+  const cvData = m.cvData;
+  const letterFont = L.font ?? m.font ?? '';
+  const letterTpl = getTemplate(L.template || m.template);
+  const letterAccent = accentFor(letterTpl, L.accent || (L.template ? '' : m.accent));
+  const words = (t) => (String(t || '').match(/\S+/g) || []).length;
+
+  async function pdf(btn, kind) {
+    const label = btn.lastChild.textContent;
+    btn.disabled = true;
+    btn.lastChild.textContent = 'Making PDF…';
+    try {
+      const font = kind === 'cv' ? m.font || '' : letterFont;
+      const base = slug(`${name || 'document'}-${kind === 'cv' ? 'cv' : 'cover-letter'}`);
+      const def =
+        kind === 'cv'
+          ? cvPDFDefinition(cvData, getTemplate(m.template).id, accentFor(getTemplate(m.template), m.accent), { font })
+          : letterPDFDefinition(cvData || cvFromProfile(st.profile), L.body || '', letterTpl.id, letterAccent, { title: '', company: '', location: '', date: L.date, dateLine: L.dateLine, recipient: L.to, subject: L.subject }, { font });
+      await download(`${base}.pdf`, await makePDF(def, { font }), 'application/pdf');
+    } catch (err) {
+      console.error(err);
+      toast('Could not make the PDF. Check your connection and try again.');
+    } finally {
+      btn.disabled = false;
+      btn.lastChild.textContent = label;
+    }
+  }
+
+  function card(kind) {
+    const has = kind === 'cv' ? Boolean(cvData) : typeof L.body === 'string';
+    const tpl = kind === 'cv' ? getTemplate(m.template) : letterTpl;
+    const font = fontChoice(kind === 'cv' ? m.font || '' : letterFont);
+    const href = `#/documents/${kind}`;
+    const thumb = has
+      ? h('div', { class: 'hub-paper', 'aria-hidden': 'true' }, kind === 'cv' ? renderCV(cvData, tpl.id, accentFor(tpl, m.accent), { font: font.id }) : renderLetter(cvData || cvFromProfile(st.profile), L.body || '', tpl.id, letterAccent, { title: '', company: '', location: '', date: L.date, dateLine: L.dateLine, recipient: L.to, subject: L.subject }, { font: font.id }))
+      : h('div', { class: 'hub-paper empty', 'aria-hidden': 'true' }, h('span', { class: 'hub-plus' }, '+'));
+    const title = kind === 'cv' ? 'CV' : 'Cover letter';
+    const actions = h('div', { class: 'hub-actions' }, h('a', { class: `btn ${has ? 'primary' : 'primary'} small`, href }, has ? 'Open editor' : kind === 'cv' ? 'Create CV' : 'Write letter'));
+    if (has) {
+      const dl = h('button', { type: 'button', class: 'btn small' }, svgIcon(ICON_DOWNLOAD), h('span', {}, 'PDF'));
+      dl.addEventListener('click', () => pdf(dl, kind));
+      actions.append(dl);
+    }
+    const meta = has
+      ? [tpl.name, font.id ? font.name : 'Template font', kind === 'cv' ? ((n) => `${n} ${n === 1 ? 'job' : 'jobs'}`)((cvData.experience || []).length) : `${words(L.body)} words`]
+      : [kind === 'cv' ? 'Laid out from your profile, or start blank' : 'A general letter you can adapt to any job'];
+    return h(
+      'article',
+      { class: `hub-card${has ? '' : ' is-empty'}` },
+      h('a', { class: 'hub-thumb', href, 'aria-label': has ? `Open ${title}` : `Create ${title}` }, thumb, has ? h('span', { class: 'hub-open' }, 'Open') : ''),
+      h(
+        'div',
+        { class: 'hub-info' },
+        h('div', { class: 'hub-title' }, h('span', { class: 'hub-icon', 'aria-hidden': 'true' }, svgIcon(kind === 'cv' ? ICON_DOC : ICON_MAIL)), h('h2', {}, title), has ? h('span', { class: 'tpl-badge' }, tpl.ats ? 'ATS friendly' : 'Design') : ''),
+        h('p', { class: 'hub-meta' }, ...meta.flatMap((x, i) => (i ? [h('span', { 'aria-hidden': 'true' }, ' · '), h('span', {}, x)] : [h('span', {}, x)]))),
+        has && m.updatedAt ? h('p', { class: 'hub-when' }, `Edited ${timeAgo(m.updatedAt)}`) : '',
+        actions,
+      ),
+    );
+  }
+
+  const forJobs = Object.entries(st.docs || {})
+    .filter(([id, d]) => st.jobs[id] && (d.cvData || d.coverLetter))
+    .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))
+    .slice(0, 12);
+
+  const tips = [
+    ['Pick a font', 'Ten fonts, from Calibri and Arial styles to Garamond. The PDF uses the same font.'],
+    ['Check before sending', 'Check lists what a recruiter notices first, and Vora fixes it in one click.'],
+    ['Ask Vora', 'Tell Vora what to change ("make it shorter", "add my Python course") and it edits the page.'],
+  ];
+
+  view.append(
+    h(
+      'section',
+      { class: 'hub' },
+      pageHeader('Documents', 'Your CV and cover letter. Edit them like in Word, then download a PDF.'),
+      h('div', { class: 'hub-grid' }, card('cv'), card('letter')),
+      h('div', { class: 'hub-tips' }, ...tips.map(([t, d], i) => h('div', { class: 'hub-tip' }, h('span', { class: 'hub-tip-n', 'aria-hidden': 'true' }, String(i + 1)), h('div', {}, h('strong', {}, t), h('p', {}, d))))),
+      forJobs.length
+        ? h(
+            'section',
+            { class: 'hub-jobs' },
+            h('div', { class: 'section-title' }, h('h2', {}, 'Written for a job')),
+            h(
+              'ul',
+              { class: 'hub-job-list' },
+              ...forJobs.map(([id, d]) => {
+                const j = st.jobs[id];
+                return h(
+                  'li',
+                  {},
+                  h(
+                    'a',
+                    { href: `#/job/${encodeURIComponent(id)}` },
+                    h('span', { class: 'hub-job-logo', 'aria-hidden': 'true' }, (j.company || '?').trim().charAt(0).toUpperCase()),
+                    h('span', { class: 'hub-job-text' }, h('strong', {}, j.title), h('small', {}, [j.company, d.updatedAt ? timeAgo(d.updatedAt) : ''].filter(Boolean).join(' · '))),
+                    h('span', { class: 'hub-job-tags' }, d.cvData ? h('span', { class: 'tpl-badge' }, 'CV') : '', d.coverLetter ? h('span', { class: 'tpl-badge' }, 'Letter') : ''),
+                  ),
+                );
+              }),
+            ),
+          )
+        : '',
+    ),
+  );
+}
+
+function renderDocuments(initialKind) {
+  ensureEditorFonts();
   const master = () => store.get().master || {};
   const saveMaster = (patch) => store.update((s) => (s.master = { ...(s.master || {}), ...patch, updatedAt: Date.now() }));
   const letterOf = () => master().letter || {};
   const saveLetter = (patch) => saveMaster({ letter: { ...letterOf(), ...patch } });
 
-  let kind = 'cv';
+  let kind = initialKind === 'letter' ? 'letter' : 'cv';
   try {
-    kind = sessionStorage.getItem('ajh:doc') === 'letter' ? 'letter' : 'cv';
+    sessionStorage.setItem('ajh:doc', kind);
   } catch {}
   let zoom = 'fit';
   let designOpen = window.innerWidth >= 1100;
   let chatOpen = false;
+  let checkOpen = false;
   let outlineOpen = window.innerWidth >= 1280;
 
   // ----- the document being edited -----
@@ -1796,7 +1921,9 @@ function renderDocuments() {
   };
   const letterMeta = () => ({ title: '', company: '', location: '', date: letterOf().date, dateLine: letterOf().dateLine, recipient: letterOf().to, subject: letterOf().subject });
   const hasDoc = () => (kind === 'cv' ? Boolean(cv()) : typeof letterOf().body === 'string');
-  const page = (id, color, opts) => (kind === 'cv' ? renderCV(cv(), id, color, opts) : renderLetter(letterCV(), letterOf().body || '', id, color, letterMeta(), opts));
+  // The font: the CV's pick; the letter follows the CV unless it has its own.
+  const fontId = () => (kind === 'cv' ? master().font || '' : letterOf().font ?? master().font ?? '');
+  const page = (id, color, opts = {}) => (kind === 'cv' ? renderCV(cv(), id, color, { font: fontId(), ...opts }) : renderLetter(letterCV(), letterOf().body || '', id, color, letterMeta(), { font: fontId(), ...opts }));
 
   // ----- undo / redo: snapshots of the content of each document -----
   const hist = { cv: { stack: [], i: -1 }, letter: { stack: [], i: -1 } };
@@ -1827,6 +1954,7 @@ function renderDocuments() {
   }
 
   // ----- top bar -----
+  const backBtn = h('a', { class: 'docs-back', href: '#/documents', title: 'All documents', 'aria-label': 'Back to all documents' }, svgIcon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>'), h('span', {}, 'Documents'));
   const docSwitch = h('div', { class: 'segmented docs-switch', role: 'tablist', 'aria-label': 'Document' });
   const docTitle = h('strong', {});
   const saveState = h('span', { class: 'doc-save', role: 'status' });
@@ -1851,10 +1979,17 @@ function renderDocuments() {
     layout();
   });
   const designBtn = h('button', { type: 'button', class: 'rb-btn', 'aria-pressed': String(designOpen) }, svgIcon(ICON_PALETTE), h('span', { class: 'rb-tpl' }));
-  designBtn.addEventListener('click', () => {
-    designOpen = !designOpen;
+  designBtn.addEventListener('click', () => openPanel(designOpen ? '' : 'design'));
+  // One side panel at a time: Design, Vora AI or Check.
+  function openPanel(name) {
+    designOpen = name === 'design';
+    chatOpen = name === 'chat';
+    checkOpen = name === 'check';
+    if (chatOpen) drawChat();
+    if (checkOpen) drawCheck();
     layout();
-  });
+    if (chatOpen) requestAnimationFrame(() => chatInput.focus({ preventScroll: true }));
+  }
 
   // ----- body -----
   const paperScale = h('div', { class: 'paper-scale' });
@@ -1864,6 +1999,7 @@ function renderDocuments() {
   const outline = h('nav', { class: 'docs-outline', 'aria-label': 'Outline' });
   const design = h('aside', { class: 'docs-design', 'aria-label': 'Design' });
   const chat = h('aside', { class: 'docs-chat', 'aria-label': 'Vora AI chat' });
+  const check = h('aside', { class: 'docs-check', 'aria-label': 'Document check' });
   const status = h('footer', { class: 'docs-status' });
   const appEl = h(
     'div',
@@ -1871,12 +2007,13 @@ function renderDocuments() {
     h(
       'div',
       { class: 'docs-top' },
-      docSwitch,
+      backBtn,
       h('div', { class: 'docs-name' }, docTitle, saveState),
+      docSwitch,
       h('div', { class: 'docs-top-actions' }, undoBtn, redoBtn, h('span', { class: 'tb-sep' }), zoomSel, moreMenu, pdfBtn),
     ),
     ribbon,
-    h('div', { class: 'docs-body' }, outline, canvas, design, chat),
+    h('div', { class: 'docs-body' }, outline, canvas, design, chat, check),
     status,
   );
 
@@ -2124,6 +2261,8 @@ function renderDocuments() {
     d.addEventListener('toggle', () => {
       if (!d.open) return;
       for (const o of appEl.querySelectorAll('details.tb-menu[open]')) if (o !== d) o.open = false;
+      // Fetch every font now so each name shows in its own face.
+      for (const f of FONT_CHOICES) if (f.css) document.fonts?.load(`16px ${f.css}`).catch(() => {});
       floatMenu(d, list);
     });
     return d;
@@ -2201,15 +2340,14 @@ function renderDocuments() {
         )
       : '';
     if (!hasDoc()) return ribbon.replaceChildren(h('span', { class: 'rb-hint', style: 'margin-left:0;padding-left:4px' }, kind === 'cv' ? 'Start your CV to see the editing tools.' : 'Start your letter to see the editing tools.'));
+    const checkBtn = h('button', { type: 'button', class: 'rb-btn', 'aria-pressed': String(checkOpen) }, svgIcon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>'), h('span', {}, 'Check'));
+    checkBtn.addEventListener('click', () => openPanel(checkOpen ? '' : 'check'));
     ribbon.replaceChildren(
-      outlineBtn,
-      h('span', { class: 'tb-sep' }),
-      designBtn,
-      swatches,
-      h('span', { class: 'tb-sep' }),
-      kind === 'cv' && hasDoc() ? insertMenu() : '',
-      hasDoc() ? chatButton() : '',
-      h('span', { class: 'rb-hint' }, hasDoc() ? (kind === 'cv' ? 'Click any text to edit. Enter adds a bullet.' : 'Click any text to edit. Leave an empty line between paragraphs.') : ''),
+      h('div', { class: 'rb-group' }, outlineBtn),
+      h('div', { class: 'rb-group' }, h('span', { class: 'rb-label' }, 'Design'), designBtn, fontMenu(), swatches),
+      kind === 'cv' ? h('div', { class: 'rb-group' }, insertMenu()) : '',
+      h('div', { class: 'rb-group' }, checkBtn),
+      h('div', { class: 'rb-group rb-end' }, chatButton()),
     );
   }
 
@@ -2219,7 +2357,7 @@ function renderDocuments() {
         ['cv', 'CV', ICON_DOC],
         ['letter', 'Cover letter', ICON_MAIL],
       ].map(([k, label, icon]) => {
-        const b = h('button', { type: 'button', role: 'tab', class: 'seg-btn', 'aria-selected': String(kind === k), 'aria-pressed': String(kind === k) }, svgIcon(icon), h('span', {}, label));
+        const b = h('button', { type: 'button', role: 'tab', class: 'seg-btn', 'aria-selected': String(kind === k), 'aria-pressed': String(kind === k) }, svgIcon(icon), h('span', { class: 'sw-long' }, label), h('span', { class: 'sw-short', 'aria-hidden': 'true' }, k === 'cv' ? 'CV' : 'Letter'));
         b.addEventListener('click', () => {
           if (kind === k) return;
           record();
@@ -2227,6 +2365,12 @@ function renderDocuments() {
           try {
             sessionStorage.setItem('ajh:doc', k);
           } catch {}
+          currentPath = `/documents/${k}`;
+          if (!inArtifact) {
+            try {
+              history.replaceState(null, '', `#${currentPath}`);
+            } catch {}
+          }
           refresh();
           record();
         });
@@ -2298,8 +2442,9 @@ function renderDocuments() {
     pdfBtn.disabled = true;
     pdfBtn.lastChild.textContent = 'Making PDF…';
     try {
-      const def = kind === 'cv' ? cvPDFDefinition(cv(), tplId(), accent()) : letterPDFDefinition(letterCV(), letterOf().body || '', tplId(), accent(), letterMeta());
-      await download(`${fileBase()}.pdf`, await makePDF(def), 'application/pdf');
+      const font = fontId();
+      const def = kind === 'cv' ? cvPDFDefinition(cv(), tplId(), accent(), { font }) : letterPDFDefinition(letterCV(), letterOf().body || '', tplId(), accent(), letterMeta(), { font });
+      await download(`${fileBase()}.pdf`, await makePDF(def, { font }), 'application/pdf');
     } catch (err) {
       console.error(err);
       toast('Could not make the PDF. Check your connection and try again.');
@@ -2369,12 +2514,15 @@ function renderDocuments() {
 
   function layout() {
     const wide = window.innerWidth >= 900;
-    const chatting = chatOpen && hasDoc();
+    const on = (x) => x && hasDoc();
     appEl.classList.toggle('with-outline', outlineOpen && wide && hasDoc());
-    appEl.classList.toggle('with-design', designOpen && hasDoc() && !chatting);
-    appEl.classList.toggle('with-chat', chatting);
-    design.classList.toggle('open', designOpen && hasDoc() && !chatting);
-    chat.classList.toggle('open', chatting);
+    appEl.classList.toggle('with-design', on(designOpen));
+    appEl.classList.toggle('with-chat', on(chatOpen));
+    appEl.classList.toggle('with-check', on(checkOpen));
+    appEl.classList.toggle('sheet-open', !wide && on(designOpen || chatOpen || checkOpen));
+    design.classList.toggle('open', on(designOpen));
+    chat.classList.toggle('open', on(chatOpen));
+    check.classList.toggle('open', on(checkOpen));
     outline.hidden = !(outlineOpen && wide && hasDoc());
     drawRibbon();
     requestAnimationFrame(fit);
@@ -2386,7 +2534,131 @@ function renderDocuments() {
     drawOutline();
     drawDesign();
     drawChat();
+    if (checkOpen) drawCheck();
     layout();
+  }
+
+  // ----- fonts -----
+  const setFont = (id) => {
+    if (kind === 'cv') saveMaster({ font: id });
+    else saveLetter({ font: id });
+    refresh();
+    showSaved();
+  };
+  function fontMenu() {
+    const d = h('details', { class: 'tb-menu font-menu' });
+    const current = fontChoice(fontId());
+    const list = h('div', { class: 'menu font-list', role: 'menu' });
+    let group = '';
+    for (const f of FONT_CHOICES) {
+      if ((f.kind || '') !== group) {
+        group = f.kind || '';
+        if (group) list.append(h('p', { class: 'menu-label' }, group === 'Sans' ? 'Sans serif' : 'Serif'));
+      }
+      const b = h(
+        'button',
+        { type: 'button', role: 'menuitemradio', 'aria-checked': String(f.id === current.id), class: 'font-item' },
+        h('span', { class: 'font-name', style: f.css ? `font-family:${f.css}` : '' }, f.name),
+        h('small', {}, f.note),
+      );
+      b.addEventListener('click', () => {
+        d.open = false;
+        setFont(f.id);
+      });
+      list.append(b);
+    }
+    if (kind === 'letter' && typeof letterOf().font === 'string') {
+      const same = h('button', { type: 'button', class: 'font-item' }, h('span', { class: 'font-name' }, 'Same as my CV'), h('small', {}, fontChoice(master().font).name));
+      same.addEventListener('click', () => {
+        d.open = false;
+        saveLetter({ font: undefined });
+        refresh();
+      });
+      list.append(h('hr'), same);
+    }
+    d.append(
+      h('summary', { class: 'rb-btn rb-font', title: 'Font' }, h('span', { class: 'rb-font-aa', 'aria-hidden': 'true', style: current.css ? `font-family:${current.css}` : '' }, 'Aa'), h('span', { class: 'rb-font-name' }, current.id ? current.name : 'Template font'), h('span', { class: 'caret', 'aria-hidden': 'true' }, '▾')),
+      list,
+    );
+    d.addEventListener('toggle', () => {
+      if (!d.open) return;
+      for (const o of appEl.querySelectorAll('details.tb-menu[open]')) if (o !== d) o.open = false;
+      // Fetch every font now so each name shows in its own face.
+      for (const f of FONT_CHOICES) if (f.css) document.fonts?.load(`16px ${f.css}`).catch(() => {});
+      floatMenu(d, list);
+    });
+    return d;
+  }
+
+  // ----- check: what a recruiter would notice -----
+  function checks() {
+    const out = [];
+    const add = (ok, title, detail, fix) => out.push({ ok, title, detail, fix });
+    const tpl = getTemplate(tplId());
+    const pageEl = paperScale.firstElementChild;
+    const pages = pageEl ? Math.max(1, Math.ceil((pageEl.offsetHeight - 4) / A4_HEIGHT)) : 1;
+    if (kind === 'cv') {
+      const c = cv();
+      const words = (cvToText(c).match(/\S+/g) || []).length;
+      add(Boolean(c.contact.email && c.contact.phone), 'Contact details', c.contact.email && c.contact.phone ? 'Email and phone are on the CV.' : 'Add your email and phone so recruiters can reach you.');
+      add(c.summary.trim().length >= 120, 'Profile summary', c.summary.trim().length >= 120 ? 'A short profile opens the CV.' : 'Two or three sentences at the top help recruiters see your fit in seconds.', c.summary.trim().length >= 120 ? '' : 'Write a 2-3 sentence profile summary from my experience.');
+      const thin = c.experience.filter((e) => e.bullets.filter((b) => b.trim()).length < 2);
+      add(c.experience.length > 0 && !thin.length, 'Experience bullets', !c.experience.length ? 'Add your work experience.' : thin.length ? `${thin.length} ${thin.length === 1 ? 'job has' : 'jobs have'} fewer than two bullet points.` : 'Every job shows what you did.', thin.length ? 'Add one or two concrete bullet points to the jobs that have fewer than two, using only what the CV already says.' : '');
+      const long = c.experience.flatMap((e) => e.bullets).filter((b) => b.length > 220).length;
+      add(!long, 'Bullet length', long ? `${long} bullet ${long === 1 ? 'point is' : 'points are'} very long. Short lines are read; long ones are skipped.` : 'Bullet points are short enough to scan.', long ? 'Shorten bullet points longer than two lines, keeping the facts.' : '');
+      const undated = c.experience.filter((e) => !e.start && !e.end).length;
+      add(!undated, 'Dates', undated ? `${undated} ${undated === 1 ? 'job has' : 'jobs have'} no dates.` : 'Every job has dates.');
+      add(pages <= 2, 'Length', `${pages} ${pages === 1 ? 'page' : 'pages'}, ${words} words.${pages > 2 ? ' Two pages is the usual maximum.' : ''}`, pages > 2 ? 'Shorten it to fit on two pages, trimming older roles first.' : '');
+      const { phrases, dashes } = styleIssues(cvProse(c));
+      add(!phrases.length && !dashes, 'Natural wording', phrases.length || dashes ? `Sounds generated in places${phrases.length ? `: ${phrases.slice(0, 3).map((x) => `"${x}"`).join(', ')}` : ''}.` : 'No stock phrases found.', phrases.length || dashes ? `Rewrite only the lines with these phrases in plain, specific words: ${[...phrases, ...(dashes ? ['dashes used as punctuation'] : [])].join(', ')}.` : '');
+    } else {
+      const body = letterOf().body || '';
+      const words = (body.match(/\S+/g) || []).length;
+      add(words >= 180 && words <= 400, 'Length', `${words} words.${words < 180 ? ' A little short: 220 to 350 words reads best.' : words > 400 ? ' A little long: 220 to 350 words reads best.' : ' A good length.'}`, words > 400 ? 'Make it about 300 words without losing the main points.' : words < 180 ? 'Make it about 250 words by adding one concrete example from my CV.' : '');
+      add(Boolean((letterOf().to || '').trim()), 'Recipient', letterOf().to ? 'The letter is addressed.' : 'Add the company (and a name if you know it) above the subject.');
+      add(Boolean((letterOf().subject || '').trim()), 'Subject line', letterOf().subject ? 'The subject names the role.' : 'Add a subject line with the job title.');
+      const name = store.get().profile.name.trim().split(' ')[0];
+      add(!name || body.toLowerCase().includes(name.toLowerCase()), 'Sign-off', 'Ends with your name.');
+      const { phrases, dashes } = styleIssues(body);
+      add(!phrases.length && !dashes, 'Natural wording', phrases.length || dashes ? `Sounds generated in places${phrases.length ? `: ${phrases.slice(0, 3).map((x) => `"${x}"`).join(', ')}` : ''}.` : 'No stock phrases found.', phrases.length || dashes ? `Rewrite only the sentences with these phrases in plain, specific words: ${[...phrases, ...(dashes ? ['dashes used as punctuation'] : [])].join(', ')}.` : '');
+      add(pages <= 1, 'One page', pages <= 1 ? 'Fits on one page.' : 'Letters should fit on one page.', pages > 1 ? 'Shorten it so it fits on one page.' : '');
+    }
+    add(tpl.ats, 'Readable by applicant tracking systems', tpl.ats ? `${tpl.name} is read well by ATS software.` : `${tpl.name} uses two columns, which some ATS software reads poorly.`);
+    return out;
+  }
+  function drawCheck() {
+    if (!hasDoc()) return check.replaceChildren();
+    const list = checks();
+    const score = Math.round((list.filter((x) => x.ok).length / list.length) * 100);
+    const level = score >= 85 ? 'high' : score >= 60 ? 'mid' : 'low';
+    const close = h('button', { type: 'button', class: 'icon-btn chat-close', 'aria-label': 'Close', title: 'Close' }, '×');
+    close.addEventListener('click', () => openPanel(''));
+    check.replaceChildren(
+      h('div', { class: 'chat-grab', 'aria-hidden': 'true' }),
+      h('header', { class: 'chat-head' }, h('span', { class: 'chat-avatar check-avatar', 'aria-hidden': 'true' }, svgIcon('<svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>')), h('div', {}, h('strong', {}, 'Document check'), h('span', {}, 'What a recruiter notices first')), close),
+      h(
+        'div',
+        { class: 'check-body' },
+        h('div', { class: 'check-score' }, h('div', { class: `ring ring-${level}`, style: `--p:${score}`, role: 'img', 'aria-label': `${score}%` }, h('strong', {}, `${score}%`)), h('div', {}, h('strong', {}, score >= 85 ? 'Ready to send' : score >= 60 ? 'Almost there' : 'Needs some work'), h('p', { class: 'small muted' }, `${list.filter((x) => x.ok).length} of ${list.length} checks passed`))),
+        h(
+          'ul',
+          { class: 'check-list' },
+          ...list.map((x) => {
+            const fix = x.fix
+              ? (() => {
+                  const b = h('button', { type: 'button', class: 'chat-undo check-fix' }, svgIcon(ICON_SPARK), 'Fix with Vora');
+                  b.addEventListener('click', () => {
+                    openPanel('chat');
+                    send(x.fix);
+                  });
+                  return b;
+                })()
+              : '';
+            return h('li', { class: x.ok ? 'ok' : 'warn' }, h('span', { class: 'check-dot', 'aria-hidden': 'true' }), h('div', {}, h('strong', {}, x.title), h('p', {}, x.detail), fix));
+          }),
+        ),
+      ),
+    );
   }
 
   // ----- Vora AI chat: change the CV or the letter by asking -----
@@ -2409,16 +2681,12 @@ function renderDocuments() {
   sendBtn.addEventListener('click', () => send());
 
   function chatButton() {
-    const b = h('button', { type: 'button', class: 'rb-btn tb-ai', 'aria-pressed': String(chatOpen), 'aria-expanded': String(chatOpen) }, svgIcon(ICON_SPARK), h('span', {}, 'Vora AI'));
+    const b = h('button', { type: 'button', class: 'rb-btn tb-ai rb-pill', 'aria-pressed': String(chatOpen), 'aria-expanded': String(chatOpen) }, svgIcon(ICON_SPARK), h('span', {}, 'Ask Vora AI'));
     b.addEventListener('click', () => toggleChat(!chatOpen));
     return b;
   }
   function toggleChat(on) {
-    chatOpen = on;
-    if (on && window.innerWidth < 1100) designOpen = false;
-    drawChat();
-    layout();
-    if (on) requestAnimationFrame(() => chatInput.focus({ preventScroll: true }));
+    openPanel(on ? 'chat' : '');
   }
 
   const SUGGEST = {
@@ -2886,6 +3154,8 @@ function renderJob(id) {
   };
   const template = () => getTemplate(docs().template).id;
   const accent = () => accentFor(getTemplate(template()), docs().accent);
+  // Documents for a job use the font picked in Documents.
+  const jobFont = () => store.get().master?.font || '';
   const fileBase = () => slug(`${store.get().profile.name || 'cv'}-${job.company}`);
 
   // -----------------------------------------------------------------
@@ -3151,7 +3421,7 @@ function renderJob(id) {
     btn.disabled = true;
     btn.textContent = 'Making PDF…';
     try {
-      await download(filename, await makePDF(definition), 'application/pdf');
+      await download(filename, await makePDF(definition, { font: jobFont() }), 'application/pdf');
     } catch (err) {
       console.error(err);
       toast('Could not make the PDF. Check your connection and try again.');
@@ -3197,7 +3467,7 @@ function renderJob(id) {
       gen.classList.toggle('small', Boolean(d.cvData));
       if (d.cvData) {
         const t = getTemplate(template());
-        const thumb = h('button', { type: 'button', class: 'cv-ready-thumb', 'aria-label': 'Open your CV' }, h('div', { class: 'tpl-thumb' }, renderCV(d.cvData, t.id, accent())));
+        const thumb = h('button', { type: 'button', class: 'cv-ready-thumb', 'aria-label': 'Open your CV' }, h('div', { class: 'tpl-thumb' }, renderCV(d.cvData, t.id, accent(), { font: jobFont() })));
         const open = h('button', { type: 'button', class: 'btn primary' }, 'Open CV');
         for (const el of [thumb, open]) el.addEventListener('click', openStudio);
         pdfBtn.textContent = `Download PDF · ${t.name}`;
@@ -3232,7 +3502,7 @@ function renderJob(id) {
     }
 
     async function downloadCV(btn) {
-      await savePDF(cvPDFDefinition(docs().cvData, template(), accent()), `${fileBase()}-cv-${template()}.pdf`, btn);
+      await savePDF(cvPDFDefinition(docs().cvData, template(), accent(), { font: jobFont() }), `${fileBase()}-cv-${template()}.pdf`, btn);
     }
 
     // -----------------------------------------------------------------
@@ -3246,7 +3516,7 @@ function renderJob(id) {
         content: () => docs().cvData,
         tplId: template,
         accent,
-        page: (id, color, opts) => renderCV(docs().cvData, id, color, opts),
+        page: (id, color, opts) => renderCV(docs().cvData, id, color, { font: jobFont(), ...opts }),
         pick: (patch) => saveDoc(patch),
         download: downloadCV,
         setField(path, value, list) {
@@ -3340,7 +3610,7 @@ function renderJob(id) {
       recipient: docs().letterRecipient,
       subject: docs().letterSubject,
     });
-    const page = (id, color, opts) => renderLetter(letterCV(), docs().coverLetter || '', id, color, meta(), opts);
+    const page = (id, color, opts) => renderLetter(letterCV(), docs().coverLetter || '', id, color, meta(), { font: jobFont(), ...opts });
     // Header fields on the letter belong to the person: the tailored CV for this job, or the profile.
     const PROFILE_FIELD = { name: 'name', headline: 'headline', 'contact.email': 'email', 'contact.phone': 'phone', 'contact.location': 'location' };
     function setLetterField(path, value, list) {
@@ -3381,7 +3651,7 @@ function renderJob(id) {
 
     async function downloadLetter(btn) {
       if (!docs().coverLetter) return toast('Write the letter first');
-      await savePDF(letterPDFDefinition(letterCV(), docs().coverLetter, letterTpl(), letterAccent(), meta()), `${fileBase()}-cover-letter-${letterTpl()}.pdf`, btn);
+      await savePDF(letterPDFDefinition(letterCV(), docs().coverLetter, letterTpl(), letterAccent(), meta(), { font: jobFont() }), `${fileBase()}-cover-letter-${letterTpl()}.pdf`, btn);
     }
 
     function draw() {
