@@ -410,6 +410,7 @@ const routes = [
 let currentAbort = null;
 
 function route() {
+  for (const m of document.querySelectorAll('body > .drop-menu')) m.remove(); // a filter sheet left open
   currentAbort?.abort();
   currentAbort = null;
   const path = currentPath;
@@ -864,6 +865,69 @@ function renderHome() {
 // Find jobs
 // ---------------------------------------------------------------------------
 
+const ICON_HOME_WORK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg>';
+
+/** The match as a compact badge: a small ring and the percentage. */
+function matchBadge(score) {
+  if (!score) return '';
+  const pct = Math.max(0, Math.min(100, Number(score.score) || 0));
+  const level = pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low';
+  return h('span', { class: `match-badge mb-${level}`, title: score.reason || '', style: `--p:${pct}` }, h('span', { class: 'mb-ring', 'aria-hidden': 'true' }), h('span', {}, `${pct}%`), h('span', { class: 'sr-only' }, ' match'));
+}
+
+/** Skills from the profile that the posting mentions. */
+function matchedSkills(job) {
+  const p = store.get().profile;
+  const hay = ` ${String(`${job.title} ${job.description || ''}`).toLowerCase()} `;
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return splitList(p.skills)
+    .filter((x) => x.length > 1 && new RegExp(`(^|[^a-z0-9+#])${esc(x.toLowerCase())}($|[^a-z0-9+#])`).test(hay))
+    .slice(0, 8);
+}
+
+/** A filter chip that opens a short list of choices (Date posted, Match …). */
+function dropChip(label, options, value, onPick) {
+  const current = options.find(([v]) => v === value);
+  const active = Boolean(value) && current;
+  const d = h('details', { class: 'drop-chip' });
+  const list = h('div', { class: 'drop-menu', role: 'menu' });
+  for (const [v, text] of options) {
+    const b = h('button', { type: 'button', role: 'menuitemradio', 'aria-checked': String(v === value) }, text);
+    b.addEventListener('click', () => {
+      d.open = false;
+      onPick(v);
+    });
+    list.append(b);
+  }
+  d.append(h('summary', { class: 'chip', 'aria-pressed': String(Boolean(active)) }, active ? current[1].replace(/\s*\(\d+\)$/, '') : label, h('span', { class: 'caret', 'aria-hidden': 'true' }, '▾')), list);
+  // On a phone the choices open as a sheet from the bottom; on a computer, under the chip.
+  const sheet = () => window.innerWidth <= 700;
+  const close = (e) => {
+    if (!list.contains(e.target) && !d.firstChild.contains(e.target)) d.open = false;
+  };
+  const onScroll = () => (d.open = false);
+  d.addEventListener('toggle', () => {
+    if (!d.open) {
+      document.removeEventListener('pointerdown', close);
+      window.removeEventListener('scroll', onScroll);
+      if (list.parentNode !== d) d.append(list);
+      return;
+    }
+    // Above the tab bar and sticky search: the sheet lives on the page itself while open.
+    if (sheet()) document.body.append(list);
+    for (const o of document.querySelectorAll('details.drop-chip[open]')) if (o !== d) o.open = false;
+    if (!sheet()) {
+      const r = d.firstChild.getBoundingClientRect();
+      list.style.top = `${r.bottom + 6}px`;
+      list.style.left = `${Math.max(8, Math.min(r.left, innerWidth - list.offsetWidth - 8))}px`;
+      window.addEventListener('scroll', onScroll, { passive: true });
+    }
+    document.addEventListener('pointerdown', close);
+  });
+  list.prepend(h('p', { class: 'drop-title' }, label));
+  return d;
+}
+
 function renderFind() {
   const { profile } = store.get();
   const defaults = session.query || {
@@ -873,12 +937,22 @@ function renderFind() {
     sources: [...SOURCE_IDS],
   };
   session.filter ??= '';
+  // Filters and sort, like the big job sites: kept while you move around the app.
+  session.f ??= { date: 0, match: 0, salary: false };
+  session.sort ??= 'best';
   let remoteOnly = Boolean(defaults.remoteOnly);
   const wide = () => window.matchMedia('(min-width: 1024px)').matches;
 
   const results = h('div', { class: 'results', role: 'list' });
   const status = h('p', { class: 'find-status', role: 'status' });
-  const filters = h('div', { class: 'chip-row', role: 'group', 'aria-label': 'Filter by job site' });
+  const filters = h('div', { class: 'chip-row find-filters', role: 'group', 'aria-label': 'Filters' });
+  const resultsHead = h('div', { class: 'results-head' });
+  const sortSel = h('select', { class: 'sort-select', 'aria-label': 'Sort by' }, h('option', { value: 'best' }, 'Best match'), h('option', { value: 'new' }, 'Newest'));
+  sortSel.value = session.sort;
+  sortSel.addEventListener('change', () => {
+    session.sort = sortSel.value;
+    drawResults();
+  });
   const detail = h('aside', { class: 'detail-pane', 'aria-label': 'Job details' });
   const portalBox = h('section', { class: 'portals' });
   const aiStream = h('div', { class: 'ai-output compact', hidden: true });
@@ -898,7 +972,7 @@ function renderFind() {
   };
 
   // Filters row
-  const remoteChip = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(remoteOnly) }, 'Remote only');
+  const remoteChip = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(remoteOnly) }, svgIcon(ICON_HOME_WORK), 'Remote');
   remoteChip.addEventListener('click', () => {
     remoteOnly = !remoteOnly;
     remoteChip.setAttribute('aria-pressed', String(remoteOnly));
@@ -924,9 +998,9 @@ function renderFind() {
     const { query, location, remoteOnly: r } = params();
     const { portals, countryName } = portalsFor(query || 'jobs', location, { remote: r });
     portalBox.replaceChildren(
-      h('h2', {}, countryName ? `Search on job sites in ${countryName}` : 'Search on other job sites'),
+      h('h2', {}, countryName ? `Keep looking on job sites in ${countryName}` : 'Keep looking on other job sites'),
       h('p', { class: 'muted small', style: 'margin:0' }, countryName || !location ? 'Opens each site\'s own results for this search.' : `No site list for "${location}" yet. Add the country to see local sites.`),
-      h('div', { class: 'portal-links' }, ...portals.map((x) => h('a', { class: 'portal-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.name, h('span', { 'aria-hidden': 'true' }, '↗')))),
+      h('div', { class: 'portal-links' }, ...portals.map((x) => h('a', { class: 'portal-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, companyAvatar(x.name, 'sm'), h('span', {}, x.name), h('span', { class: 'portal-go', 'aria-hidden': 'true' }, '↗')))),
     );
   }
   for (const el of [bar.q, bar.l]) el.addEventListener('input', debounce(drawPortals, 250));
@@ -1202,7 +1276,7 @@ function renderFind() {
     const text = session.examples
       ? 'Example listings. Search to see live openings near you.'
       : session.more && n
-        ? `${n} more jobs for you near ${session.more} that are not on your home page, best match first`
+        ? `${n} more ${n === 1 ? "job" : "jobs"} for you near ${session.more} that are not on your home page, best match first`
       : session.errors.length && !n
         ? session.errors.join(' · ')
         : `${n} job${n === 1 ? '' : 's'}${sites > 1 ? ` from ${sites} sites` : ''}${all.some((j) => session.scores[j.id] || j.match) ? ', best match first' : n > 1 ? ', newest first' : ''}` +
@@ -1212,31 +1286,65 @@ function renderFind() {
     status.replaceChildren(h('span', {}, text), ' · ', h('span', { class: 'searching-more' }, 'Still searching, more jobs will appear…'));
   }
 
+  const ageDays = (j) => (jobPostedAt(j) ? (Date.now() - jobPostedAt(j)) / 864e5 : Infinity);
+  const scoreOf = (j) => session.scores[j.id]?.score ?? j.match?.score ?? 0;
+  const filtersOn = () => Boolean(session.filter || session.f.date || session.f.match || session.f.salary);
+  function drawFilters(counts, n) {
+    const f = session.f;
+    const set = (patch) => {
+      Object.assign(f, patch);
+      drawResults();
+    };
+    const dates = [[0, 'Any time'], [1, 'Past 24 hours'], [3, 'Past 3 days'], [7, 'Past week'], [30, 'Past month']];
+    const matches = [[0, 'Any match'], [60, '60% or more'], [75, '75% or more'], [90, '90% or more']];
+    const salaryChip = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(f.salary) }, 'Salary shown');
+    salaryChip.addEventListener('click', () => set({ salary: !f.salary }));
+    const reset = h('button', { type: 'button', class: 'chip-reset' }, 'Reset');
+    reset.addEventListener('click', () => {
+      session.filter = '';
+      set({ date: 0, match: 0, salary: false });
+    });
+    filters.replaceChildren(
+      remoteChip,
+      dropChip('Date posted', dates, f.date, (v) => set({ date: v })),
+      dropChip('Match', matches, f.match, (v) => set({ match: v })),
+      counts.size > 1 && !session.examples ? dropChip('Job site', [['', `All sites (${n})`], ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => [k, `${k} (${c})`])], session.filter, (v) => {
+        session.filter = v;
+        drawResults();
+      }) : '',
+      salaryChip,
+      filtersOn() ? reset : '',
+    );
+  }
+
   function drawResults() {
     const all = session.results;
     const counts = new Map();
     for (const j of all) counts.set(j.source, (counts.get(j.source) || 0) + 1);
     if (session.filter && !counts.has(session.filter)) session.filter = '';
-    const shown = session.filter ? all.filter((j) => j.source === session.filter) : all;
+    const f = session.f;
+    let shown = all.filter((j) => (!session.filter || j.source === session.filter) && (!f.date || ageDays(j) <= f.date) && (!f.match || scoreOf(j) >= f.match) && (!f.salary || j.salary));
+    if (session.sort === 'new') {
+      const newest = (a, b) => (jobPostedAt(b) || 0) - (jobPostedAt(a) || 0);
+      shown = [...shown.filter((j) => !j.extra).sort(newest), ...shown.filter((j) => j.extra).sort(newest)];
+    }
     const n = all.length;
     drawStatus();
-
-    const chip = (label, value, c) => {
-      const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(session.filter === value) }, label, h('span', { class: 'chip-count' }, String(c)));
-      b.addEventListener('click', () => {
-        session.filter = value;
-        drawResults();
-      });
-      return b;
-    };
-    filters.replaceChildren(
-      remoteChip,
-      ...(counts.size > 1 && !session.examples ? [chip('All sites', '', n), ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => chip(k, k, c))] : []),
+    drawFilters(counts, n);
+    resultsHead.replaceChildren(
+      h('div', { class: 'results-count' }, h('strong', {}, n ? (shown.length === n ? `${n} ${n === 1 ? 'job' : 'jobs'}` : `${shown.length} of ${n} jobs`) : 'Jobs'), status),
+      n ? h('label', { class: 'sort-wrap' }, h('span', {}, 'Sort'), sortSel) : '',
     );
 
     if (!shown.length && session.searching) return; // keep the placeholder until the first jobs arrive
     if (!shown.length) {
-      results.replaceChildren(h('div', { class: 'empty card' }, h('p', {}, 'No jobs to show. Try broader keywords, or open one of the job sites below.')));
+      const clear = h('button', { type: 'button', class: 'btn small' }, 'Clear filters');
+      clear.addEventListener('click', () => {
+        session.filter = '';
+        Object.assign(session.f, { date: 0, match: 0, salary: false });
+        drawResults();
+      });
+      results.replaceChildren(h('div', { class: 'empty card results-empty' }, h('strong', {}, filtersOn() ? 'No jobs match these filters' : 'No jobs to show'), h('p', { class: 'muted' }, filtersOn() ? 'Try a wider date range or a lower match.' : 'Try broader keywords, or open one of the job sites below.'), filtersOn() ? clear : ''));
       detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Pick a job to see the details here.'));
       detail.dataset.sig = '';
       return;
@@ -1294,13 +1402,29 @@ function renderFind() {
 
   function jobCard(job) {
     const href = `#/job/${encodeURIComponent(job.id)}`;
+    const score = session.scores[job.id];
+    const fresh = ageDays(job) < 2;
     const card = h(
       'article',
-      { class: `job-card ${job.id === session.selected && wide() ? 'selected' : ''}`, 'data-id': job.id, role: 'listitem' },
-      h('div', { class: 'job-card-head' }, h('div', {}, h('h3', {}, h('a', { href }, job.title)), h('p', { class: 'company' }, job.company || '')), scorePill(session.scores[job.id])),
-      meta(job),
-      session.scores[job.id]?.reason ? h('p', { class: 'reason' }, session.scores[job.id].reason) : h('p', { class: 'snippet' }, job.description || ''),
-      h('div', { class: 'job-card-foot' }, h('span', { class: 'tag source' }, job.source), saveToggle(job)),
+      { class: `job-card jc ${job.id === session.selected && wide() ? 'selected' : ''}`, 'data-id': job.id, role: 'listitem' },
+      companyAvatar(job.company || job.source),
+      h(
+        'div',
+        { class: 'jc-main' },
+        h('h3', {}, h('a', { href }, job.title)),
+        h('p', { class: 'jc-company' }, [job.company, job.location].filter(Boolean).join(' · ')),
+        h(
+          'div',
+          { class: 'jc-tags' },
+          job.salary ? h('span', { class: 'jc-tag salary' }, job.salary) : '',
+          job.remote && !/remote/i.test(job.location || '') ? h('span', { class: 'jc-tag' }, 'Remote') : '',
+          fresh ? h('span', { class: 'jc-tag new' }, 'New') : '',
+          score ? h('span', { class: 'jc-mb-inline' }, matchBadge(score)) : '',
+        ),
+        score?.reason ? h('p', { class: 'jc-reason' }, score.reason) : h('p', { class: 'jc-reason muted' }, job.description || ''),
+        h('p', { class: 'jc-foot' }, postedLabel(job) || '', postedLabel(job) ? h('span', { 'aria-hidden': 'true' }, ' · ') : '', h('span', {}, `via ${job.source}`)),
+      ),
+      h('div', { class: 'jc-side' }, matchBadge(score), bookmarkButton({ ...job, match: score || job.match })),
     );
     // On wide screens a click opens the job beside the list; on phones it opens the job page.
     card.addEventListener('click', (e) => {
@@ -1326,32 +1450,49 @@ function renderFind() {
       } catch {}
       go(`/job/${encodeURIComponent(job.id)}`);
     };
-    const tailor = h('button', { class: 'btn primary', type: 'button' }, 'Tailor my CV');
+    const tailor = h('button', { class: 'btn', type: 'button' }, svgIcon(ICON_SPARK), 'Tailor my CV');
     tailor.addEventListener('click', open('docs'));
-    const prep = h('button', { class: 'btn', type: 'button' }, 'Practise interview');
+    const prep = h('button', { class: 'link-btn', type: 'button' }, 'Practise the interview');
     prep.addEventListener('click', open('prep'));
+    const letter = h('button', { class: 'link-btn', type: 'button' }, 'Write a cover letter');
+    letter.addEventListener('click', open('docs'));
+    const skills = matchedSkills(job);
+    const pct = score ? Math.max(0, Math.min(100, Number(score.score) || 0)) : 0;
+    const level = pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low';
+    const facts = [
+      ['Location', job.location],
+      ['Work mode', job.remote || /remote/i.test(job.location || '') ? 'Remote' : /hybrid/i.test(job.description || '') ? 'Hybrid' : 'On site'],
+      ['Salary', job.salary || 'Not listed'],
+      ['Posted', postedLabel(job).replace(/^Posted /, '') || 'Unknown'],
+      ['Found on', job.source],
+    ].filter(([, v]) => v);
     detail.replaceChildren(
       h(
         'div',
         { class: 'detail-head' },
-        h('h2', {}, job.title),
-        h('p', { class: 'company' }, [job.company, job.source].filter(Boolean).join(' · ')),
-        meta(job),
+        h('div', { class: 'dh-id' }, companyAvatar(job.company || job.source, 'lg'), h('div', {}, h('p', { class: 'dh-company' }, job.company || job.source), h('h2', {}, job.title), h('p', { class: 'dh-meta' }, [job.location, postedLabel(job)].filter(Boolean).join(' · ')))),
         h(
           'div',
           { class: 'detail-actions' },
+          job.url ? h('a', { class: 'btn primary', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, `Apply on ${job.source}`, h('span', { 'aria-hidden': 'true' }, ' ↗')) : '',
           tailor,
-          job.url ? h('a', { class: 'btn', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'View posting ↗') : '',
           saveToggle(job, false),
-          prep,
         ),
       ),
       h(
         'div',
         { class: 'detail-body' },
-        score ? h('div', { class: 'match-box' }, scorePill(score), h('p', {}, score.reason || 'Ranked against your CV.')) : '',
-        h('h3', {}, 'About the role'),
-        h('div', { class: 'description' }, job.description || 'No description provided. Open the posting for the full details.'),
+        score
+          ? h(
+              'section',
+              { class: 'dt-match' },
+              h('div', { class: `ring ring-${level}`, style: `--p:${pct}`, role: 'img', 'aria-label': `${pct}% match` }, h('strong', {}, `${pct}%`)),
+              h('div', {}, h('h3', {}, 'How you match'), h('p', {}, score.reason || 'Ranked against your CV.'), skills.length ? h('div', { class: 'dt-skills' }, ...skills.map((x) => h('span', { class: 'dt-skill' }, x))) : ''),
+            )
+          : '',
+        h('section', { class: 'dt-facts' }, h('h3', {}, 'Job details'), h('dl', {}, ...facts.map(([k, v]) => h('div', { class: 'dt-fact' }, h('dt', {}, k), h('dd', {}, v))))),
+        h('section', { class: 'dt-about' }, h('h3', {}, 'About the role'), h('div', { class: 'description' }, ...String(job.description || 'No description provided. Open the posting for the full details.').split(/\n{2,}/).map((x) => h('p', {}, x.trim())))),
+        h('section', { class: 'dt-next' }, h('h3', {}, 'Get ready with Vora'), h('div', { class: 'dt-links' }, letter, prep)),
       ),
     );
   }
@@ -1360,9 +1501,9 @@ function renderFind() {
     h('div', { class: 'find-top' }, bar.form, h('div', { class: 'find-tools' }, filters, h('span', { class: 'spacer' }), boardsBtn, scoreBtn)),
     !ai.hasKey() && !inArtifact ? h('div', { class: 'notice' }, 'Add an API key in ', h('a', { href: '#/settings' }, 'Settings'), ' to search every job site at once. Until then, use the free job boards or the site links below.') : '',
     aiStream,
-    status,
-    h('div', { class: 'split' }, h('div', {}, results, portalBox), detail),
+    h('div', { class: 'split find-split' }, h('div', { class: 'find-list' }, resultsHead, results, portalBox), detail),
   );
+  resultsHead.append(h('div', { class: 'results-count' }, status));
   drawPortals();
   filters.replaceChildren(remoteChip);
 
@@ -4228,13 +4369,31 @@ function renderProfile() {
           ...links.map(([label, url]) => h('a', { href: safeUrl(/^https?:/i.test(url) ? url : `https://${url}`), target: '_blank', rel: 'noopener noreferrer' }, `${label} ↗`)),
         ),
       ),
-      editBtn,
-      h(
-        'div',
-        { class: 'profile-score' },
-        h('div', { class: 'ring', style: `--p:${score}`, role: 'img', 'aria-label': `Profile ${score}% complete` }, h('strong', {}, `${score}%`)),
-        h('span', { class: 'small muted' }, 'Profile strength'),
-      ),
+      h('div', { class: 'hero-actions' }, editBtn, pr.cv.trim() ? h('a', { class: 'btn small', href: '#/documents/cv' }, svgIcon(ICON_DOC), 'Open my CV') : ''),
+    );
+    void score;
+    drawOpenTo();
+  }
+
+  // ----- "Open to work": what you are looking for, at a glance -----
+  const openTo = h('section', { class: 'card open-to' });
+  function drawOpenTo() {
+    const pr = store.get().profile;
+    const pf = pr.prefs || {};
+    const roleList = splitList(pr.targetRoles);
+    const edit = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Edit job preferences', title: 'Edit' }, svgIcon(PENCIL));
+    edit.addEventListener('click', () => openSection('pf-sec-prefs', { scroll: true }));
+    const money = pf.salaryMin ? `From ${pf.currency || ''} ${Number(pf.salaryMin).toLocaleString(locale())} ${pf.salaryPeriod === 'month' ? 'a month' : pf.salaryPeriod === 'hour' ? 'an hour' : 'a year'}`.replace(/\s+/g, ' ') : '';
+    const facts = [[(pf.workModes || []).join(', '), 'Work mode'], [(pf.types || []).join(', '), 'Type'], [pr.location, 'Location'], [money, 'Salary'], [pf.availability, 'Start']].filter(([v]) => v);
+    if (!roleList.length) {
+      const start = h('button', { type: 'button', class: 'btn primary small' }, 'Add the roles you want');
+      start.addEventListener('click', () => openSection('pf-sec-prefs', { scroll: true }));
+      return openTo.replaceChildren(h('div', { class: 'ot-head' }, h('span', { class: 'ot-dot', 'aria-hidden': 'true' }), h('div', {}, h('h2', {}, 'What are you looking for?'), h('p', { class: 'small muted' }, 'Tell Vora the roles you want, and the home page and search fill with jobs that fit.'))), start);
+    }
+    openTo.replaceChildren(
+      h('div', { class: 'ot-head' }, h('span', { class: 'ot-dot', 'aria-hidden': 'true' }), h('div', {}, h('h2', {}, 'Open to work'), h('p', { class: 'small muted' }, 'Vora searches and ranks jobs with this.')), edit),
+      h('div', { class: 'ot-roles' }, ...roleList.map((r) => h('span', { class: 'ot-role' }, r))),
+      facts.length ? h('dl', { class: 'ot-facts' }, ...facts.map(([v, k]) => h('div', {}, h('dt', {}, k), h('dd', {}, v)))) : '',
     );
   }
 
@@ -4377,6 +4536,13 @@ function renderProfile() {
   // Sections fold: the title row is a button, one section is open at a time,
   // and the closed rows show a one-line summary so you rarely need to open them.
   const summaries = {};
+  const SEC_ICONS = {
+    'pf-sec-cv': ICON_DOC,
+    'pf-sec-about': '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+    'pf-sec-prefs': '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg>',
+    'pf-sec-skills': '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>',
+    'pf-sec-links': '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+  };
   const section = (id, title, intro, ...body) => {
     const bodyId = `${id}-body`;
     const summary = h('span', { class: 'pf-summary' });
@@ -4384,12 +4550,13 @@ function renderProfile() {
     const toggle = h(
       'button',
       { type: 'button', class: 'pf-toggle', 'aria-expanded': 'false', 'aria-controls': bodyId },
+      h('span', { class: 'pf-icon', 'aria-hidden': 'true' }, svgIcon(SEC_ICONS[id] || ICON_DOC)),
       h('span', { class: 'pf-toggle-text' }, h('h2', {}, title), summary),
       svgIcon(CHEVRON),
     );
     const el = h(
       'section',
-      { class: 'card pf-section', id },
+      { class: 'pf-section', id },
       toggle,
       h('div', { class: 'pf-body', id: bodyId, role: 'region', 'aria-label': title, hidden: true }, intro ? h('p', { class: 'muted small pf-intro' }, intro) : '', ...body),
     );
@@ -4502,26 +4669,41 @@ function renderProfile() {
       .filter(([id, d]) => d?.cvData && store.get().jobs[id])
       .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))
       .slice(0, 6);
+    const { score } = profileStrength(pr);
+    const todo = items.filter((x) => !x.done);
+    const level = score >= 100 ? 'All-star' : score >= 80 ? 'Almost there' : score >= 50 ? 'Intermediate' : 'Getting started';
+    const a = pr.cvAnalysis;
+    const cvScore = a ? Math.max(0, Math.min(100, Math.round(Number(a.score) || 0))) : null;
     side.replaceChildren(
       h(
         'section',
-        { class: 'card' },
-        h('div', { class: 'section-title' }, h('h2', {}, 'Complete your profile')),
-        h(
-          'ol',
-          { class: 'checklist' },
-          ...items.map((x) => {
-            const a = h('a', { href: '#/profile' }, x.label);
-            a.addEventListener('click', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              openSection(x.section, { scroll: true });
-              document.getElementById(x.section)?.querySelector(x.focus || 'input, textarea, button')?.focus({ preventScroll: true });
-            });
-            return h('li', { class: x.done ? 'done' : '' }, a);
-          }),
-        ),
+        { class: `card strength${todo.length ? ' has-todo' : ''}` },
+        h('div', { class: 'st-head' }, h('div', {}, h('p', { class: 'eyebrow' }, 'Profile strength'), h('h2', {}, level)), h('strong', { class: 'st-pct' }, `${score}%`)),
+        h('div', { class: 'st-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(score), 'aria-label': 'Profile strength' }, h('span', { style: `width:${score}%` })),
+        todo.length
+          ? h(
+              'div',
+              { class: 'st-next' },
+              h('p', { class: 'small muted' }, todo.length === 1 ? 'One step left:' : `Next steps (${todo.length} left):`),
+              ...todo.slice(0, 3).map((x) => {
+                const b = h('button', { type: 'button', class: 'st-step' }, h('span', { class: 'st-plus', 'aria-hidden': 'true' }, '+'), h('span', {}, x.label), svgIcon(ICON_CHEVRON));
+                b.addEventListener('click', () => {
+                  openSection(x.section, { scroll: true });
+                  document.getElementById(x.section)?.querySelector(x.focus || 'input, textarea, button')?.focus({ preventScroll: true });
+                });
+                return b;
+              }),
+            )
+          : h('p', { class: 'st-done' }, 'Your profile is complete. Vora has everything it needs to find and rank jobs for you.'),
       ),
+      cvScore !== null
+        ? h(
+            'section',
+            { class: 'card cv-score' },
+            h('div', { class: `ring ring-${cvScore >= 75 ? 'high' : cvScore >= 50 ? 'mid' : 'low'}`, style: `--p:${cvScore}`, role: 'img', 'aria-label': `CV score ${cvScore} out of 100` }, h('strong', {}, String(cvScore))),
+            h('div', {}, h('p', { class: 'eyebrow' }, 'CV score'), h('p', { class: 'cvs-verdict' }, a.verdict || ''), a.improvements?.[0] ? h('p', { class: 'small muted' }, `Fix first: ${a.improvements[0]}`) : '', h('a', { class: 'link-btn', href: '#/documents/cv' }, 'Improve it in Documents →')),
+          )
+        : '',
       h(
         'section',
         { class: 'card' },
@@ -4556,7 +4738,8 @@ function renderProfile() {
   drawHeader();
   drawSummaries();
   drawSide();
-  view.append(header, h('div', { class: 'pf-layout' }, nav, h('div', { class: 'pf-main' }, ...sections), side));
+  view.append(header, h('div', { class: 'pf-layout pf2' }, h('div', { class: 'pf-main' }, openTo, h('div', { class: 'card pf-group' }, h('div', { class: 'pf-group-head' }, h('h2', {}, 'Profile details'), saveState), ...sections)), side));
+  void nav;
   openSection(pfOpen);
 }
 
