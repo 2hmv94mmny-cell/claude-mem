@@ -295,7 +295,9 @@ function feedSection() {
     chips.replaceChildren(chip('All sites', '', feed.jobs.length), ...shown.map(([k, c]) => chip(k, k, c)), feedChipsOpen || hidden > 0 ? toggle : '');
   }
   function drawGrid() {
-    grid.replaceChildren(...list.slice(0, feedShown).map(feedCard));
+    // The best match gets the spotlight; the rest follow as a list.
+    const [top, ...rest] = list.slice(0, feedShown);
+    grid.replaceChildren(...(top && !feedFilter ? [spotlightCard(top), ...rest.map(feedCard)] : list.slice(0, feedShown).map(feedCard)));
     const left = list.length - feedShown;
     more.hidden = left <= 0;
     more.textContent = `Show ${Math.min(left, FEED_PAGE)} more`;
@@ -366,6 +368,53 @@ function bookmarkButton(job) {
   });
   paint();
   return b;
+}
+
+/** The best match today: a bigger card with the reason and the next steps. */
+function spotlightCard(job) {
+  const href = `#/job/${encodeURIComponent(job.id)}`;
+  const pct = job.match ? Math.max(0, Math.min(100, Number(job.match.score) || 0)) : 0;
+  const level = pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low';
+  const open = (tab) => () => {
+    try {
+      sessionStorage.setItem('ajh:tab', tab);
+    } catch {}
+    go(`/job/${encodeURIComponent(job.id)}`);
+  };
+  const tailor = h('button', { type: 'button', class: 'btn primary' }, svgIcon(ICON_SPARK), 'Tailor my CV');
+  tailor.addEventListener('click', open('docs'));
+  const view = h('a', { class: 'btn', href }, 'View job');
+  return h(
+    'article',
+    { class: 'spotlight' },
+    h('div', { class: 'sp-badge' }, '★ Best match today'),
+    h(
+      'div',
+      { class: 'sp-main' },
+      companyAvatar(job.company || job.source, 'lg'),
+      h('div', { class: 'sp-text' }, h('h3', {}, h('a', { href }, job.title)), h('p', { class: 'sp-company' }, [job.company, job.location].filter(Boolean).join(' · ')), h('div', { class: 'jd-pills' }, job.salary ? h('span', { class: 'money' }, job.salary) : '', postedLabel(job) ? h('span', {}, postedLabel(job)) : '', h('span', {}, `via ${job.source}`))),
+      job.match ? h('div', { class: `ring ring-${level} sp-ring`, style: `--p:${pct}`, role: 'img', 'aria-label': `${pct}% match` }, h('strong', {}, `${pct}%`)) : '',
+    ),
+    job.match?.reason ? h('p', { class: 'sp-reason', translate: 'no' }, job.match.reason) : '',
+    h('div', { class: 'sp-actions' }, tailor, view, bookmarkButton(job)),
+  );
+}
+
+/** Numbers that count up when they appear. */
+function countIn(root) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (const el of root.querySelectorAll('[data-count]')) {
+    const to = Number(el.dataset.count) || 0;
+    if (!to) continue;
+    const t0 = performance.now();
+    const tick = (now) => {
+      const k = Math.min(1, (now - t0) / 900);
+      el.textContent = String(Math.round(to * (1 - Math.pow(1 - k, 3))));
+      if (k < 1 && el.isConnected) requestAnimationFrame(tick);
+    };
+    el.textContent = '0';
+    requestAnimationFrame(tick);
+  }
 }
 
 function feedCard(job) {
@@ -810,19 +859,6 @@ function renderHome() {
     { class: 'home-side' },
     h(
       'section',
-      { class: 'card rail-card' },
-      h('div', { class: 'section-title' }, h('h2', {}, 'Your job search'), h('a', { class: 'small', href: '#/tracker' }, 'Open')),
-      h(
-        'div',
-        { class: 'mini-stats' },
-        ...STATUSES.filter((st) => st.id !== 'rejected').map((st) => h('a', { href: '#/tracker', class: `mini-stat status-${st.id}` }, h('strong', {}, String(count(st.id))), h('span', {}, h('span', { class: 'dot' }), st.label))),
-      ),
-      all.length
-        ? h('div', { class: 'pipe-bar' }, ...STATUSES.filter((st) => count(st.id)).map((st) => h('span', { class: `status-${st.id}`, style: `flex:${count(st.id)}`, title: `${st.label}: ${count(st.id)}` })))
-        : h('p', { class: 'small muted', style: 'margin:0' }, 'Save a job to start tracking your applications.'),
-    ),
-    h(
-      'section',
       { class: 'card rail-card strength-card' },
       h('div', { class: `ring ring-${level}`, style: `--p:${strength.score}`, role: 'img', 'aria-label': `Profile ${strength.score}% complete` }, h('strong', {}, `${strength.score}%`)),
       h(
@@ -846,19 +882,55 @@ function renderHome() {
   );
 
   const feedNew = store.get().feed?.jobs?.length;
-  view.append(
+  // Quick searches: your roles, remote, and what you searched before.
+  const roleChips = profile.targetRoles.split(',').map((r) => r.trim()).filter(Boolean).slice(0, 3);
+  const quick = h(
+    'div',
+    { class: 'hero-quick' },
+    ...roleChips.map((r) => {
+      const b = h('button', { type: 'button', class: 'hq-chip' }, r);
+      b.addEventListener('click', () => runSearch({ query: r, location: profile.location }));
+      return b;
+    }),
+    roleChips.length
+      ? (() => {
+          const b = h('button', { type: 'button', class: 'hq-chip' }, svgIcon(ICON_HOME_WORK), 'Remote');
+          b.addEventListener('click', () => runSearch({ query: roleChips[0], location: 'remote' }));
+          return b;
+        })()
+      : '',
+  );
+  // Today at a glance: four numbers that count up.
+  const active = count('applied') + count('interview') + count('offer');
+  const stat = (n, label, href, icon, cls = '') => h('a', { class: `hs-tile ${cls}`, href }, h('span', { class: 'hs-icon', 'aria-hidden': 'true' }, svgIcon(icon)), h('strong', { 'data-count': String(n) }, String(n)), h('span', {}, label));
+  const stats = h(
+    'section',
+    { class: 'home-stats', 'aria-label': 'Today' },
+    stat(feedNew || 0, 'matches for you', '#/find', ICON_SPARK, 'hs-accent'),
+    stat(count('saved'), 'saved jobs', '#/tracker', ICON_BOOKMARK),
+    stat(active, 'applications', '#/tracker', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l5 5L20 6"/></svg>'),
+    stat(count('interview'), count('interview') === 1 ? 'interview' : 'interviews', '#/tracker', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>'),
+  );
+  const page = h(
+    'div',
+    { class: 'home2' },
     h(
       'section',
-      { class: 'home-hero' },
+      { class: 'home-hero hero2' },
+      h('div', { class: 'hero2-bg', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
       h('p', { class: 'eyebrow' }, new Date().toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' })),
       h('h1', {}, first ? `${greeting()}, ${first}` : 'Find your next job'),
-      h('p', {}, first && feedNew ? 'Here is what is new in your job search today.' : 'One search covers the job portals near you. Vora ranks every role against your CV, then helps you tailor your application and practise the interview.'),
+      h('p', { class: 'hero2-sub' }, first && feedNew ? `${feedNew} ${feedNew === 1 ? 'job matches' : 'jobs match'} your CV${profile.location ? ` near ${profile.location}` : ''}. Here is what is new today.` : 'One search covers the job portals near you. Vora ranks every role against your CV, then helps you tailor your application and practise the interview.'),
       form,
+      quick,
       recentRow,
     ),
+    first || all.length ? stats : '',
     upNext,
     h('div', { class: 'home-grid' }, h('div', {}, feedSection()), side),
   );
+  view.append(page);
+  countIn(stats);
 }
 
 // ---------------------------------------------------------------------------
@@ -947,6 +1019,8 @@ function renderFind() {
   const status = h('p', { class: 'find-status', role: 'status' });
   const filters = h('div', { class: 'chip-row find-filters', role: 'group', 'aria-label': 'Filters' });
   const resultsHead = h('div', { class: 'results-head' });
+  const progress = h('div', { class: 'find-progress', role: 'progressbar', 'aria-label': 'Searching', hidden: true }, h('span'));
+  const seen = new Set(); // cards already shown, so only new ones animate in
   const sortSel = h('select', { class: 'sort-select', 'aria-label': 'Sort by' }, h('option', { value: 'best' }, 'Best match'), h('option', { value: 'new' }, 'Newest'));
   sortSel.value = session.sort;
   sortSel.addEventListener('change', () => {
@@ -1037,6 +1111,7 @@ function renderFind() {
     detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Searching job sites…'));
     detail.dataset.sig = '';
     status.textContent = session.searching;
+    progress.hidden = false;
     const ctl = newAbort();
     const live = () => session.searchRun === run && results.isConnected;
     addIndeed(p, ctl.signal);
@@ -1331,6 +1406,7 @@ function renderFind() {
     const n = all.length;
     drawStatus();
     drawFilters(counts, n);
+    progress.hidden = !session.searching;
     resultsHead.replaceChildren(
       h('div', { class: 'results-count' }, h('strong', {}, n ? (shown.length === n ? `${n} ${n === 1 ? 'job' : 'jobs'}` : `${shown.length} of ${n} jobs`) : 'Jobs'), status),
       n ? h('label', { class: 'sort-wrap' }, h('span', {}, 'Sort'), sortSel) : '',
@@ -1353,7 +1429,15 @@ function renderFind() {
     if (!session.picked || !shown.some((j) => j.id === session.selected)) session.selected = shown[0].id;
     // Search results first, then the extra CV matches under their own heading.
     const firstExtra = shown.findIndex((j) => j.extra);
-    const cards = shown.map(jobCard);
+    const cards = shown.map((j, i) => {
+      const c = jobCard(j);
+      if (!seen.has(j.id)) {
+        seen.add(j.id);
+        c.classList.add('jc-new');
+        c.style.setProperty('--i', String(Math.min(i, 8)));
+      }
+      return c;
+    });
     if (firstExtra >= 0) {
       const count = shown.length - firstExtra;
       cards.splice(firstExtra, 0, h('div', { class: 'results-divider', role: 'presentation' }, h('strong', {}, `Also matching your CV in ${session.extraPlace}`), h('span', { class: 'small muted' }, `${count} more, not on your home page`)));
@@ -1498,7 +1582,7 @@ function renderFind() {
   }
 
   view.append(
-    h('div', { class: 'find-top' }, bar.form, h('div', { class: 'find-tools' }, filters, h('span', { class: 'spacer' }), boardsBtn, scoreBtn)),
+    h('div', { class: 'find-top' }, bar.form, h('div', { class: 'find-tools' }, filters, h('span', { class: 'spacer' }), boardsBtn, scoreBtn), progress),
     !ai.hasKey() && !inArtifact ? h('div', { class: 'notice' }, 'Add an API key in ', h('a', { href: '#/settings' }, 'Settings'), ' to search every job site at once. Until then, use the free job boards or the site links below.') : '',
     aiStream,
     h('div', { class: 'split find-split' }, h('div', { class: 'find-list' }, resultsHead, results, portalBox), detail),
@@ -1506,6 +1590,13 @@ function renderFind() {
   resultsHead.append(h('div', { class: 'results-count' }, status));
   drawPortals();
   filters.replaceChildren(remoteChip);
+  // The search bar gets a soft shadow once the page scrolls under it.
+  const top = view.querySelector('.find-top');
+  const onScroll = () => {
+    if (!top.isConnected) return window.removeEventListener('scroll', onScroll);
+    top.classList.toggle('stuck', window.scrollY > 24);
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
 
   if (session.autoSearch) {
     session.autoSearch = false;
@@ -1515,7 +1606,8 @@ function renderFind() {
 }
 
 function skeleton() {
-  return h('div', { class: 'skeleton-list' }, ...Array.from({ length: 4 }, () => h('div', { class: 'skeleton' })));
+  // Placeholders shaped like the result cards, so nothing jumps when jobs arrive.
+  return h('div', { class: 'skeleton-list jc-skel-list' }, ...Array.from({ length: 4 }, (_, i) => h('div', { class: 'jc-skel', style: `--i:${i}` }, h('span', { class: 'sk sk-logo' }), h('span', { class: 'sk-lines' }, h('span', { class: 'sk sk-title' }), h('span', { class: 'sk sk-sub' }), h('span', { class: 'sk sk-line' }), h('span', { class: 'sk sk-line short' })))));
 }
 
 // ---------------------------------------------------------------------------

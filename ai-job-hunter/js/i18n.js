@@ -544,6 +544,15 @@ const DICT = {
   'Have one story about a mistake and what you changed after it.': ['Habe eine Geschichte über einen Fehler und was du danach geändert hast.', 'Ayez une histoire d’erreur et de ce que vous avez changé ensuite.', 'Prepara una storia su un errore e cosa hai cambiato dopo.', 'Ten una historia sobre un error y qué cambiaste después.', 'Tenha uma história sobre um erro e o que mudou depois.'],
   'Close with a question that shows you read about the company.': ['Schliesse mit einer Frage, die zeigt, dass du dich über die Firma informiert hast.', 'Terminez par une question qui montre que vous connaissez l’entreprise.', 'Chiudi con una domanda che mostri che conosci l’azienda.', 'Cierra con una pregunta que muestre que conoces la empresa.', 'Feche com uma pergunta que mostre que você pesquisou a empresa.'],
   'Back to the job': ['Zurück zum Job', 'Retour à l’offre', 'Torna all’offerta', 'Volver al empleo', 'Voltar à vaga'],
+  'matches for you': ['passende Jobs', 'offres pour vous', 'offerte per te', 'empleos para ti', 'vagas para você'],
+  'applications': ['Bewerbungen', 'candidatures', 'candidature', 'candidaturas', 'candidaturas'],
+  'interview': ['Gespräch', 'entretien', 'colloquio', 'entrevista', 'entrevista'],
+  'interviews': ['Gespräche', 'entretiens', 'colloqui', 'entrevistas', 'entrevistas'],
+  'Today': ['Heute', 'Aujourd’hui', 'Oggi', 'Hoy', 'Hoje'],
+  'Best match today': ['Beste Übereinstimmung heute', 'Meilleure offre du jour', 'Miglior corrispondenza di oggi', 'Mejor coincidencia de hoy', 'Melhor vaga de hoje'],
+  '★ Best match today': ['★ Beste Übereinstimmung heute', '★ Meilleure offre du jour', '★ Miglior corrispondenza di oggi', '★ Mejor coincidencia de hoy', '★ Melhor vaga de hoje'],
+  'View job': ['Job ansehen', 'Voir l’offre', 'Vedi offerta', 'Ver empleo', 'Ver vaga'],
+  'Searching': ['Suche läuft', 'Recherche', 'Ricerca', 'Buscando', 'Buscando'],
   'Vora AI': ['Vora KI', 'IA Vora', 'IA Vora', 'IA de Vora', 'IA Vora'],
   'AI provider': ['KI-Anbieter', 'Fournisseur d’IA', 'Fornitore IA', 'Proveedor de IA', 'Provedor de IA'],
   'Save and test connection': ['Speichern und Verbindung testen', 'Enregistrer et tester', 'Salva e prova la connessione', 'Guardar y probar conexión', 'Salvar e testar conexão'],
@@ -995,6 +1004,8 @@ const DICT = {
 
 // [regex on the English text, [de, fr, it, es, pt]]; {1}, {2} … are the captured parts.
 const PATTERNS = [
+  [/^(\d+) (jobs match|job matches) your CV near (.+)\. Here is what is new today\.$/, ['{1} Jobs passen zu deinem Lebenslauf in der Nähe von {3}. Das ist heute neu.', '{1} offres correspondent à votre CV près de {3}. Voici les nouveautés du jour.', '{1} offerte corrispondono al tuo CV vicino a {3}. Ecco le novità di oggi.', '{1} empleos encajan con tu CV cerca de {3}. Esto es lo nuevo de hoy.', '{1} vagas combinam com seu currículo perto de {3}. Veja as novidades de hoje.']],
+  [/^(\d+) (jobs match|job matches) your CV\. Here is what is new today\.$/, ['{1} Jobs passen zu deinem Lebenslauf. Das ist heute neu.', '{1} offres correspondent à votre CV. Voici les nouveautés du jour.', '{1} offerte corrispondono al tuo CV. Ecco le novità di oggi.', '{1} empleos encajan con tu CV. Esto es lo nuevo de hoy.', '{1} vagas combinam com seu currículo. Veja as novidades de hoje.']],
   [/^Continue · card (\d+) of (\d+)$/, ['Weiter · Karte {1} von {2}', 'Continuer · carte {1} sur {2}', 'Continua · carta {1} di {2}', 'Continuar · carta {1} de {2}', 'Continuar · carta {1} de {2}']],
   [/^Writing questions for (.+)$/, ['Fragen für {1} werden geschrieben', 'Questions pour {1} en cours', 'Domande per {1} in scrittura', 'Escribiendo preguntas para {1}', 'Escrevendo perguntas para {1}']],
   [/^Your progress is saved\. You can continue from card (\d+) any time\.$/, ['Dein Fortschritt ist gespeichert. Du kannst jederzeit bei Karte {1} weitermachen.', 'Votre progression est enregistrée. Reprenez à la carte {1} quand vous voulez.', 'I progressi sono salvati. Puoi riprendere dalla carta {1} quando vuoi.', 'Tu progreso está guardado. Puedes seguir desde la carta {1} cuando quieras.', 'Seu progresso está salvo. Continue da carta {1} quando quiser.']],
