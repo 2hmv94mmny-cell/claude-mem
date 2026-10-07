@@ -7,7 +7,7 @@ import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
-import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob } from './match.js';
+import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byNewest, checkPostedDates } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage, setBrand } from './i18n.js';
 import { attachSuggest, rememberSearch } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
@@ -91,6 +91,29 @@ function timeAgo(ts) {
   return hrs < 24 ? `${hrs} h ago` : fmtDate(ts);
 }
 
+// "Posted today", "Posted 3 days ago", "Posted 24 Sep": when the job went online.
+function postedLabel(job) {
+  const ts = jobPostedAt(job);
+  if (!ts) return '';
+  const day = (t) => {
+    const d = new Date(t);
+    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  };
+  const days = Math.max(0, Math.round((day(Date.now()) - day(ts)) / 864e5));
+  if (days === 0) return 'Posted today';
+  if (days === 1) return 'Posted yesterday';
+  if (days < 7) return `Posted ${days} days ago`;
+  if (days < 28) return days < 14 ? 'Posted 1 week ago' : `Posted ${Math.floor(days / 7)} weeks ago`;
+  return `Posted ${fmtDate(ts)}`;
+}
+
+function postedTag(job, empty = '') {
+  const label = postedLabel(job);
+  if (!label) return empty ? h('span', { class: 'posted unknown' }, empty) : '';
+  const days = (Date.now() - jobPostedAt(job)) / 864e5;
+  return h('span', { class: `posted${days < 3 ? ' fresh' : ''}`, title: new Date(jobPostedAt(job)).toLocaleDateString() }, label);
+}
+
 function feedSection() {
   const { location, remote, hasExperience, key } = feedInputs();
   const feed = store.get().feed;
@@ -129,7 +152,8 @@ function feedSection() {
 
   const seeAll = h('button', { class: 'btn small', type: 'button' }, `See all ${feed.jobs.length}`);
   seeAll.addEventListener('click', () => {
-    session.results = feed.jobs;
+    session.results = [...feed.jobs].sort(byNewest);
+    session.ranked = false;
     session.scores = Object.fromEntries(feed.jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
     session.examples = false;
     session.more = false;
@@ -143,7 +167,7 @@ function feedSection() {
   const counts = new Map();
   for (const j of feed.jobs) counts.set(j.source, (counts.get(j.source) || 0) + 1);
   if (feedFilter && !counts.has(feedFilter)) feedFilter = '';
-  const list = feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs;
+  const list = [...(feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs)].sort(byNewest);
   const grid = h('div', { class: 'feed-grid' });
   const more = h('button', { class: 'btn feed-more', type: 'button' });
   const chips = h('div', { class: 'chip-row feed-chips', role: 'group', 'aria-label': 'Filter by job site' });
@@ -219,6 +243,7 @@ function feedCard(job) {
     h('div', { class: 'feed-card-top' }, scorePill(job.match), h('span', { class: 'tag source' }, job.source)),
     h('h3', {}, h('a', { href }, job.title)),
     h('p', { class: 'muted small' }, [job.company, job.location].filter(Boolean).join(' · ')),
+    postedTag(job) ? h('p', { class: 'small feed-posted' }, postedTag(job)) : '',
     job.match?.reason ? h('p', { class: 'small reason' }, job.match.reason) : '',
     h('div', { class: 'feed-card-foot' }, save, h('a', { class: 'btn small primary', href }, 'Open')),
   );
@@ -564,6 +589,7 @@ function renderFind() {
       status.textContent = 'Ranking each job against your CV…';
       session.scores = await ai.scoreJobs(session.results, { signal });
       session.results.sort((a, b) => (session.scores[b.id]?.score ?? -1) - (session.scores[a.id]?.score ?? -1));
+      session.ranked = true;
       drawResults();
       return '';
     },
@@ -594,6 +620,7 @@ function renderFind() {
     session.query = p;
     session.extraRun = null;
     session.indeedRun = null;
+    session.datesRun = null;
     bar.submit.disabled = true;
     bar.submit.textContent = 'Searching…';
     results.replaceChildren(skeleton());
@@ -602,8 +629,10 @@ function renderFind() {
     const ctl = newAbort();
     try {
       const found = await ai.searchEverywhere(p, { onText: (t) => (status.textContent = t), signal: ctl.signal, rank: Boolean(store.get().profile.cv.trim()) });
-      const jobs = onlyIn(found.jobs, p);
+      const at = Date.now();
+      const jobs = onlyIn(found.jobs, p).map((j) => ({ ...j, foundAt: at })).sort(byNewest);
       session.results = jobs;
+      session.ranked = false;
       session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
       session.examples = false;
       session.more = false;
@@ -618,8 +647,25 @@ function renderFind() {
       bar.submit.textContent = 'Search';
     }
     drawResults();
+    addDates(ctl.signal);
     addIndeed(p, ctl.signal);
     addCvMatches(p);
+  }
+
+  // Most sites put the posting date on the job page, not in search results:
+  // read the pages of the undated jobs, then re-sort newest first.
+  async function addDates(signal) {
+    const run = (session.datesRun = Symbol('dates'));
+    try {
+      const dates = await checkPostedDates(session.results.filter((j) => !j.extra), { signal });
+      if (session.datesRun !== run || !results.isConnected || !dates.size) return;
+      const dated = (j) => (!j.postedAt && dates.has(j.url) ? { ...j, postedAt: dates.get(j.url) } : j);
+      const main = session.results.filter((j) => !j.extra).map(dated).sort(byNewest);
+      session.results = [...main, ...session.results.filter((j) => j.extra).map(dated)];
+      drawResults();
+    } catch {
+      // Jobs without a date simply stay after the dated ones.
+    }
   }
 
   // Indeed keeps its postings out of web search, so after a search Vora reads
@@ -644,8 +690,14 @@ function renderFind() {
           return match ? { ...job, match } : job;
         });
       if (!fresh.length) return;
-      // Into the main results (not the extra CV section), best match first.
-      const main = [...session.results.filter((j) => !j.extra), ...fresh].sort((a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1));
+      // Indeed hides the posting date; the same job on another site often shows it.
+      const known = [...(store.get().feed?.jobs || []), ...(store.get().more?.jobs || []), ...session.results].filter((k) => jobPostedAt(k));
+      for (const j of fresh) {
+        const twin = known.find((k) => sameJob(k, j));
+        if (twin) j.postedAt = jobPostedAt(twin);
+      }
+      // Into the main results (not the extra CV section), newest first.
+      const main = [...session.results.filter((j) => !j.extra), ...fresh].sort(byNewest);
       session.results = [...main, ...session.results.filter((j) => j.extra)];
       for (const j of fresh) if (j.match) session.scores[j.id] = j.match;
       session.errors = session.errors.filter((e) => e !== 'No open postings found for this search');
@@ -688,7 +740,8 @@ function renderFind() {
       const main = session.results.filter((j) => !j.extra);
       const extra = onlyIn(jobs, { ...p, location: place })
         .filter((j) => !main.some((r) => sameJob(r, j)))
-        .map((j) => ({ ...j, extra: true }));
+        .map((j) => ({ ...j, extra: true }))
+        .sort(byNewest);
       if (!extra.length) return;
       session.results = [...session.results.filter((j) => !j.extra), ...extra];
       for (const j of extra) if (j.match) session.scores[j.id] = j.match;
@@ -708,10 +761,11 @@ function renderFind() {
     status.textContent = 'Searching free job boards…';
     results.replaceChildren(skeleton());
     const found = await searchJobs(p);
-    const jobs = onlyIn(found.jobs.filter((j) => j.source !== 'Demo'), p);
+    const jobs = onlyIn(found.jobs.filter((j) => j.source !== 'Demo'), p).sort(byNewest);
     session.examples = false;
     session.more = false;
     session.results = jobs;
+    session.ranked = false;
     session.scores = {};
     session.errors = jobs.length ? found.errors.filter((e) => e !== 'Showing demo listings') : ['No open postings found for this search'];
     session.filter = '';
@@ -738,8 +792,10 @@ function renderFind() {
     }
     const feed = store.get().feed;
     const key = JSON.stringify(['more-v1', currentLanguage(), feed?.key || '', where.toLowerCase()]);
-    const show = (jobs) => {
+    const show = (list) => {
+      const jobs = [...list].sort(byNewest);
       session.results = jobs;
+      session.ranked = false;
       session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
       session.examples = false;
       session.more = where;
@@ -777,10 +833,10 @@ function renderFind() {
     status.textContent = session.examples
       ? 'Example listings. Search to see live openings near you.'
       : session.more && n
-        ? `${n} more jobs for you near ${session.more} that are not on your home page, best match first`
+        ? `${n} more jobs for you near ${session.more} that are not on your home page, newest first`
       : session.errors.length && !n
         ? session.errors.join(' · ')
-        : `${n} job${n === 1 ? '' : 's'}${counts.size > 1 ? ` from ${counts.size} sites` : ''}${Object.keys(session.scores).length ? ', best match first' : ''}` +
+        : `${n} job${n === 1 ? '' : 's'}${counts.size > 1 ? ` from ${counts.size} sites` : ''}${session.ranked ? ', best match first' : n > 1 ? ', newest first' : ''}` +
           (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
 
     const chip = (label, value, c) => {
@@ -841,7 +897,7 @@ function renderFind() {
       job.location ? h('span', {}, job.location) : '',
       job.salary ? h('span', { class: 'salary' }, job.salary) : '',
       job.remote && !/remote/i.test(job.location || '') ? h('span', {}, 'Remote') : '',
-      job.posted ? h('span', {}, job.posted) : '',
+      postedTag(job),
     );
   }
 
@@ -2019,6 +2075,7 @@ function renderJob(id) {
         job.location ? h('span', {}, job.location) : '',
         job.salary ? h('span', { class: 'salary' }, job.salary) : '',
         job.source ? h('span', {}, `via ${job.source}`) : '',
+        postedTag(job, 'Posting date not given'),
         saved() ? statusBadge(store.get().jobs[id].status) : '',
       ),
       match?.reason ? h('p', { class: 'small', style: 'margin:var(--sp-3) 0 0;color:var(--text-2)' }, match.reason) : '',

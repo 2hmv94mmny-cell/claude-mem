@@ -16,6 +16,7 @@ import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
 import { currentLanguage, languageName } from './i18n.js';
 import { providerById, askProvider } from './providers.js';
 import { searchJobs } from './jobs.js';
+import { postedAt } from './match.js';
 
 // Every task runs with the same senior HR persona and quality bar, whichever
 // AI does the work (Claude, ChatGPT, Gemini, DeepSeek or Grok).
@@ -333,12 +334,12 @@ export async function suggestRoles({ signal } = {}) {
 const EXTRACT_FORMAT =
   'Reply with only a JSON array (best matches first, max 30) where each item is ' +
   '{"title": string, "company": string, "location": string, "url": string, "portal": string (the job site the posting is on), ' +
-  '"salary": string, "description": string (2-4 sentences: the role and key requirements), "posted": string}.';
+  '"salary": string, "description": string (2-4 sentences: the role and key requirements), "posted": string (the posting date exactly as the page gives it, e.g. "2026-09-24" or "3 days ago"; empty if not shown)}.';
 
 const RANKED_FORMAT =
   'Reply with only a JSON array (best fit for this candidate first, max 20) where each item is ' +
   '{"title": string, "company": string, "location": string, "url": string, "portal": string (the job site the posting is on), ' +
-  '"salary": string, "description": string (2-4 sentences: the role and key requirements), "posted": string, ' +
+  '"salary": string, "description": string (2-4 sentences: the role and key requirements), "posted": string (the posting date exactly as the page gives it, empty if not shown), ' +
   '"match": number (0-100, how well the candidate\'s actual experience and seniority fit; be honest), ' +
   '"why": string (max 14 words, the concrete reason it fits or what is missing, no dashes)}. ' +
   'Leave out roles that are clearly far too senior, too junior or in another field. Lower the match for roles that clash with ' +
@@ -470,6 +471,7 @@ function toJob(j) {
     salary: String(j.salary || ''),
     description: String(j.description || ''),
     posted: String(j.posted || ''),
+    postedAt: postedAt(j.posted),
     tags: [],
     ...(Number.isFinite(Number(j.match)) && j.match !== '' && j.match != null
       ? { match: { score: Math.max(0, Math.min(100, Math.round(Number(j.match)))), reason: cleanText(String(j.why || '')) } }

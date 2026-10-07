@@ -468,6 +468,11 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--sp-2) 0; }
 .meta span { font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); background: var(--surface-2); padding: 3px var(--sp-2); border-radius: var(--r-sm); }
 .meta .salary { color: var(--ok); background: var(--ok-soft); }
+.meta .posted.fresh, .feed-posted .posted.fresh { color: var(--accent-text); background: var(--accent-soft); }
+.meta .posted.unknown { font-weight: 500; background: transparent; padding-left: 0; }
+.feed-posted { margin: 2px 0 0; }
+.feed-posted .posted { font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+.feed-posted .posted.fresh { padding: 2px var(--sp-2); border-radius: var(--r-sm); }
 .detail-head .meta span { font-size: var(--fs-sm); padding: 4px var(--sp-3); }
 .snippet { color: var(--text-2); font-size: var(--fs-sm); margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .job-card .reason { font-size: var(--fs-sm); margin: var(--sp-2) 0 0; }

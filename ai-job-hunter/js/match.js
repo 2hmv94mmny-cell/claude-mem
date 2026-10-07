@@ -366,6 +366,123 @@ function splitTitle(raw, url) {
   return { title: parts[0] || t, company, location: location.replace(/[.,;]+$/, '') };
 }
 
+// ---------------------------------------------------------------------------
+// When a job was posted
+// ---------------------------------------------------------------------------
+
+const MONTH_NUM = [
+  ['jan', 'jän', 'janv', 'genn', 'ene'], ['feb', 'fév', 'fev', 'febb', 'fevereiro'], ['mar', 'mär', 'mars', 'marz', 'março'], ['apr', 'avr', 'abr'],
+  ['may', 'mai', 'magg', 'mayo', 'maio'], ['jun', 'juin', 'giu', 'junio', 'junho'], ['jul', 'juil', 'lug', 'julio', 'julho'], ['aug', 'août', 'aout', 'ago'],
+  ['sep', 'set'], ['oct', 'okt', 'ott', 'out'], ['nov'], ['dec', 'dez', 'déc', 'dic'],
+];
+function monthIndex(word) {
+  const w = String(word).toLowerCase().replace(/\.$/, '');
+  if (w.length < 3) return -1;
+  return MONTH_NUM.findIndex((names) => names.some((n) => w.startsWith(n) || (w.length >= 3 && n.startsWith(w))));
+}
+
+const DAY = 864e5;
+const UNIT_MS = [
+  [/^(?:min|minute|minuten|minutos|minuti)/, 6e4],
+  [/^(?:h|hr|hour|heure|stunde|std|ora|ore|hora)/, 36e5],
+  [/^(?:d|day|tag|jour|giorn|día|dia)/, DAY],
+  [/^(?:w|week|woche|semaine|settiman|semana)/, 7 * DAY],
+  [/^(?:mo|month|monat|mois|mes|mês|mese)/, 30 * DAY],
+];
+const NUM = '(\\d{1,3})\\s*\\+?';
+const UNIT = '(min(?:ute)?s?|minuten|minutos|minuti|h|hrs?|hours?|heures?|stunden?|std\\.?|or[ae]|horas?|d|days?|tag(?:e|en)?|jours?|giorni|días|dias|w|weeks?|wochen?|semaines?|settimane|semanas|mo|months?|monat(?:e|en)?|mois|mes(?:es|i)?|mês|meses)';
+const RELATIVE = [
+  new RegExp(`\\b${NUM}\\s*${UNIT}\\s+ago\\b`, 'i'),
+  new RegExp(`\\bvor\\s+${NUM}\\s*${UNIT}`, 'i'),
+  new RegExp(`\\bil y a\\s+${NUM}\\s*${UNIT}`, 'i'),
+  new RegExp(`\\b${NUM}\\s*${UNIT}\\s+fa\\b`, 'i'),
+  new RegExp(`\\bhace\\s+${NUM}\\s*${UNIT}`, 'i'),
+  new RegExp(`\\bhá\\s+${NUM}\\s*${UNIT}`, 'i'),
+];
+const TODAY = /\b(?:today|just posted|just now|heute|aujourd'hui|aujourd’hui|oggi|hoy|hoje|new today|gerade eben)\b/i;
+const YESTERDAY = /\b(?:yesterday|gestern|hier|ieri|ayer|ontem)\b/i;
+const DATE_TEXT = /\b(\d{1,2})\.?\s+([A-Za-zäéûç]{3,10}\.?)\s+(20\d{2})\b|\b([A-Za-z]{3,9}\.?)\s+(\d{1,2}),?\s+(20\d{2})\b|\b(20\d{2})-(\d{2})-(\d{2})(?!\d)|\b(\d{1,2})[./](\d{1,2})[./](20\d{2})\b/;
+const POSTED_LABEL = /\b(?:posted|published|date posted|posting date|listed|veröffentlicht|publiziert|ausgeschrieben|online seit|erschienen|inseriert|publié|mis en ligne|pubblicato|publicado|publicada)\b/i;
+
+/** A date written on a page ("24 September 2026", "2026-09-24", "24.09.2026", "3 days ago"), as a timestamp, or 0. */
+export function postedAt(text, now = Date.now()) {
+  const s = String(text || '').trim();
+  if (!s) return 0;
+  let ts = 0;
+  const rel = RELATIVE.map((re) => s.match(re)).find(Boolean);
+  if (rel) {
+    const unit = UNIT_MS.find(([re]) => re.test(rel[2].toLowerCase()))?.[1];
+    if (unit) ts = now - Number(rel[1]) * unit;
+  } else if (DATE_TEXT.test(s)) {
+    const d = s.match(DATE_TEXT);
+    {
+      let y, m, day;
+      if (d[1]) [day, m, y] = [Number(d[1]), monthIndex(d[2]), Number(d[3])];
+      else if (d[4]) [m, day, y] = [monthIndex(d[4]), Number(d[5]), Number(d[6])];
+      else if (d[7]) [y, m, day] = [Number(d[7]), Number(d[8]) - 1, Number(d[9])];
+      else [day, m, y] = [Number(d[10]), Number(d[11]) - 1, Number(d[12])];
+      if (m >= 0 && m < 12 && day >= 1 && day <= 31) ts = Date.UTC(y, m, day, 12);
+    }
+  } else if (YESTERDAY.test(s)) ts = now - DAY;
+  else if (TODAY.test(s)) ts = now;
+  // A date in the future, or more than two years back, is not a posting date.
+  if (!ts || ts > now + DAY || ts < now - 730 * DAY) return 0;
+  return ts;
+}
+
+/** The posting date found in a page's text: a date line near the top, or one labelled "Posted", "Veröffentlicht", … */
+export function findPostedAt(text, now = Date.now()) {
+  const lines = String(text || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  for (const l of lines.slice(0, 16)) {
+    if (DATE_LINE.test(l)) return postedAt(l, now);
+  }
+  for (const [i, l] of lines.slice(0, 80).entries()) {
+    if (!POSTED_LABEL.test(l)) continue;
+    // "Posted 3 days ago", "Veröffentlicht: 24.09.2026", or the date on the next line.
+    const after = l.slice(l.search(POSTED_LABEL));
+    const ts = postedAt(after, now) || (after.length < 30 ? postedAt(lines[i + 1] || '', now) : 0);
+    if (ts) return ts;
+  }
+  for (const l of lines.slice(0, 40)) {
+    if (l.length < 60 && RELATIVE.some((re) => re.test(l))) return postedAt(l, now);
+  }
+  return 0;
+}
+
+/** The posting time of a job, from what the site or search returned. */
+export function jobPostedAt(job) {
+  if (job.postedAt) return job.postedAt;
+  return postedAt(job.posted, job.foundAt || Date.now());
+}
+
+/** Newest posting first; jobs without a date after the dated ones, best match first. */
+export function byNewest(a, b) {
+  const ta = jobPostedAt(a);
+  const tb = jobPostedAt(b);
+  if (ta !== tb) return (tb || 0) - (ta || 0);
+  return (b.match?.score ?? -1) - (a.match?.score ?? -1);
+}
+
+/**
+ * Read the posting pages of jobs that came without a date and look for one.
+ * One batched page read; a page that times out or shows no date stays undated.
+ * @returns {Promise<Map<string, number>>} url → posting time
+ */
+export async function checkPostedDates(jobs, { signal, max = 12 } = {}) {
+  const found = new Map();
+  const urls = [...new Set(jobs.filter((j) => !jobPostedAt(j) && j.source !== 'Indeed' && /^https?:\/\//.test(j.url || '')).map((j) => j.url))].slice(0, max);
+  if (!caps.mcp || !urls.length) return found;
+  const res = await caps.mcp.callTool(SEARCH_SERVER, FETCH_TOOL, { urls, maxCharacters: 2500 }, { signal });
+  const now = Date.now();
+  for (const block of payloadText(res).split(/\n(?=# [^\n]*\n+URL: )/)) {
+    const url = block.match(/^URL:\s*(\S+)/m)?.[1];
+    if (!url || !urls.includes(url)) continue;
+    const ts = findPostedAt(block.split('\n').slice(2).join('\n'), now);
+    if (ts) found.set(url, ts);
+  }
+  return found;
+}
+
 const DATE_LINE = /^(?:[-*•]\s*)?(\d{1,2}\.?\s+[A-Za-zäéû]+\s+20\d{2}|20\d{2}-\d{2}-\d{2})\s*$/;
 const WORKLOAD = /^(?:[-*•]\s*)?(\d{2,3}\s*(?:[-–]\s*\d{2,3}\s*)?%)\s*$/;
 
@@ -398,6 +515,8 @@ export function parseSearchResults(text, { city = '' } = {}) {
     }
     const published = block.match(/^Published:\s*(\d{4}-\d{2}-\d{2})/m)?.[1] || '';
     let posted = published;
+    // The date on the page itself beats the search index's date for the page.
+    const onPage = findPostedAt(body);
     let workload = '';
     let location = parts.location || '';
     for (const l of lines.slice(0, 14)) {
@@ -432,6 +551,7 @@ export function parseSearchResults(text, { city = '' } = {}) {
       url,
       salary: '',
       posted,
+      postedAt: onPage || postedAt(posted),
       tags: workload ? [workload] : [],
       description,
       _text: `${title}\n${body}`.slice(0, 6000),
@@ -775,8 +895,13 @@ export async function jobsForYou(profile, { signal, roles: searchRoles, exclude 
       void _text;
       return { ...job, match };
     })
-    .filter((j) => j.match.score >= 30)
-    .sort((a, b) => b.match.score - a.match.score);
+    .filter((j) => j.match.score >= 30);
+
+  // Look up the posting date of the best undated matches, then newest first.
+  const undated = [...ranked].sort((a, b) => b.match.score - a.match.score).filter((j) => !jobPostedAt(j));
+  const dates = await checkPostedDates(undated, { signal }).catch(() => new Map());
+  for (const j of ranked) if (!j.postedAt && dates.has(j.url)) j.postedAt = dates.get(j.url);
+  ranked.sort(byNewest);
 
   return { jobs: ranked, roles: me.roles, country: found.country, via, searched: found.searched || [] };
 }
