@@ -1980,15 +1980,20 @@ function renderDocuments(initialKind) {
   });
   const designBtn = h('button', { type: 'button', class: 'rb-btn', 'aria-pressed': String(designOpen) }, svgIcon(ICON_PALETTE), h('span', { class: 'rb-tpl' }));
   designBtn.addEventListener('click', () => openPanel(designOpen ? '' : 'design'));
-  // One side panel at a time: Design, Vora AI or Check.
+  // One panel at a time: Design, Vora AI or Check (side panels on a computer,
+  // bottom sheets on a phone), plus the Font and Insert sheets on a phone.
+  let sheetOpen = '';
   function openPanel(name) {
     designOpen = name === 'design';
     chatOpen = name === 'chat';
     checkOpen = name === 'check';
+    sheetOpen = name === 'font' || name === 'insert' ? name : '';
     if (chatOpen) drawChat();
     if (checkOpen) drawCheck();
+    if (sheetOpen) drawSheet();
     layout();
-    if (chatOpen) requestAnimationFrame(() => chatInput.focus({ preventScroll: true }));
+    // On a phone the keyboard would cover the sheet: focus only on bigger screens.
+    if (chatOpen && window.innerWidth > 900) requestAnimationFrame(() => chatInput.focus({ preventScroll: true }));
   }
 
   // ----- body -----
@@ -2000,6 +2005,10 @@ function renderDocuments(initialKind) {
   const design = h('aside', { class: 'docs-design', 'aria-label': 'Design' });
   const chat = h('aside', { class: 'docs-chat', 'aria-label': 'Vora AI chat' });
   const check = h('aside', { class: 'docs-check', 'aria-label': 'Document check' });
+  const sheet = h('aside', { class: 'docs-sheet', 'aria-label': 'Options' });
+  const scrim = h('div', { class: 'docs-scrim', 'aria-hidden': 'true' });
+  scrim.addEventListener('click', () => openPanel(''));
+  const dock = h('nav', { class: 'docs-dock', 'aria-label': 'Tools' });
   const status = h('footer', { class: 'docs-status' });
   const appEl = h(
     'div',
@@ -2013,9 +2022,41 @@ function renderDocuments(initialKind) {
       h('div', { class: 'docs-top-actions' }, undoBtn, redoBtn, h('span', { class: 'tb-sep' }), zoomSel, moreMenu, pdfBtn),
     ),
     ribbon,
-    h('div', { class: 'docs-body' }, outline, canvas, design, chat, check),
+    h('div', { class: 'docs-body' }, outline, canvas, scrim, design, chat, check, sheet),
     status,
+    dock,
   );
+  // Phones: drag a sheet down by its header to close it.
+  for (const panel of [design, chat, check, sheet]) {
+    let y0 = null;
+    let dy = 0;
+    panel.addEventListener('pointerdown', (e) => {
+      if (window.innerWidth > 900 || e.pointerType === 'mouse' || !e.target.closest('.chat-head, .chat-grab') || e.target.closest('button')) return;
+      y0 = e.clientY;
+      dy = 0;
+      panel.setPointerCapture?.(e.pointerId);
+    });
+    panel.addEventListener('pointermove', (e) => {
+      if (y0 === null) return;
+      dy = Math.max(0, e.clientY - y0);
+      panel.style.transform = `translateY(${dy}px)`;
+      panel.style.transition = 'none';
+    });
+    const end = () => {
+      if (y0 === null) return;
+      y0 = null;
+      panel.style.transition = '';
+      panel.style.transform = '';
+      if (dy > 80) openPanel('');
+    };
+    panel.addEventListener('pointerup', end);
+    panel.addEventListener('pointercancel', end);
+  }
+  const sheetHead = (title, sub) => {
+    const close = h('button', { type: 'button', class: 'icon-btn chat-close', 'aria-label': 'Close', title: 'Close' }, '×');
+    close.addEventListener('click', () => openPanel(''));
+    return [h('div', { class: 'chat-grab', 'aria-hidden': 'true' }), h('header', { class: 'chat-head' }, h('div', {}, h('strong', {}, title), sub ? h('span', {}, sub) : ''), close)];
+  };
 
   // ----- saving indicator -----
   let savedTimer = 0;
@@ -2209,6 +2250,7 @@ function renderDocuments(initialKind) {
       }),
     );
     design.replaceChildren(
+      h('div', { class: 'design-sheet-head' }, ...sheetHead('Design', 'Template and colour')),
       h('p', { class: 'panel-label' }, 'Design'),
       t.accents
         ? h(
@@ -2297,8 +2339,11 @@ function renderDocuments(initialKind) {
     }
   }
   function insertMenu() {
+    return menu('Insert', ICON_PLUS, insertItems());
+  }
+  function insertItems() {
     const add = (key) => () => act('add', key);
-    return menu('Insert', ICON_PLUS, [
+    return [
       { label: 'Job', run: add('experience') },
       { label: 'Education', run: add('education') },
       { label: 'Project', run: add('projects') },
@@ -2316,7 +2361,73 @@ function renderDocuments(initialKind) {
           record();
         },
       },
-    ]);
+    ];
+  }
+
+  // ----- phone: bottom dock and the Font / Insert sheets -----
+  function drawDock() {
+    if (!hasDoc()) return dock.replaceChildren();
+    const item = (name, label, icon, on, cls = '') => {
+      const b = h('button', { type: 'button', class: `dock-btn ${cls}`, 'aria-pressed': String(on) }, typeof icon === 'string' && icon.startsWith('<') ? svgIcon(icon) : h('span', { class: 'dock-aa', 'aria-hidden': 'true', style: fontChoice(fontId()).css ? `font-family:${fontChoice(fontId()).css}` : '' }, 'Aa'), h('span', {}, label));
+      b.addEventListener('click', () => openPanel(on ? '' : name));
+      return b;
+    };
+    dock.replaceChildren(
+      item('design', 'Design', ICON_PALETTE, designOpen),
+      item('font', 'Font', 'Aa', sheetOpen === 'font'),
+      kind === 'cv' ? item('insert', 'Insert', ICON_PLUS, sheetOpen === 'insert') : '',
+      item('check', 'Check', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>', checkOpen),
+      item('chat', 'Vora AI', ICON_SPARK, chatOpen, 'dock-vora tb-ai'),
+    );
+  }
+  function drawSheet() {
+    if (sheetOpen === 'font') {
+      const current = fontChoice(fontId());
+      const row = (f, label, note, run, on) => {
+        const b = h('button', { type: 'button', class: 'sheet-row', 'aria-pressed': String(on) }, h('span', { class: 'sheet-aa', 'aria-hidden': 'true', style: f?.css ? `font-family:${f.css}` : '' }, 'Aa'), h('span', { class: 'sheet-text' }, h('strong', { style: f?.css ? `font-family:${f.css}` : '' }, label), h('small', {}, note)), on ? h('span', { class: 'sheet-tick', 'aria-hidden': 'true' }) : '');
+        b.addEventListener('click', run);
+        return b;
+      };
+      for (const f of FONT_CHOICES) if (f.css) document.fonts?.load(`16px ${f.css}`).catch(() => {});
+      const pickFont = (id) => () => {
+        if (kind === 'cv') saveMaster({ font: id });
+        else saveLetter({ font: id });
+        showSaved();
+        refresh();
+      };
+      sheet.replaceChildren(
+        ...sheetHead('Font', 'The PDF uses the same font'),
+        h(
+          'div',
+          { class: 'sheet-body' },
+          ...FONT_CHOICES.map((f) => row(f, f.name, f.note, pickFont(f.id), f.id === current.id)),
+          kind === 'letter' && typeof letterOf().font === 'string'
+            ? row(null, 'Same as my CV', fontChoice(master().font).name, () => {
+                saveLetter({ font: undefined });
+                refresh();
+              }, false)
+            : '',
+        ),
+      );
+    } else if (sheetOpen === 'insert') {
+      sheet.replaceChildren(
+        ...sheetHead('Insert', 'Add a section to your CV'),
+        h(
+          'div',
+          { class: 'sheet-body' },
+          ...insertItems()
+            .filter((x) => x !== '-')
+            .map((x) => {
+              const b = h('button', { type: 'button', class: 'sheet-row', disabled: x.disabled || null }, h('span', { class: 'sheet-aa plus', 'aria-hidden': 'true' }, '+'), h('span', { class: 'sheet-text' }, h('strong', {}, x.label)));
+              b.addEventListener('click', () => {
+                openPanel('');
+                x.run();
+              });
+              return b;
+            }),
+        ),
+      );
+    }
   }
 
   function drawRibbon() {
@@ -2513,16 +2624,18 @@ function renderDocuments(initialKind) {
   }
 
   function layout() {
-    const wide = window.innerWidth >= 900;
+    const wide = window.innerWidth > 900;
     const on = (x) => x && hasDoc();
     appEl.classList.toggle('with-outline', outlineOpen && wide && hasDoc());
     appEl.classList.toggle('with-design', on(designOpen));
     appEl.classList.toggle('with-chat', on(chatOpen));
     appEl.classList.toggle('with-check', on(checkOpen));
-    appEl.classList.toggle('sheet-open', !wide && on(designOpen || chatOpen || checkOpen));
     design.classList.toggle('open', on(designOpen));
     chat.classList.toggle('open', on(chatOpen));
     check.classList.toggle('open', on(checkOpen));
+    sheet.classList.toggle('open', on(Boolean(sheetOpen)) && !wide);
+    appEl.classList.toggle('sheet-open', !wide && on(designOpen || chatOpen || checkOpen || Boolean(sheetOpen)));
+    drawDock();
     outline.hidden = !(outlineOpen && wide && hasDoc());
     drawRibbon();
     requestAnimationFrame(fit);
@@ -2535,6 +2648,7 @@ function renderDocuments(initialKind) {
     drawDesign();
     drawChat();
     if (checkOpen) drawCheck();
+    if (sheetOpen) drawSheet();
     layout();
   }
 
