@@ -2483,6 +2483,7 @@ function renderDocuments(initialKind) {
     return menu('Insert', ICON_PLUS, insertItems());
   }
   function insertItems() {
+    if (kind === 'letter') return letterInsertItems();
     const add = (key) => () => act('add', key);
     return [
       { label: 'Job', run: add('experience') },
@@ -2505,6 +2506,78 @@ function renderDocuments(initialKind) {
     ];
   }
 
+  // Letter parts: the same Insert menu as the CV, with what a letter is made of.
+  // Wording follows the letter's language (German, French, Italian, Spanish, Portuguese or English).
+  function letterWords() {
+    const b = letterOf().body || '';
+    const name = store.get().profile.name.trim() || cv()?.name || '';
+    const W = {
+      de: ['Sehr geehrte Damen und Herren', 'Freundliche Grüsse', 'Hier steht Ihr neuer Absatz.'],
+      fr: ['Madame, Monsieur,', 'Veuillez agréer mes salutations distinguées.', 'Votre nouveau paragraphe ici.'],
+      it: ['Gentili Signore e Signori,', 'Cordiali saluti', 'Il tuo nuovo paragrafo qui.'],
+      es: ['Estimados señores:', 'Atentamente,', 'Tu nuevo párrafo aquí.'],
+      pt: ['Prezados senhores,', 'Atenciosamente,', 'Seu novo parágrafo aqui.'],
+      en: ['Dear Hiring Manager,', 'Kind regards,', 'Write your new paragraph here.'],
+    };
+    const lang = /\b(Sehr geehrte|Grüsse|Grüße|ich|und)\b/.test(b) ? 'de' : /\b(Madame|Monsieur|Cordialement|je|nous)\b/.test(b) ? 'fr' : /\b(Gentil|Cordiali|sono)\b/.test(b) ? 'it' : /\b(Estimad|Atentamente)\b/.test(b) ? 'es' : /\b(Prezad|Atenciosamente)\b/.test(b) ? 'pt' : (currentLanguage() in W ? currentLanguage() : 'en');
+    const [greet, bye, para] = W[lang];
+    return { greet, bye, para, name };
+  }
+  // Select a piece of text inside a page field, so typing replaces it.
+  function selectInField(path, text) {
+    const el = [...paperScale.querySelectorAll('[data-path]')].find((x) => x.dataset.path === path);
+    if (!el) return;
+    el.focus();
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.nodeValue.indexOf(text);
+      if (i < 0) continue;
+      const r = document.createRange();
+      r.setStart(n, i);
+      r.setEnd(n, i + text.length);
+      getSelection().removeAllRanges();
+      getSelection().addRange(r);
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
+    focusPath(path);
+  }
+  function letterInsertItems() {
+    const L = letterOf();
+    const body = L.body || '';
+    const blocks = () => (letterOf().body || '').split(/\n{2,}/);
+    const w = letterWords();
+    const hasGreeting = /^(dear|sehr geehrte|liebe|hallo|madame|monsieur|bonjour|gentil|egregi|estimad|prezad|olá|hello|hi)\b/i.test(body.trim());
+    const hasSignOff = /(regards|sincerely|grüsse|grüße|salutations|cordialement|saluti|atentamente|atenciosamente|best wishes)/i.test(blocks().slice(-2).join(' '));
+    const write = (nextBody, focus) => {
+      record();
+      saveLetter({ body: nextBody });
+      renderPaper();
+      record();
+      showSaved();
+      requestAnimationFrame(() => (focus ? selectInField('letter.body', focus) : focusPath('letter.body')));
+    };
+    const goTo = (path) => () => {
+      if (!String(letterOf()[LETTER_FIELD[path]] || '').trim()) renderPaper();
+      requestAnimationFrame(() => focusPath(path));
+    };
+    return [
+      { label: 'Paragraph', hint: 'A new paragraph before your closing', run: () => {
+        const b = blocks().filter((x) => x.trim());
+        const at = hasSignOff ? Math.max(b.length - 1, hasGreeting ? 1 : 0) : b.length;
+        b.splice(at, 0, w.para);
+        write(b.join('\n\n'), w.para);
+      } },
+      { label: 'Greeting', hint: w.greet, disabled: hasGreeting, run: () => write(`${w.greet}\n\n${body.trim()}`.trim(), w.greet) },
+      { label: 'Closing and your name', hint: `${w.bye} ${w.name}`.trim(), disabled: hasSignOff, run: () => write(`${body.trim()}\n\n${w.bye}\n${w.name}`.trim(), w.bye) },
+      { label: 'P.S. line', hint: 'One short line after your name', run: () => write(`${body.trim()}\n\nP.S. `, 'P.S. ') },
+      '-',
+      { label: 'Recipient address', hint: 'Company, contact person, street, town', run: goTo('letter.to') },
+      { label: 'Subject line', hint: 'The job you apply for', run: goTo('letter.subject') },
+      { label: 'Place and date', hint: 'Top right of the letter', run: goTo('letter.date') },
+    ];
+  }
+
   // ----- phone: bottom dock and the Font / Insert sheets -----
   function drawDock() {
     if (!hasDoc()) return dock.replaceChildren();
@@ -2516,7 +2589,7 @@ function renderDocuments(initialKind) {
     dock.replaceChildren(
       item('design', 'Design', ICON_PALETTE, designOpen),
       item('font', 'Font', 'Aa', sheetOpen === 'font'),
-      kind === 'cv' ? item('insert', 'Insert', ICON_PLUS, sheetOpen === 'insert') : '',
+      item('insert', 'Insert', ICON_PLUS, sheetOpen === 'insert'),
       item('check', 'Check', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>', checkOpen),
       item('chat', 'Vora AI', ICON_SPARK, chatOpen, 'dock-vora tb-ai'),
     );
@@ -2552,14 +2625,14 @@ function renderDocuments(initialKind) {
       );
     } else if (sheetOpen === 'insert') {
       sheet.replaceChildren(
-        ...sheetHead('Insert', 'Add a section to your CV'),
+        ...sheetHead('Insert', kind === 'cv' ? 'Add a section to your CV' : 'Add a part to your letter'),
         h(
           'div',
           { class: 'sheet-body' },
           ...insertItems()
             .filter((x) => x !== '-')
             .map((x) => {
-              const b = h('button', { type: 'button', class: 'sheet-row', disabled: x.disabled || null }, h('span', { class: 'sheet-aa plus', 'aria-hidden': 'true' }, '+'), h('span', { class: 'sheet-text' }, h('strong', {}, x.label)));
+              const b = h('button', { type: 'button', class: 'sheet-row', disabled: x.disabled || null }, h('span', { class: 'sheet-aa plus', 'aria-hidden': 'true' }, '+'), h('span', { class: 'sheet-text' }, h('strong', {}, x.label), x.hint ? h('small', {}, x.hint) : ''));
               b.addEventListener('click', () => {
                 openPanel('');
                 x.run();
@@ -2597,7 +2670,7 @@ function renderDocuments(initialKind) {
     ribbon.replaceChildren(
       h('div', { class: 'rb-group' }, outlineBtn),
       h('div', { class: 'rb-group' }, h('span', { class: 'rb-label' }, 'Design'), designBtn, fontMenu(), swatches),
-      kind === 'cv' ? h('div', { class: 'rb-group' }, insertMenu()) : '',
+      h('div', { class: 'rb-group' }, insertMenu()),
       h('div', { class: 'rb-group' }, checkBtn),
       h('div', { class: 'rb-group rb-end' }, chatButton()),
     );
@@ -3281,6 +3354,30 @@ function companySection(job) {
   return card;
 }
 
+/** A posting as readable blocks: headings, bullet lists and paragraphs. */
+function formatDescription(text) {
+  const box = h('div', { class: 'description jd-desc' });
+  const lines = String(text || 'No description provided. Open the posting for the full details.').split('\n');
+  let list = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      list = null;
+      continue;
+    }
+    const bullet = line.match(/^([-•*·▪●]|\d+[.)])\s+(.*)$/);
+    if (bullet) {
+      if (!list) box.append((list = h('ul', {})));
+      list.append(h('li', {}, bullet[2]));
+      continue;
+    }
+    list = null;
+    if (line.length < 70 && /[:：]$/.test(line)) box.append(h('h3', {}, line.replace(/[:：]$/, '')));
+    else box.append(h('p', {}, line));
+  }
+  return box;
+}
+
 function renderJob(id) {
   const job = findJob(id);
   if (!job) {
@@ -3291,11 +3388,11 @@ function renderJob(id) {
   const saved = () => Boolean(store.get().jobs[id]);
 
   const tabs = [
-    ['overview', 'Overview'],
-    ['docs', 'CV & cover letter'],
-    ['prep', 'Interview game'],
+    ['overview', 'Overview', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>'],
+    ['docs', 'CV & cover letter', ICON_DOC],
+    ['prep', 'Interview game', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="13" height="17" rx="2"/><path d="M4 6.5v12A2.5 2.5 0 0 0 6.5 21H15"/><path d="M13.5 9.5a1.8 1.8 0 1 1 1.8 1.8v1.2M15.3 15h0"/></svg>'],
   ];
-  const tabBar = h('div', { class: 'tabs', role: 'tablist' });
+  const tabBar = h('div', { class: 'tabs jd-tabs', role: 'tablist' });
   const panel = h('div', { class: 'tab-panel' });
   let active = 'overview';
   try {
@@ -3307,9 +3404,12 @@ function renderJob(id) {
     try {
       sessionStorage.setItem('ajh:tab', key);
     } catch {}
+    const d = store.get().docs[id] || {};
+    const pr = store.get().prep[id] || {};
+    const badge = { docs: `${(d.cvData ? 1 : 0) + (d.coverLetter ? 1 : 0)}/2`, prep: pr.best ? `${pr.best} XP` : pr.deck?.cards?.length ? `${(pr.results || []).filter(Boolean).length}/${pr.deck.cards.length}` : '' };
     tabBar.replaceChildren(
-      ...tabs.map(([k, label]) => {
-        const b = h('button', { role: 'tab', class: k === key ? 'active' : '', 'aria-selected': String(k === key) }, label);
+      ...tabs.map(([k, label, icon]) => {
+        const b = h('button', { role: 'tab', class: k === key ? 'active' : '', 'aria-selected': String(k === key) }, svgIcon(icon), h('span', {}, label), badge[k] ? h('span', { class: `jd-badge${badge[k] === '2/2' ? ' full' : ''}` }, badge[k]) : '');
         b.addEventListener('click', () => {
           currentAbort?.abort();
           showTab(k);
@@ -3318,49 +3418,82 @@ function renderJob(id) {
       }),
     );
     panel.replaceChildren();
+    panel.classList.remove('jd-in');
+    void panel.offsetWidth; // restart the entrance animation
+    panel.classList.add('jd-in');
     ({ overview: overviewTab, docs: docsTab, prep: prepTab })[key]();
+    drawSteps();
   }
 
   // ----- Overview -----
   function overviewTab() {
     const current = store.get().jobs[id];
-    const side = h('aside', { class: 'card side' });
+    const matchNow = job.match || current?.match;
 
+    // Your application: status as one-tap pills, notes, history.
+    const side = h('aside', { class: 'jd-side' });
     if (current) {
-      const select = h('select', {}, ...STATUSES.map((s) => h('option', { value: s.id, selected: s.id === current.status }, s.label)));
-      select.addEventListener('change', () => {
-        store.setStatus(id, select.value);
-        toast(`Moved to ${STATUSES.find((s) => s.id === select.value).label}`);
-      });
-      const notes = h('textarea', { rows: 6, placeholder: 'Contacts, salary notes, next steps…' }, current.notes || '');
+      const pills = h('div', { class: 'jd-status', role: 'radiogroup', 'aria-label': 'Status' });
+      const paintPills = () =>
+        pills.replaceChildren(
+          ...STATUSES.map((st) => {
+            const on = store.get().jobs[id]?.status === st.id;
+            const b = h('button', { type: 'button', role: 'radio', 'aria-checked': String(on), class: `jd-pill status-${st.id}` }, st.label);
+            b.addEventListener('click', () => {
+              if (on) return;
+              store.setStatus(id, st.id);
+              toast(`Moved to ${st.label}`);
+              paintPills();
+              drawSteps();
+              drawHistory();
+              drawHeroStatus();
+            });
+            return b;
+          }),
+        );
+      paintPills();
+      const notes = h('textarea', { rows: 5, placeholder: 'Contacts, salary notes, next steps…' }, current.notes || '');
       notes.addEventListener('input', debounce(() => store.update((s) => (s.jobs[id].notes = notes.value)), 400));
+      const history = h('ol', { class: 'jd-timeline' });
+      function drawHistory() {
+        const j = store.get().jobs[id];
+        const events = [{ status: 'saved', at: j.savedAt }, ...(j.history || [])].filter((e) => e.at);
+        history.replaceChildren(...events.reverse().map((e) => h('li', {}, h('strong', {}, STATUSES.find((x) => x.id === e.status)?.label || e.status), h('span', {}, fmtDate(e.at)))));
+      }
+      drawHistory();
       const remove = confirmButton('Remove job', 'Tap again to remove', () => {
         store.removeJob(id);
         toast('Job removed');
         go('/tracker');
-      }, 'btn danger small');
+      }, 'link-btn danger-link');
       side.append(
-        field('Status', select),
-        field('Notes', notes),
-        current.history?.length
-          ? h('div', { class: 'timeline' }, h('h3', {}, 'History'), ...current.history.map((e) => h('p', { class: 'small' }, `${fmtDate(e.at)} · ${STATUSES.find((s) => s.id === e.status)?.label}`)))
-          : '',
-        remove,
+        h('section', { class: 'card jd-card' }, h('h2', {}, 'Your application'), pills, h('label', { class: 'jd-label', for: 'jd-notes' }, 'Notes'), Object.assign(notes, { id: 'jd-notes' }), h('h3', { class: 'jd-label' }, 'Timeline'), history, remove),
       );
     } else {
-      const save = h('button', { class: 'btn primary' }, 'Save to tracker');
+      const save = h('button', { class: 'btn primary' }, svgIcon(ICON_BOOKMARK), 'Save to applications');
       save.addEventListener('click', () => {
         ensureSaved();
         toast('Saved');
-        showTab('overview');
+        route();
       });
-      side.append(h('p', { class: 'muted' }, 'Save this job to track it and keep its documents.'), save);
+      side.append(h('section', { class: 'card jd-card' }, h('h2', {}, 'Your application'), h('p', { class: 'muted small' }, 'Save this job to track it, keep notes and keep its CV and letter.'), save));
     }
+    side.append(nextStepCard());
+    const facts = [
+      ['Location', job.location],
+      ['Salary', job.salary || 'Not listed'],
+      ['Posted', postedLabel(job).replace(/^Posted /, '') || 'Unknown'],
+      ['Found on', job.source],
+      ['Saved', current?.savedAt ? fmtDate(current.savedAt) : ''],
+    ].filter(([, v]) => v);
+    side.append(h('section', { class: 'card jd-card' }, h('h2', {}, 'At a glance'), h('dl', { class: 'jd-facts' }, ...facts.map(([k, v]) => h('div', {}, h('dt', {}, k), h('dd', {}, v))))));
 
-    const fit = h('div', { class: 'ai-output' });
+    // How you match, with the deeper Vora analysis inside the same card.
+    const fit = h('div', { class: 'ai-output jd-fit' });
     const prevFit = store.get().docs[id]?.fit;
     if (prevFit) fit.replaceChildren(md(prevFit));
-    const fitBtn = aiButton(prevFit ? 'Re-run fit analysis' : 'Analyse my fit', {
+    const fitBtn = aiButton(prevFit ? 'Analyse again' : 'Deep fit analysis', {
+      variant: 'small',
       output: fit,
       task: (onText, signal) => ai.analyzeGap(job, { onText, signal }),
       onDone: (text) => {
@@ -3368,21 +3501,52 @@ function renderJob(id) {
         store.update((s) => (s.docs[id] = { ...s.docs[id], fit: text }));
       },
     });
-
-    panel.append(
+    const pct = matchNow ? Math.max(0, Math.min(100, Number(matchNow.score) || 0)) : 0;
+    const level = pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low';
+    const skills = matchedSkills(job);
+    const matchCard = h(
+      'section',
+      { class: 'card jd-card jd-match' },
       h(
         'div',
-        { class: 'detail-grid' },
+        { class: 'jd-match-top' },
+        matchNow ? h('div', { class: `ring ring-${level}`, style: `--p:${pct}`, role: 'img', 'aria-label': `${pct}% match` }, h('strong', {}, `${pct}%`)) : h('div', { class: 'ring', style: '--p:0' }, h('strong', {}, '–')),
         h(
           'div',
           {},
-          h('section', { class: 'card' }, h('div', { class: 'row space' }, h('h2', {}, 'Fit analysis'), fitBtn), fit),
-          companySection(job),
-          h('section', { class: 'card' }, h('h2', {}, 'Job description'), h('div', { class: 'description' }, job.description || 'No description provided.')),
+          h('h2', {}, 'How you match'),
+          matchNow?.reason ? h('p', { translate: 'no' }, matchNow.reason) : h('p', { class: 'muted' }, 'Run a fit analysis to see how your CV lines up with this role.'),
+          skills.length ? h('div', { class: 'dt-skills' }, ...skills.map((x) => h('span', { class: 'dt-skill' }, x))) : '',
         ),
-        side,
       ),
+      h('div', { class: 'jd-fit-head' }, h('h3', {}, 'Fit analysis by Vora'), fitBtn),
+      prevFit ? fit : h('div', {}, fit, h('p', { class: 'muted small' }, 'Vora compares the posting with your CV: what fits, what is missing, and how to close the gaps in your application.')),
     );
+
+    panel.append(
+      h('div', { class: 'jd-grid' }, h('div', { class: 'jd-main' }, matchCard, companySection(job), h('section', { class: 'card jd-card' }, h('h2', {}, 'About the role'), formatDescription(job.description))), side),
+    );
+  }
+
+  // The one thing to do next, from where the application stands.
+  function nextStepCard() {
+    const d = store.get().docs[id] || {};
+    const status = store.get().jobs[id]?.status;
+    const to = (tab) => () => showTab(tab);
+    const [title, text, label, run] = !d.cvData
+      ? ['Tailor your CV', 'Vora rewrites your CV around what this role asks for, in about a minute.', 'Tailor my CV', to('docs')]
+      : !d.coverLetter
+        ? ['Write the cover letter', 'Your CV is ready. A matching letter makes the application complete.', 'Write the letter', to('docs')]
+        : !['applied', 'interview', 'offer'].includes(status)
+          ? ['Send your application', 'CV and letter are ready. Apply on the company site, then mark it as applied.', job.url ? 'Open the posting' : 'Mark as applied', job.url ? () => window.open(safeUrl(job.url), '_blank', 'noopener') : () => {
+              ensureSaved();
+              store.setStatus(id, 'applied');
+              route();
+            }]
+          : ['Practise the interview', 'Play the interview deck: 8 questions for this role with feedback on every answer.', 'Play the deck', to('prep')];
+    const b = h('button', { type: 'button', class: 'btn primary' }, label, svgIcon(ICON_CHEVRON));
+    b.addEventListener('click', run);
+    return h('section', { class: 'card jd-next' }, h('p', { class: 'eyebrow' }, 'Next step'), h('h2', {}, title), h('p', {}, text), b);
   }
 
   // ----- Documents -----
@@ -3399,7 +3563,41 @@ function renderJob(id) {
   }
 
   function docsTab() {
-    panel.append(keyNotice() || '', profileNotice() || '', cvSection(), letterSection());
+    const d = docs();
+    const both = d.cvData && d.coverLetter;
+    panel.append(
+      keyNotice() || '',
+      profileNotice() || '',
+      h(
+        'div',
+        { class: 'jd-docs-head' },
+        h('div', {}, h('h2', {}, both ? 'Your application is ready' : `Your application for ${job.company || 'this job'}`), h('p', { class: 'muted' }, both ? 'Open either document to edit it, change the template or download the PDF.' : 'Vora writes both for this job from your CV. Nothing is invented: only your real experience, put in the best order.')),
+        h('div', { class: 'jd-ready-meter', role: 'img', 'aria-label': `${(d.cvData ? 1 : 0) + (d.coverLetter ? 1 : 0)} of 2 documents ready` }, h('span', { class: d.cvData ? 'on' : '' }), h('span', { class: d.coverLetter ? 'on' : '' })),
+      ),
+      h('div', { class: 'jd-docs' }, cvSection(), letterSection()),
+    );
+  }
+
+  // One document card: a live preview on the left (or a blank page), what it is and what you can do.
+  function docCard({ kind, ready, preview, onOpen, title, meta, notes, actions, emptyText }) {
+    const prev = ready
+      ? (() => {
+          const b = h('button', { type: 'button', class: 'jd-paper', 'aria-label': `Open ${title}` }, h('div', { class: 'jd-paper-in', 'aria-hidden': 'true' }, preview), h('span', { class: 'jd-paper-open' }, 'Open'));
+          b.addEventListener('click', onOpen);
+          return b;
+        })()
+      : h('div', { class: 'jd-paper ghost', 'aria-hidden': 'true' }, h('div', { class: 'jd-ghost-lines' }, ...Array.from({ length: kind === 'cv' ? 9 : 8 }, (_, i) => h('span', { style: `--w:${[60, 38, 0, 90, 76, 84, 0, 70, 52][i] || 80}%` }))), h('span', { class: 'jd-ghost-spark' }, svgIcon(ICON_SPARK)));
+    return [
+      prev,
+      h(
+        'div',
+        { class: 'jd-doc-info' },
+        h('div', { class: 'jd-doc-head' }, h('span', { class: 'hub-icon', 'aria-hidden': 'true' }, svgIcon(kind === 'cv' ? ICON_DOC : ICON_MAIL)), h('h2', {}, title), h('span', { class: `jd-chip ${ready ? 'ok' : ''}` }, ready ? 'Ready' : 'Not written yet')),
+        ready ? h('p', { class: 'jd-doc-meta' }, meta) : h('p', { class: 'jd-doc-meta muted' }, emptyText),
+        notes || '',
+        h('div', { class: 'jd-doc-actions' }, ...actions),
+      ),
+    ];
   }
 
   const docs = () => store.get().docs[id] || {};
@@ -3717,43 +3915,28 @@ function renderJob(id) {
 
     function draw() {
       const d = docs();
-      gen.textContent = d.cvData ? 'Rewrite from scratch' : 'Create tailored CV';
+      gen.textContent = d.cvData ? 'Rewrite' : 'Tailor my CV with Vora';
       gen.classList.toggle('primary', !d.cvData);
       gen.classList.toggle('small', Boolean(d.cvData));
-      if (d.cvData) {
-        const t = getTemplate(template());
-        const thumb = h('button', { type: 'button', class: 'cv-ready-thumb', 'aria-label': 'Open your CV' }, h('div', { class: 'tpl-thumb' }, renderCV(d.cvData, t.id, accent(), { font: jobFont() })));
-        const open = h('button', { type: 'button', class: 'btn primary' }, 'Open CV');
-        for (const el of [thumb, open]) el.addEventListener('click', openStudio);
-        pdfBtn.textContent = `Download PDF · ${t.name}`;
-        body.replaceChildren(
-          h(
-            'div',
-            { class: 'cv-ready' },
-            thumb,
-            h(
-              'div',
-              { class: 'cv-ready-info' },
-              h('p', { class: 'cv-ready-state' }, 'Ready to send'),
-              h('p', { class: 'muted small' }, `${t.name} template${d.updatedAt ? ` · updated ${fmtDate(d.updatedAt)}` : ''}`),
-              d.cvData.changes?.length ? h('p', { class: 'small', translate: 'no' }, d.cvData.changes[0]) : '',
-              h('div', { class: 'row wrap' }, open, pdfBtn, gen),
-            ),
-          ),
-        );
-      } else {
-        body.replaceChildren(
-          d.cv
-            ? h('div', { class: 'ai-output doc' }, md(d.cv))
-            : h(
-                'div',
-                { class: 'empty-doc' },
-                h('strong', {}, 'Your CV, rewritten for this job'),
-                h('p', { class: 'muted' }, 'Claude reorders and rewrites your experience around what this role asks for, uses the posting\'s own keywords, and lays it out in a professional template you can download as a PDF. It never adds experience you don\'t have.'),
-              ),
-          h('div', { class: 'row', style: 'margin-top:0.8rem' }, gen),
-        );
-      }
+      gen.classList.toggle('ghost', Boolean(d.cvData));
+      const t = getTemplate(template());
+      pdfBtn.replaceChildren(svgIcon(ICON_DOWNLOAD), h('span', {}, 'PDF'));
+      const open = h('button', { type: 'button', class: 'btn primary' }, 'Open CV');
+      open.addEventListener('click', openStudio);
+      body.replaceChildren(
+        ...docCard({
+          kind: 'cv',
+          ready: Boolean(d.cvData),
+          preview: d.cvData ? renderCV(d.cvData, t.id, accent(), { font: jobFont() }) : '',
+          onOpen: openStudio,
+          title: 'Tailored CV',
+          meta: `${t.name} template${jobFont() ? ` · ${fontChoice(jobFont()).name}` : ''}${d.updatedAt ? ` · updated ${fmtDate(d.updatedAt)}` : ''}`,
+          notes: d.cvData?.changes?.length ? h('div', { class: 'jd-changes' }, h('p', { class: 'jd-label' }, 'What Vora changed for this job'), h('ul', { translate: 'no' }, ...d.cvData.changes.slice(0, 3).map((c) => h('li', {}, c)))) : '',
+          actions: d.cvData ? [open, pdfBtn, gen] : [gen],
+          emptyText: 'Your CV rewritten around what this role asks for, with the posting\'s own keywords, in a professional template. Nothing invented.',
+        }),
+      );
+      if (status.isConnected) root0.classList.toggle('is-ready', Boolean(d.cvData));
     }
 
     async function downloadCV(btn) {
@@ -3843,7 +4026,9 @@ function renderJob(id) {
       });
     }
 
-    const panelRoot = h('section', { class: 'card' }, h('h2', {}, 'Tailored CV'), status, body);
+    body.className = 'jd-doc-body';
+    const panelRoot = h('section', { class: 'card jd-doc' }, body, status);
+    const root0 = panelRoot;
     draw();
     return panelRoot;
   }
@@ -3911,42 +4096,28 @@ function renderJob(id) {
 
     function draw() {
       const d = docs();
-      gen.textContent = d.coverLetter ? 'Rewrite from scratch' : 'Write cover letter';
+      gen.textContent = d.coverLetter ? 'Rewrite' : 'Write my letter with Vora';
       gen.classList.toggle('primary', !d.coverLetter);
       gen.classList.toggle('small', Boolean(d.coverLetter));
-      if (d.coverLetter) {
-        const t = getTemplate(letterTpl());
-        const thumb = h('button', { type: 'button', class: 'cv-ready-thumb', 'aria-label': 'Open your cover letter' }, h('div', { class: 'tpl-thumb' }, page(t.id, letterAccent())));
-        const open = h('button', { type: 'button', class: 'btn primary' }, 'Open letter');
-        for (const el of [thumb, open]) el.addEventListener('click', openLetter);
-        pdfBtn.textContent = `Download PDF · ${t.name}`;
-        const words = d.coverLetter.trim().split(/\s+/).length;
-        body.replaceChildren(
-          h(
-            'div',
-            { class: 'cv-ready' },
-            thumb,
-            h(
-              'div',
-              { class: 'cv-ready-info' },
-              h('p', { class: 'cv-ready-state' }, 'Ready to send'),
-              h('p', { class: 'muted small' }, `${t.name} template${d.letterTemplate ? '' : ', matching your CV'} · ${words} words${d.updatedAt ? ` · updated ${fmtDate(d.updatedAt)}` : ''}`),
-              h('div', { class: 'row wrap' }, open, pdfBtn),
-              h('div', { class: 'row wrap letter-regen' }, tone, gen),
-            ),
-          ),
-        );
-      } else {
-        body.replaceChildren(
-          h(
-            'div',
-            { class: 'empty-doc' },
-            h('strong', {}, 'A cover letter for this job'),
-            h('p', { class: 'muted' }, 'Claude writes a specific, human-sounding letter from your CV and lays it out as a proper business letter in the same template as your CV. You can switch templates and colours, edit it and download it as a PDF.'),
-          ),
-          h('div', { class: 'row wrap', style: 'margin-top:0.8rem' }, tone, gen),
-        );
-      }
+      gen.classList.toggle('ghost', Boolean(d.coverLetter));
+      const t = getTemplate(letterTpl());
+      pdfBtn.replaceChildren(svgIcon(ICON_DOWNLOAD), h('span', {}, 'PDF'));
+      const open = h('button', { type: 'button', class: 'btn primary' }, 'Open letter');
+      open.addEventListener('click', openLetter);
+      const words = (d.coverLetter || '').trim().split(/\s+/).filter(Boolean).length;
+      body.replaceChildren(
+        ...docCard({
+          kind: 'letter',
+          ready: Boolean(d.coverLetter),
+          preview: d.coverLetter ? page(t.id, letterAccent()) : '',
+          onOpen: openLetter,
+          title: 'Cover letter',
+          meta: `${t.name} template${d.letterTemplate ? '' : ', matching your CV'} · ${words} words${d.updatedAt ? ` · updated ${fmtDate(d.updatedAt)}` : ''}`,
+          notes: h('label', { class: 'jd-tone' }, h('span', { class: 'jd-label' }, d.coverLetter ? 'Tone for a rewrite' : 'Tone'), tone),
+          actions: d.coverLetter ? [open, pdfBtn, gen] : [gen],
+          emptyText: 'A specific, human-sounding letter from your CV, laid out as a business letter in the same template as your CV.',
+        }),
+      );
     }
 
     function openLetter() {
@@ -4033,7 +4204,8 @@ function renderJob(id) {
       });
     }
 
-    const root = h('section', { class: 'card' }, h('h2', {}, 'Cover letter'), status, body);
+    body.className = 'jd-doc-body';
+    const root = h('section', { class: 'card jd-doc' }, body, status);
     draw();
     return root;
   }
@@ -4046,39 +4218,101 @@ function renderJob(id) {
   }
 
   const match = job.match || store.get().jobs[id]?.match;
-  const applyBtn = job.url ? h('a', { class: 'btn primary', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'Apply on company site ↗') : '';
-  const saveBtn = h('button', { class: 'btn', type: 'button' }, saved() ? 'Saved' : 'Save job');
-  saveBtn.disabled = saved();
+  const applyBtn = job.url ? h('a', { class: 'btn primary jd-apply', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, job.source ? `Apply on ${job.source}` : 'Apply', h('span', { 'aria-hidden': 'true' }, ' ↗')) : '';
+  const saveBtn = h('button', { class: 'btn jd-save', type: 'button' });
+  const heroStatus = h('span', { class: 'jd-status-tag' });
+  function drawHeroStatus() {
+    const j = store.get().jobs[id];
+    saveBtn.replaceChildren(svgIcon(ICON_BOOKMARK), h('span', {}, j ? 'Saved' : 'Save job'));
+    saveBtn.classList.toggle('on', Boolean(j));
+    heroStatus.className = `jd-status-tag status-${j?.status || 'none'}`;
+    heroStatus.textContent = j ? STATUSES.find((x) => x.id === j.status)?.label || '' : '';
+    heroStatus.hidden = !j;
+  }
   saveBtn.addEventListener('click', () => {
+    if (store.get().jobs[id]) return showTab('overview');
     ensureSaved();
-    saveBtn.textContent = 'Saved';
-    saveBtn.disabled = true;
     toast('Saved to your applications');
+    drawHeroStatus();
+    showTab(active);
   });
+  drawHeroStatus();
+  const tailorBtn = h('button', { class: 'btn jd-tailor', type: 'button' }, svgIcon(ICON_SPARK), 'Tailor with Vora');
+  tailorBtn.addEventListener('click', () => showTab('docs'));
+  const pct = match ? Math.max(0, Math.min(100, Number(match.score) || 0)) : 0;
+  const level = pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low';
+  const back = saved() ? ['#/tracker', 'Applications'] : ['#/find', 'Search'];
   const header = h(
-    'div',
-    {},
-    h('a', { class: 'back', href: saved() ? '#/tracker' : '#/find' }, '← Back'),
+    'header',
+    { class: 'jd-hero' },
+    h('a', { class: 'jd-back', href: back[0] }, svgIcon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>'), back[1]),
     h(
-      'header',
-      { class: 'job-hero' },
-      h('div', { class: 'row space wrap', style: 'align-items:flex-start' }, h('h1', {}, job.title), scorePill(match)),
-      h('p', { class: 'company' }, job.company || ''),
+      'div',
+      { class: 'jd-hero-main' },
+      companyAvatar(job.company || job.source, 'xl'),
       h(
         'div',
-        { class: 'meta' },
-        job.location ? h('span', {}, job.location) : '',
-        job.salary ? h('span', { class: 'salary' }, job.salary) : '',
-        job.source ? h('span', {}, `via ${job.source}`) : '',
-        postedTag(job, 'Posting date not given'),
-        saved() ? statusBadge(store.get().jobs[id].status) : '',
+        { class: 'jd-hero-text' },
+        h('p', { class: 'jd-company' }, job.company || job.source || '', heroStatus),
+        h('h1', {}, job.title),
+        h(
+          'div',
+          { class: 'jd-pills' },
+          job.location ? h('span', {}, job.location) : '',
+          job.salary ? h('span', { class: 'money' }, job.salary) : '',
+          job.remote && !/remote/i.test(job.location || '') ? h('span', {}, 'Remote') : '',
+          postedLabel(job) ? h('span', {}, postedLabel(job)) : '',
+          job.source ? h('span', {}, `via ${job.source}`) : '',
+        ),
       ),
-      match?.reason ? h('p', { class: 'small', translate: 'no', style: 'margin:var(--sp-3) 0 0;color:var(--text-2)' }, match.reason) : '',
-      h('div', { class: 'detail-actions' }, applyBtn, saveBtn),
+      match
+        ? h('div', { class: 'jd-hero-match' }, h('div', { class: `ring ring-${level}`, style: `--p:${pct}`, role: 'img', 'aria-label': `${pct}% match` }, h('strong', {}, `${pct}%`)), h('span', {}, 'match'))
+        : '',
     ),
+    h('div', { class: 'jd-hero-actions' }, applyBtn, tailorBtn, saveBtn),
   );
 
-  view.append(header, tabBar, panel);
+  // Application progress: where this job stands, at a glance (tap a step to act on it).
+  const steps = h('nav', { class: 'jd-steps', 'aria-label': 'Application progress' });
+  function drawSteps() {
+    const d = store.get().docs[id] || {};
+    const st = store.get().jobs[id]?.status;
+    const rejected = st === 'rejected';
+    const order = ['saved', 'applied', 'interview', 'offer'];
+    const reached = (x) => order.indexOf(st) >= order.indexOf(x) && Boolean(st) && !rejected;
+    const list = [
+      ['Saved', Boolean(store.get().jobs[id]), () => showTab('overview')],
+      ['CV tailored', Boolean(d.cvData), () => showTab('docs')],
+      ['Letter written', Boolean(d.coverLetter), () => showTab('docs')],
+      ['Applied', reached('applied') || (rejected && Boolean(store.get().jobs[id]?.appliedAt)), () => setStage('applied')],
+      ['Interview', reached('interview'), () => setStage('interview')],
+      ['Offer', reached('offer'), () => setStage('offer')],
+    ];
+    const firstOpen = list.findIndex(([, done]) => !done);
+    steps.replaceChildren(
+      ...list.map(([label, done, run], i) => {
+        const b = h('button', { type: 'button', class: `jd-step${done ? ' done' : ''}${i === firstOpen && !rejected ? ' now' : ''}` }, h('span', { class: 'jd-dot', 'aria-hidden': 'true' }), h('span', {}, label));
+        b.setAttribute('aria-label', `${label}: ${done ? 'done' : 'not yet'}`);
+        b.addEventListener('click', run);
+        return b;
+      }),
+      rejected ? h('span', { class: 'jd-closed' }, 'Closed: not selected') : '',
+    );
+    const lastDone = list.reduce((m, [, done], i) => (done ? i : m), 0);
+    steps.style.setProperty('--done', String(lastDone / (list.length - 1)));
+  }
+  function setStage(stage) {
+    const st = store.get().jobs[id]?.status;
+    const order = ['saved', 'applied', 'interview', 'offer'];
+    if (st && order.indexOf(st) >= order.indexOf(stage)) return showTab('overview');
+    ensureSaved();
+    store.setStatus(id, stage);
+    toast(`Moved to ${STATUSES.find((x) => x.id === stage).label}`);
+    drawHeroStatus();
+    showTab(active);
+  }
+
+  view.append(h('div', { class: 'jd' }, header, steps, tabBar, panel));
   showTab(tabs.some(([k]) => k === active) ? active : 'overview');
 }
 

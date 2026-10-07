@@ -106,26 +106,40 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
   // ---------------------------------------------------------------------
   function drawLobby(error) {
     const st = state();
-    const deal = h('button', { class: 'btn primary big', type: 'button' }, 'Deal the cards');
+    const deal = h('button', { class: 'btn primary big gl-deal', type: 'button' }, 'Deal the cards');
     const status = h('p', { class: 'muted small', role: 'status' }, error || '');
     deal.addEventListener('click', () => newDeck(deal, status));
+    const cats = Object.keys(CAT_CLASS);
     root.replaceChildren(
       h(
         'section',
-        { class: 'game-lobby' },
-        h('div', { class: 'lobby-fan', 'aria-hidden': 'true' }, h('span', { class: 'fan-card c1' }), h('span', { class: 'fan-card c2' }), h('span', { class: 'fan-card c3' }, '?')),
-        h('h2', {}, 'Interview Deck'),
-        h('p', { class: 'muted' }, `8 question cards for ${job.title}${job.company ? ` at ${job.company}` : ''}. Answer out loud or type, get stars and a better version of your answer, and see how ready you are.`),
+        { class: 'game-lobby gl' },
         h(
-          'ul',
-          { class: 'lobby-rules' },
-          h('li', {}, h('strong', {}, `${XP_PER_STAR} XP`), ' per star, up to 5 stars a card'),
-          h('li', {}, h('strong', {}, `+${STREAK_BONUS} XP`), ' streak bonus for back-to-back 4 star answers'),
-          h('li', {}, h('strong', {}, `${HINT_COST} XP`), ' to peek at a hint'),
+          'div',
+          { class: 'gl-stage', 'aria-hidden': 'true' },
+          h('span', { class: 'gl-glow' }),
+          ...cats.map((c, i) => h('span', { class: `gl-card ${CAT_CLASS[c]}`, style: `--i:${i - 2}` }, h('span', { class: 'gl-card-cat' }, c), h('span', { class: 'gl-card-q' }), h('span', { class: 'gl-card-q short' }))),
         ),
-        st.best ? h('p', { class: 'small' }, `Your best run: ${st.best} XP`) : '',
+        h('p', { class: 'gl-eyebrow' }, [job.company, job.title].filter(Boolean).join(' · ')),
+        h('h2', {}, 'Interview Deck'),
+        h('p', { class: 'gl-lead' }, 'Eight question cards written for this exact job. Answer out loud or type, and every answer comes back with stars, what worked, and a stronger version.'),
+        h(
+          'div',
+          { class: 'gl-stats' },
+          h('div', {}, h('strong', {}, '8'), h('span', {}, 'cards')),
+          h('div', {}, h('strong', {}, '~10'), h('span', {}, 'minutes')),
+          h('div', {}, h('strong', {}, st.best ? String(st.best) : '–'), h('span', {}, 'best XP')),
+        ),
+        h('div', { class: 'gl-cats' }, ...cats.map((c) => h('span', { class: `cat ${CAT_CLASS[c]}` }, c))),
         deal,
         status,
+        h(
+          'ul',
+          { class: 'lobby-rules gl-rules' },
+          h('li', {}, h('strong', {}, `${XP_PER_STAR} XP`), ' per star'),
+          h('li', {}, h('strong', {}, `+${STREAK_BONUS} XP`), ' streak bonus'),
+          h('li', {}, h('strong', {}, `−${HINT_COST} XP`), ' for a hint'),
+        ),
       ),
     );
   }
@@ -169,7 +183,7 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
           return h('span', { class: `pip ${i === st.index ? 'now' : ''} ${r ? `done s${r.stars}` : ''}` });
         }),
       ),
-      h('div', { class: 'hud-stats' }, st.streak >= 2 ? h('span', { class: 'streak' }, `Streak ×${st.streak}`) : '', h('span', { class: 'xp' }, `${st.xp || 0} XP`)),
+      h('div', { class: 'hud-stats' }, h('span', { class: 'hud-count' }, `Card ${Math.min(st.index + 1, total)} of ${total}`), st.streak >= 2 ? h('span', { class: 'streak' }, `🔥 ×${st.streak}`) : '', h('span', { class: 'xp' }, `${st.xp || 0} XP`)),
     );
   }
 
@@ -201,7 +215,7 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
     );
     const back = h('div', { class: 'card-face back', 'aria-live': 'polite' });
     const flip = h('div', { class: 'flip' }, front, back);
-    const cardEl = h('div', { class: 'qcard', 'data-n': `${st.index + 1}/${st.deck.cards.length}` }, flip);
+    const cardEl = h('div', { class: 'qcard deal-in', 'data-n': `${st.index + 1}/${st.deck.cards.length}` }, flip);
 
     // Answer area
     const answer = h('textarea', { id: 'game-answer', rows: 5, placeholder: 'Say it like you would in the room. Type, or tap the mic.' }, st.draft || '');
@@ -446,7 +460,7 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
           h('p', { class: 'rank-label' }, 'Your rank'),
           h('h2', {}, rank),
           h('p', {}, blurb),
-          h('div', { class: 'rank-stats' }, h('div', {}, h('strong', {}, String(xp)), h('span', {}, 'XP')), h('div', {}, h('strong', {}, avg ? avg.toFixed(1) : '0'), h('span', {}, 'avg stars')), h('div', {}, h('strong', {}, `${played.length}/${cards.length}`), h('span', {}, 'answered'))),
+          h('div', { class: 'rank-stats' }, h('div', {}, h('strong', { class: 'count-up', 'data-to': String(xp) }, '0'), h('span', {}, 'XP')), h('div', {}, h('strong', {}, avg ? avg.toFixed(1) : '0'), h('span', {}, 'avg stars')), h('div', {}, h('strong', {}, `${played.length}/${cards.length}`), h('span', {}, 'answered'))),
         ),
         byCat.size
           ? h(
@@ -468,6 +482,19 @@ export function renderInterviewGame(root, job, { ensureSaved }) {
         status,
       ),
     );
+    // XP counts up, like a score screen.
+    const el = root.querySelector('.count-up');
+    if (el) {
+      const to = Number(el.dataset.to) || 0;
+      const t0 = performance.now();
+      const tick = (now) => {
+        const k = Math.min(1, (now - t0) / 900);
+        el.textContent = String(Math.round(to * (1 - Math.pow(1 - k, 3))));
+        if (k < 1 && el.isConnected) requestAnimationFrame(tick);
+      };
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) el.textContent = String(to);
+      else requestAnimationFrame(tick);
+    }
   }
 
   draw();
