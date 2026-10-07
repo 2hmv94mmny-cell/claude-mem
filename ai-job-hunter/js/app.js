@@ -7,7 +7,7 @@ import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
-import { jobsForYou, moreJobsForYou, aboutFromPosting, norm } from './match.js';
+import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage, setBrand } from './i18n.js';
 import { attachSuggest, rememberSearch } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
@@ -593,6 +593,7 @@ function renderFind() {
     const p = params();
     session.query = p;
     session.extraRun = null;
+    session.indeedRun = null;
     bar.submit.disabled = true;
     bar.submit.textContent = 'Searching…';
     results.replaceChildren(skeleton());
@@ -617,7 +618,42 @@ function renderFind() {
       bar.submit.textContent = 'Search';
     }
     drawResults();
+    addIndeed(p, ctl.signal);
     addCvMatches(p);
+  }
+
+  // Indeed keeps its postings out of web search, so after a search Vora reads
+  // Indeed's own results pages for the same query and place and adds the real
+  // Indeed jobs the web search did not find, ranked against the CV like the rest.
+  async function addIndeed(p, signal) {
+    const profile = store.get().profile;
+    const query = p.query || profile.targetRoles.split(',')[0]?.trim() || profile.headline.trim();
+    const place = p.remoteOnly ? 'remote' : p.location || profile.location;
+    if (!query) return;
+    const run = (session.indeedRun = Symbol('indeed'));
+    try {
+      const found = onlyIn(await indeedJobs(query, place, { signal }), p);
+      if (session.indeedRun !== run || !results.isConnected || !found.length) return;
+      const me = readProfile(profile);
+      const fresh = found
+        .filter((j) => !session.results.some((r) => sameJob(r, j) || (norm(r.title) === norm(j.title) && norm(r.company) === norm(j.company))))
+        .map((j) => {
+          const { _text, ...job } = j;
+          const match = me.roles.length || me.skills.size ? scoreJob(j, me, profile.prefs || {}, place) : undefined;
+          void _text;
+          return match ? { ...job, match } : job;
+        });
+      if (!fresh.length) return;
+      // Into the main results (not the extra CV section), best match first.
+      const main = [...session.results.filter((j) => !j.extra), ...fresh].sort((a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1));
+      session.results = [...main, ...session.results.filter((j) => j.extra)];
+      for (const j of fresh) if (j.match) session.scores[j.id] = j.match;
+      session.errors = session.errors.filter((e) => e !== 'No open postings found for this search');
+      if (!session.selected) session.selected = session.results[0]?.id;
+      drawResults();
+    } catch {
+      // Indeed is a bonus source; the search results stand on their own.
+    }
   }
 
   // A search with a place shows only jobs in that place (a city, or a whole country).
@@ -649,7 +685,10 @@ function renderFind() {
         { exclude: [...(store.get().feed?.jobs || []), ...session.results] },
       );
       if (session.extraRun !== run || !results.isConnected) return;
-      const extra = onlyIn(jobs, { ...p, location: place }).map((j) => ({ ...j, extra: true }));
+      const main = session.results.filter((j) => !j.extra);
+      const extra = onlyIn(jobs, { ...p, location: place })
+        .filter((j) => !main.some((r) => sameJob(r, j)))
+        .map((j) => ({ ...j, extra: true }));
       if (!extra.length) return;
       session.results = [...session.results.filter((j) => !j.extra), ...extra];
       for (const j of extra) if (j.match) session.scores[j.id] = j.match;

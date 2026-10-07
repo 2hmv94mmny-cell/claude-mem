@@ -482,10 +482,13 @@ async function searchPortals(me, location, remote, signal) {
       objective: `Find currently open job postings${place} for someone with experience in ${skills} working as ${me.roles[0]}. Single postings only.`,
     });
   }
-  const settled = await pool(
-    queries.map((q) => () => caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { ...q, numResults: 15 }, { signal })),
-    6,
-  );
+  const [settled, indeed] = await Promise.all([
+    pool(
+      queries.map((q) => () => caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { ...q, numResults: 15 }, { signal })),
+      6,
+    ),
+    indeedJobs(me.roles[0], where, { signal }).catch(() => []),
+  ]);
   const city = location.split(',')[0].trim();
   const jobs = [];
   let error = null;
@@ -493,8 +496,106 @@ async function searchPortals(me, location, remote, signal) {
     if (r.status === 'fulfilled') jobs.push(...parseSearchResults(payloadText(r.value), { city }));
     else error ??= r.reason;
   }
+  // Indeed last: when the same job is also on a direct posting page, that one is kept.
+  jobs.push(...indeed);
   if (!jobs.length && error) throw error;
   return { jobs, country, searched: live.map((x) => x.name) };
+}
+
+// ---------------------------------------------------------------------------
+// Indeed
+//
+// Indeed keeps its single postings out of search engines, so the web search
+// rarely finds them. Indeed's own results page can be read through the Exa
+// connector's page reader, but it returns only the job at the top of the
+// page (with its full description). So several versions of the same search
+// are read at once (best match, newest, next pages) and each gives one real
+// Indeed posting. Pages that time out are skipped.
+// ---------------------------------------------------------------------------
+
+export const FETCH_TOOL = 'web_fetch_exa';
+
+/**
+ * True when two listings are the same job posted on different sites:
+ * same company (first word) and mostly the same title words.
+ */
+export function sameJob(a, b) {
+  const co = (j) => norm(j.company).replace(/\b(ag|gmbh|sa|ltd|inc)\b/g, '').trim().split(/\s+/)[0] || '';
+  if (!co(a) || co(a) !== co(b)) return false;
+  const ta = titleWords(a.title);
+  const tb = titleWords(b.title);
+  const shared = [...ta].filter((w) => tb.has(w)).length;
+  return shared >= Math.min(2, ta.size, tb.size) && shared / Math.max(1, Math.min(ta.size, tb.size)) >= 0.5;
+}
+
+/** The Indeed results URL for a search in a place (the country's Indeed site). */
+export function indeedUrl(query, location, extra = '') {
+  const portal = portalsFor(query, location).portals.find((x) => x.name === 'Indeed');
+  const base = portal ? portal.url : `https://www.indeed.com/jobs?q=${encodeURIComponent(query)}&l=${encodeURIComponent(location)}`;
+  return base + extra;
+}
+
+/** Parse one Indeed results page (as read by the page reader) into its top job. */
+export function parseIndeedPage(text, url) {
+  const lines = String(text).split('\n').map((l) => l.trim());
+  const at = lines.findIndex((l) => /^#{4,6}\s+\S/.test(l));
+  if (at < 0) return null;
+  const title = lines[at].replace(/^#+\s+/, '').trim();
+  const info = [];
+  for (let i = at + 1; i < lines.length && info.length < 5; i++) {
+    const l = lines[i];
+    if (!l) continue;
+    if (/^#/.test(l)) break;
+    if (/^\d(\.\d)?$/.test(l)) continue; // company rating
+    info.push(l);
+  }
+  const [company = '', place = '', kind = ''] = info;
+  const detailAt = lines.findIndex((l, i) => i > at && /^#{2,4}\s+(job details|détails du poste|stellendetails|dettagli)/i.test(l));
+  let body = lines.slice(detailAt >= 0 ? detailAt + 1 : at + 1);
+  // Skip the short facts block (pay, type, place) under "Job details".
+  while (body.length && (!body[0] || body[0].length < 60) && !/^#/.test(body[0])) body = body.slice(1);
+  const description = body.map((l) => l.replace(/^#+\s*/, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 3000);
+  if (!title || !company || find(ROLES, title).size === 0 && !description) return null;
+  const pay = lines.find((l, i) => i > at && /(CHF|EUR|€|\$|£)\s?[\d'.,]+/.test(l) && l.length < 80) || '';
+  return {
+    id: `indeed:${hash(`${norm(title)}|${norm(company)}`)}`,
+    source: 'Indeed',
+    title,
+    company,
+    location: place,
+    remote: /remote|home ?office|télétravail/i.test(`${place} ${kind}`),
+    url,
+    salary: pay,
+    posted: '',
+    tags: kind && kind.length < 40 ? [kind] : [],
+    description,
+    _text: `${title}\n${kind}\n${description}`.slice(0, 6000),
+  };
+}
+
+/**
+ * Real Indeed postings for a search, read from Indeed's own results pages.
+ * @returns {Promise<object[]>} jobs (each with _text for scoring)
+ */
+export async function indeedJobs(query, location, { signal } = {}) {
+  if (!caps.mcp || !query) return [];
+  const variants = ['', '&sort=date', '&start=10', '&sort=date&start=10', '&start=20'];
+  const urls = variants.map((v) => indeedUrl(query, location, v));
+  const res = await caps.mcp.callTool(SEARCH_SERVER, FETCH_TOOL, { urls, maxCharacters: 4500 }, { signal });
+  const text = payloadText(res);
+  // The reader returns one block per page: "# … | Indeed\nURL: …", or an error line.
+  const blocks = text.split(/\n(?=# [^\n]*\n+URL: )/);
+  const seen = new Set();
+  const jobs = [];
+  for (const block of blocks) {
+    const url = block.match(/^URL:\s*(\S+)/m)?.[1];
+    if (!url || !/indeed\./.test(url)) continue;
+    const job = parseIndeedPage(block, url);
+    if (!job || seen.has(job.id)) continue;
+    seen.add(job.id);
+    jobs.push(job);
+  }
+  return jobs;
 }
 
 async function searchBoards(roles, location, remote) {
@@ -657,10 +758,13 @@ export async function jobsForYou(profile, { signal, roles: searchRoles, exclude 
 
   // De-duplicate: same link, or same title at the same company (and skip jobs already shown elsewhere).
   const seen = new Set(exclude.flatMap((j) => [j.url, `${norm(j.title)}|${norm(j.company)}`]).filter((k) => k && k !== '|'));
+  const kept = [...exclude];
   const unique = found.jobs.filter((j) => {
     const keys = [j.url, `${norm(j.title)}|${norm(j.company)}`].filter((k) => k && k !== '|');
     if (keys.some((k) => seen.has(k))) return false;
+    if (kept.some((k) => sameJob(k, j))) return false; // same job on another site
     keys.forEach((k) => seen.add(k));
+    kept.push(j);
     return true;
   });
 
