@@ -557,6 +557,126 @@ function aiButton(label, { output, task, onDone, variant = 'primary' }) {
 }
 
 // ---------------------------------------------------------------------------
+// The screen shown while Vora writes a CV or a letter: a page being written,
+// the steps Vora is working through, progress and time, and Cancel.
+// ---------------------------------------------------------------------------
+
+const WRITING = {
+  layout: { doc: 'cv', title: 'Laying out your CV', seconds: 25, steps: ['Reading your CV', 'Finding each section', 'Placing every line in the template', 'Checking nothing is left out'] },
+  tailor: { doc: 'cv', title: 'Writing your CV for this job', seconds: 60, steps: ['Reading the job posting', 'Matching your experience to it', 'Rewriting your CV for this role', 'Checking the wording'] },
+  letter: { doc: 'letter', title: 'Writing your cover letter', seconds: 35, steps: ['Reading your profile', 'Choosing what to highlight', 'Writing your letter', 'Polishing the wording'] },
+  edit: { doc: 'cv', title: 'Updating your document', seconds: 25, steps: ['Reading your document', 'Making the change', 'Checking the wording'] },
+};
+
+/**
+ * Show the writing screen. `kind` is a key of WRITING; `doc` and `title`
+ * override its defaults. Returns { done(), close() }: done() fills the bar and
+ * fades out; close() just removes it (after an error or Cancel).
+ */
+/** Throw if the user cancelled, so a late AI answer is never saved. */
+function stopIfCancelled(signal) {
+  if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+}
+
+function writingScreen(kind, { title, doc } = {}) {
+  const spec = { ...WRITING[kind || 'edit'] };
+  if (title) spec.title = title;
+  if (doc) spec.doc = doc;
+  const started = performance.now();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // A small page that fills with lines, like a document being typed.
+  const line = (w, cls = '') => h('span', { class: `vw-l ${cls}`, style: `--w:${w}%` });
+  const paper =
+    spec.doc === 'letter'
+      ? h('div', { class: 'vw-paper letter', 'aria-hidden': 'true' }, line(46, 'head'), line(30, 'sub'), h('span', { class: 'vw-rule' }), line(28, 'right'), line(38), line(34), line(52, 'bold'), line(96), line(92), line(98), line(64), line(95), line(90), line(97), line(72), line(30), line(36))
+      : h('div', { class: 'vw-paper cv', 'aria-hidden': 'true' }, line(52, 'head'), line(36, 'sub'), line(70, 'meta'), line(24, 'sect'), line(96), line(88), line(24, 'sect'), line(42, 'bold'), line(90, 'bullet'), line(84, 'bullet'), line(76, 'bullet'), line(38, 'bold'), line(86, 'bullet'), line(70, 'bullet'), line(24, 'sect'), line(60), line(48));
+  [...paper.querySelectorAll('.vw-l')].forEach((el, i) => el.style.setProperty('--i', i));
+
+  const steps = h('ol', { class: 'vw-steps' }, ...spec.steps.map((t) => h('li', {}, h('span', { class: 'vw-dot', 'aria-hidden': 'true' }), h('span', {}, t))));
+  const bar = h('span', {});
+  const pct = h('span', { class: 'vw-pct' }, '0%');
+  const clock = h('span', { class: 'vw-time' }, '0:00');
+  const status = h('p', { class: 'vw-status', role: 'status', 'aria-live': 'polite' }, spec.steps[0]);
+  const cancel = h('button', { type: 'button', class: 'btn small ghost vw-cancel' }, 'Cancel');
+  const el = h(
+    'div',
+    { class: 'vw', role: 'dialog', 'aria-modal': 'true', 'aria-label': spec.title },
+    h(
+      'div',
+      { class: 'vw-card' },
+      h('div', { class: 'vw-stage' }, paper, h('div', { class: 'vw-glow', 'aria-hidden': 'true' })),
+      h(
+        'div',
+        { class: 'vw-side' },
+        h('p', { class: 'eyebrow vw-brand' }, svgIcon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>'), 'Vora AI'),
+        h('h2', {}, spec.title),
+        status,
+        steps,
+        h('div', { class: 'vw-progress', role: 'progressbar', 'aria-label': 'Progress' }, bar),
+        h('div', { class: 'vw-foot' }, h('span', { class: 'vw-meta' }, pct, ' · ', clock, h('span', { class: 'vw-est' }, h('span', { 'aria-hidden': 'true' }, ' · '), h('span', {}, `usually about ${spec.seconds} seconds`))), cancel),
+      ),
+    ),
+  );
+  cancel.addEventListener('click', () => {
+    currentAbort?.abort();
+    close();
+    toast('Stopped. Nothing was changed.');
+  });
+
+  // Progress eases towards 95% over the usual time, then crawls; steps follow it.
+  let progress = 0;
+  let finished = false;
+  function tick() {
+    if (!el.isConnected || finished) return;
+    const secs = (performance.now() - started) / 1000;
+    const target = secs < spec.seconds ? 95 * (1 - Math.exp((-2.6 * secs) / spec.seconds)) / (1 - Math.exp(-2.6)) : Math.min(98, 95 + (secs - spec.seconds) / 10);
+    progress = Math.max(progress, Math.min(target, 98));
+    paint(secs);
+    requestAnimationFrame(() => setTimeout(tick, 200));
+  }
+  function paint(secs) {
+    bar.style.width = `${progress}%`;
+    pct.textContent = `${Math.round(progress)}%`;
+    clock.textContent = `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+    const active = finished ? spec.steps.length : Math.min(spec.steps.length - 1, Math.floor((progress / 100) * spec.steps.length));
+    [...steps.children].forEach((li, i) => li.className = i < active ? 'done' : i === active ? 'active' : '');
+    const now = spec.steps[Math.min(active, spec.steps.length - 1)];
+    if (!finished && status.textContent !== `${now}…`) status.textContent = `${now}…`;
+  }
+
+  const prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  document.body.append(el);
+  requestAnimationFrame(() => el.classList.add('in'));
+  if (reduce) el.classList.add('still');
+  tick();
+  cancel.focus({ preventScroll: true });
+
+  function close() {
+    if (!el.isConnected) return;
+    finished = true;
+    document.body.style.overflow = prevOverflow;
+    el.classList.remove('in');
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 260);
+  }
+  return {
+    async done() {
+      if (!el.isConnected) return;
+      finished = true;
+      progress = 100;
+      paint((performance.now() - started) / 1000);
+      status.textContent = 'Done';
+      el.classList.add('complete');
+      await new Promise((r) => setTimeout(r, reduce ? 150 : 650));
+      close();
+    },
+    close,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Home / dashboard
 // ---------------------------------------------------------------------------
 
@@ -2006,27 +2126,35 @@ function renderDocuments() {
     return d;
   }
 
-  async function withAI(message, fn) {
+  // Run a Vora AI job on the document behind the writing screen.
+  async function withAI(spec, fn) {
     if (!ai.hasKey()) return toast('Set up the AI in Settings to use Vora AI.');
     record();
-    busy.hidden = false;
-    busy.firstChild.textContent = message;
-    const ctl = newAbort();
+    const screen = writingScreen(spec.kind, { title: spec.title, doc: kind });
+    const signal = newAbort();
     try {
-      await fn(ctl.signal);
+      await fn(signal);
+      if (signal.aborted) return;
       refresh();
       record();
       showSaved();
+      await screen.done();
     } catch (err) {
-      if (!ctl.signal.aborted) toast(err.message || 'Vora could not finish that. Try again.');
-    } finally {
-      busy.hidden = true;
+      screen.close();
+      if (!signal.aborted) toast(err.message || 'Vora could not finish that. Try again.');
     }
   }
   const reviseWith = (instructions, message) =>
-    withAI(message, async (signal) => {
-      if (kind === 'cv') saveMaster({ cvData: await ai.reviseCV(cv(), instructions, { signal }) });
-      else saveLetter({ body: await ai.reviseText(letterOf().body || '', instructions, { signal }) });
+    withAI({ kind: 'edit', title: message }, async (signal) => {
+      if (kind === 'cv') {
+        const cvData = await ai.reviseCV(cv(), instructions, { signal });
+        stopIfCancelled(signal);
+        saveMaster({ cvData });
+      } else {
+        const body = await ai.reviseText(letterOf().body || '', instructions, { signal });
+        stopIfCancelled(signal);
+        saveLetter({ body });
+      }
     });
 
   function aiMenu() {
@@ -2050,7 +2178,7 @@ function renderDocuments() {
             custom,
           ]
         : [
-            { label: 'Write a new general letter', hint: 'For your target roles', run: () => withAI('Vora is writing your letter…', async (signal) => saveLetter({ body: await ai.writeGeneralLetter({ signal }), date: Date.now() })) },
+            { label: 'Write a new general letter', hint: 'For your target roles', run: () => withAI({ kind: 'letter' }, async (signal) => (async () => { const body = await ai.writeGeneralLetter({ signal }); stopIfCancelled(signal); saveLetter({ body, date: Date.now() }); })()) },
             { label: 'Make it shorter', run: () => reviseWith('Make it about a third shorter without losing the main points.', 'Shortening your letter…') },
             { label: 'More formal', run: () => reviseWith('Make the tone more formal.', 'Adjusting the tone…') },
             { label: 'Warmer and more personal', run: () => reviseWith('Make it warmer and more personal, still professional.', 'Adjusting the tone…') },
@@ -2154,7 +2282,7 @@ function renderDocuments() {
         ...[
           ['Copy as plain text', copyText],
           ['Download as text file', txt],
-          kind === 'cv' && store.get().profile.cv.trim() ? ['Lay out again from my profile CV', () => withAI('Laying out your CV…', async (signal) => saveMaster({ cvData: await ai.structureCV({ signal }) }))] : null,
+          kind === 'cv' && store.get().profile.cv.trim() ? ['Lay out again from my profile CV', () => withAI({ kind: 'layout' }, async (signal) => (async () => { const cvData = await ai.structureCV({ signal }); stopIfCancelled(signal); saveMaster({ cvData }); })())] : null,
           ['Start over (blank)', () => startBlank(true)],
         ]
           .filter(Boolean)
@@ -2243,12 +2371,12 @@ function renderDocuments() {
     const actions =
       kind === 'cv'
         ? [
-            p.cv.trim() ? btn('Lay out my CV with Vora', 'primary', () => withAI('Vora is laying out your CV…', async (signal) => saveMaster({ cvData: await ai.structureCV({ signal }) }))) : h('a', { class: 'btn primary', href: '#/profile' }, 'Upload your CV first'),
+            p.cv.trim() ? btn('Lay out my CV with Vora', 'primary', () => withAI({ kind: 'layout' }, async (signal) => (async () => { const cvData = await ai.structureCV({ signal }); stopIfCancelled(signal); saveMaster({ cvData }); })())) : h('a', { class: 'btn primary', href: '#/profile' }, 'Upload your CV first'),
             tailored ? btn(`Start from my CV for ${store.get().jobs[tailored[0]]?.company || 'a job'}`, '', () => (record(), saveMaster({ cvData: structuredClone(tailored[1].cvData), template: tailored[1].template, accent: tailored[1].accent }), refresh(), record())) : '',
             btn('Start from a blank page', 'ghost', () => startBlank()),
           ]
         : [
-            h('div', { class: 'row wrap', style: 'justify-content:center' }, tone, btn('Write a general letter with Vora', 'primary', () => withAI('Vora is writing your letter…', async (signal) => saveLetter({ body: await ai.writeGeneralLetter({ tone: tone.value, signal }), date: Date.now() })))),
+            h('div', { class: 'row wrap', style: 'justify-content:center' }, tone, btn('Write a general letter with Vora', 'primary', () => withAI({ kind: 'letter' }, async (signal) => (async () => { const body = await ai.writeGeneralLetter({ tone: tone.value, signal }); stopIfCancelled(signal); saveLetter({ body, date: Date.now() }); })()))),
             btn('Start from a blank page', 'ghost', () => startBlank()),
           ];
     return h(
@@ -2855,13 +2983,14 @@ function renderJob(id) {
 
     // Run a change that takes a while, with the page dimmed, then redraw.
     async function rework(message, fn) {
-      busy.hidden = false;
-      busy.firstChild.textContent = message;
+      const screen = writingScreen('edit', { title: message, doc: cfg.title === 'Your cover letter' ? 'letter' : 'cv' });
       try {
         await fn();
         refresh();
-      } finally {
-        busy.hidden = true;
+        await screen.done();
+      } catch (err) {
+        screen.close();
+        throw err;
       }
     }
 
@@ -2925,9 +3054,18 @@ function renderJob(id) {
     const gen = aiButton('Create tailored CV', {
       output: status,
       task: async (_onText, signal) => {
-        status.replaceChildren(h('p', { class: 'muted' }, 'Claude is rewriting your CV for this job. This takes about a minute.'));
-        const cvData = await ai.tailorCV(job, { signal });
+        status.replaceChildren();
+        const screen = writingScreen('tailor');
+        let cvData;
+        try {
+          cvData = await ai.tailorCV(job, { signal });
+          stopIfCancelled(signal);
+        } catch (err) {
+          screen.close();
+          throw err;
+        }
         saveDoc({ cvData, cv: cvToText(cvData) });
+        await screen.done();
         draw();
         openStudio();
         return '';
@@ -3017,6 +3155,7 @@ function renderJob(id) {
           const reworkCV = (instructions, signal, message) =>
             rework(message, async () => {
               const cvData = await ai.tailorCV(job, { instructions, previous: docs().cvData, signal });
+              stopIfCancelled(signal);
               cvData.titles = { ...(docs().cvData?.titles || {}), ...(cvData.titles || {}) };
               saveDoc({ cvData, cv: cvToText(cvData) });
             });
@@ -3104,8 +3243,17 @@ function renderJob(id) {
     const gen = aiButton('Write cover letter', {
       output: status,
       task: async (onText, signal) => {
-        status.replaceChildren(h('p', { class: 'muted' }, 'Claude is writing your letter…'));
-        const text = await ai.writeCoverLetter(job, { tone: tone.value, signal });
+        status.replaceChildren();
+        const screen = writingScreen('letter');
+        let text;
+        try {
+          text = await ai.writeCoverLetter(job, { tone: tone.value, signal });
+          stopIfCancelled(signal);
+        } catch (err) {
+          screen.close();
+          throw err;
+        }
+        await screen.done();
         saveDoc({ coverLetter: text, letterDate: Date.now() });
         status.replaceChildren();
         draw();
@@ -3208,7 +3356,9 @@ function renderJob(id) {
                 const instructions = input.value.trim();
                 if (!instructions) throw new Error('Say what you want changed first.');
                 await rework('Updating your letter…', async () => {
-                  saveDoc({ coverLetter: await ai.writeCoverLetter(job, { tone: tone.value, instructions, previous: docs().coverLetter, signal }) });
+                  const text = await ai.writeCoverLetter(job, { tone: tone.value, instructions, previous: docs().coverLetter, signal });
+                  stopIfCancelled(signal);
+                  saveDoc({ coverLetter: text });
                 });
                 return '';
               },
@@ -3232,7 +3382,9 @@ function renderJob(id) {
             pane.replaceChildren(
               h('div', { class: 'cv-notes' }, writingCheck(letter, (phrases, signal) =>
                 rework('Rewording those lines…', async () => {
-                  saveDoc({ coverLetter: await ai.reviseLetter(job, docs().coverLetter, phrases, { signal }) });
+                  const text = await ai.reviseLetter(job, docs().coverLetter, phrases, { signal });
+                  stopIfCancelled(signal);
+                  saveDoc({ coverLetter: text });
                 }),
               )),
             );
