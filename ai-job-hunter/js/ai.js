@@ -16,7 +16,7 @@ import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
 import { currentLanguage, languageName } from './i18n.js';
 import { providerById, askProvider } from './providers.js';
 import { searchJobs } from './jobs.js';
-import { postedAt } from './match.js';
+import { postedAt, portalQueries, RESULTS_PER_SEARCH, parseSearchResults, sameJob, readProfile, scoreJob } from './match.js';
 
 // Every task runs with the same senior HR persona and quality bar, whichever
 // AI does the work (Claude, ChatGPT, Gemini, DeepSeek or Grok).
@@ -300,7 +300,7 @@ export async function searchEverywhere({ query, location, remoteOnly }, { onText
   const what = query || p.targetRoles.split(',')[0] || p.headline || 'jobs that fit my profile';
   const where = location || (remoteOnly ? 'remote' : p.location) || '';
   const { portals, country } = portalsFor(what, where, { remote: remoteOnly });
-  const live = portals.filter((x) => x.live).slice(0, 6);
+  const live = portals.filter((x) => x.live);
   const prov = activeProvider();
   let jobs =
     caps.mcp && (caps.sample || prov)
@@ -356,30 +356,22 @@ function placeRule(where, remoteOnly) {
 async function viewerSearch(what, where, remoteOnly, portals, { onText, signal, rank }) {
   if (!caps.mcp) throw new Error('Live job search needs the Exa connector. Add it in claude.ai Settings → Connectors, then reload.');
   const place = where ? ` in ${where}` : '';
-  const searches = [
-    {
-      label: 'General web',
-      query: `open job posting ${what}${place}`,
-      objective: `Find currently open job postings for "${what}"${place} on any job portal or company careers page. Rank direct postings first; exclude articles, salary guides and lists.`,
-    },
-    ...portals.map((x) => ({
-      label: x.name,
-      query: `${what} job${place} site ${x.domain}`,
-      objective: `Find currently open job postings for "${what}"${place} listed on ${x.name} (${x.domain}). Only return posting pages hosted on ${x.domain}.`,
-    })),
-  ];
-  onText?.(`Searching ${searches.length - 1} job portals${place}…`);
+  // Worded exactly like the home feed's searches, so repeats come from the cache.
+  const searches = portalQueries(what, where, portals);
+  onText?.(`Searching ${portals.length} job portals${place}…`);
   const settled = await Promise.allSettled(
     searches.map((q) =>
-      caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { query: q.query, objective: q.objective, numResults: 10 }, { signal }),
+      caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { query: q.query, objective: q.objective, numResults: RESULTS_PER_SEARCH }, { signal }),
     ),
   );
   const blocks = [];
+  const bodies = [];
   let firstError = null;
   settled.forEach((r, i) => {
     if (r.status === 'fulfilled') {
       const body = typeof r.value.payload === 'string' ? r.value.payload : JSON.stringify(r.value.payload ?? r.value.content);
-      blocks.push(`<results source="${searches[i].label}">\n${body.slice(0, 14000)}\n</results>`);
+      bodies.push(body);
+      blocks.push(`<results source="${searches[i].label}">\n${body.slice(0, 10000)}\n</results>`);
     } else firstError ??= r.reason;
   });
   if (!blocks.length) throw mcpError(firstError);
@@ -402,7 +394,29 @@ async function viewerSearch(what, where, remoteOnly, portals, { onText, signal, 
     signal,
   });
   if (!Array.isArray(list)) throw new Error('Claude replied in an unexpected format. Try again.');
-  return list.filter((j) => j && j.title).map(toJob);
+  const picked = list.filter((j) => j && j.title).map(toJob);
+  return [...picked, ...alsoFound(bodies, picked, where, rank)];
+}
+
+// Every posting in the downloaded results that the AI did not pick (it only
+// lists so many), read by the same rules as the home feed. Free: no extra
+// search, the results are already here.
+function alsoFound(bodies, picked, where, rank) {
+  const p = store.get().profile;
+  const me = readProfile(p);
+  const city = String(where || '').split(',')[0].trim();
+  const kept = [...picked];
+  const out = [];
+  for (const j of bodies.flatMap((b) => parseSearchResults(b, { city }))) {
+    if (kept.some((k) => (k.url && k.url === j.url) || sameJob(k, j))) continue;
+    kept.push(j);
+    const { _text, ...job } = j;
+    const match = me.roles.length || me.skills.size ? scoreJob(j, me, p.prefs || {}, where) : null;
+    void _text;
+    if (match && match.score < 30) continue; // clearly another field or level
+    out.push(rank && match ? { ...job, match } : job);
+  }
+  return out;
 }
 
 // Standalone route: Claude's own web search tool via the API.

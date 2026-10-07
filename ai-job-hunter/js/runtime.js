@@ -8,6 +8,8 @@
 // Standalone (a normal website / installed PWA) none of these exist and the
 // app falls back to the Anthropic SDK with the user's API key.
 
+import { withCache } from './webcache.js';
+
 export const inArtifact = typeof window !== 'undefined' && typeof window.claude?.use === 'function';
 
 export const SEARCH_SERVER = 'Exa';
@@ -24,7 +26,7 @@ export const ready = inArtifact
       window.claude.use('db').catch(() => null),
     ]).then(([sample, mcp, downloads, user, db]) => {
       caps.sample = sample;
-      caps.mcp = mcp;
+      caps.mcp = withCache(mcp); // repeated searches come from the cache, not a new paid call
       caps.downloads = downloads;
       caps.user = user;
       caps.db = db;

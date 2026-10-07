@@ -470,17 +470,45 @@ export function byNewest(a, b) {
  */
 export async function checkPostedDates(jobs, { signal, max = 12 } = {}) {
   const found = new Map();
-  const urls = [...new Set(jobs.filter((j) => !jobPostedAt(j) && j.source !== 'Indeed' && /^https?:\/\//.test(j.url || '')).map((j) => j.url))].slice(0, max);
-  if (!caps.mcp || !urls.length) return found;
-  const res = await caps.mcp.callTool(SEARCH_SERVER, FETCH_TOOL, { urls, maxCharacters: 2500 }, { signal });
+  const memo = readDateMemo();
   const now = Date.now();
+  const urls = [];
+  for (const url of new Set(jobs.filter((j) => !jobPostedAt(j) && j.source !== 'Indeed' && /^https?:\/\//.test(j.url || '')).map((j) => j.url))) {
+    const known = memo[url];
+    if (known?.[0]) found.set(url, known[0]); // a posting date never changes
+    else if (!known || now - known[1] > DATE_RECHECK) urls.push(url);
+  }
+  if (!caps.mcp || !urls.length) return found;
+  const asked = urls.slice(0, max);
+  const res = await caps.mcp.callTool(SEARCH_SERVER, FETCH_TOOL, { urls: asked, maxCharacters: 2500 }, { signal });
   for (const block of payloadText(res).split(/\n(?=# [^\n]*\n+URL: )/)) {
     const url = block.match(/^URL:\s*(\S+)/m)?.[1];
-    if (!url || !urls.includes(url)) continue;
+    if (!url || !asked.includes(url)) continue;
     const ts = findPostedAt(block.split('\n').slice(2).join('\n'), now);
     if (ts) found.set(url, ts);
   }
+  // Remember the answer for every page read, dated or not, so it is not read again.
+  for (const url of asked) memo[url] = [found.get(url) || 0, now];
+  saveDateMemo(memo);
   return found;
+}
+
+// Posting dates already looked up: url -> [posted, checkedAt]. Pages without a
+// date are asked again after a few days (some sites add it later).
+const DATE_MEMO = 'ajh:dates';
+const DATE_RECHECK = 3 * DAY;
+function readDateMemo() {
+  try {
+    return JSON.parse(localStorage.getItem(DATE_MEMO) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+function saveDateMemo(memo) {
+  try {
+    const entries = Object.entries(memo).sort((a, b) => b[1][1] - a[1][1]).slice(0, 1500);
+    localStorage.setItem(DATE_MEMO, JSON.stringify(Object.fromEntries(entries)));
+  } catch {}
 }
 
 const DATE_LINE = /^(?:[-*•]\s*)?(\d{1,2}\.?\s+[A-Za-zäéû]+\s+20\d{2}|20\d{2}-\d{2}-\d{2})\s*$/;
@@ -582,20 +610,35 @@ async function pool(tasks, limit) {
  * Search every job portal for the user's country (plus LinkedIn, Glassdoor and
  * the open web) for each role, and once more with the CV's strongest skills.
  */
+/**
+ * The web searches for one role in one place: the open web, employers' own
+ * careers pages and each job portal of the country. Shared by the home feed
+ * and the Find search, so the same search is asked in exactly the same words
+ * and a repeat is answered from the cache (js/webcache.js) for free.
+ */
+export function portalQueries(role, where, live) {
+  const place = where ? ` in ${where}` : '';
+  return [
+    { label: 'General web', query: `open job posting ${role}${place}`, objective: `Find currently open job postings for "${role}"${place} on any job portal, recruiter or company careers page. Direct posting pages only; exclude articles, salary guides and lists of jobs.` },
+    { label: 'Careers pages', query: `${role} job${place} company careers page apply`, objective: `Find open "${role}" positions${place} listed directly on employers' own careers pages (Greenhouse, Lever, Workday, Personio, SmartRecruiters and similar). Single postings only.` },
+    ...live.map((x) => ({
+      label: x.name,
+      query: `${role} job${place} site ${x.domain}`,
+      objective: `Find currently open job postings for "${role}"${place} on ${x.name} (${x.domain}). Only return single posting pages hosted on ${x.domain}.`,
+    })),
+  ];
+}
+
+/** Results per search: the price covers 10, each one above costs a little extra (worth it for more jobs). */
+export const RESULTS_PER_SEARCH = 15;
+
 async function searchPortals(me, location, remote, signal) {
   const where = remote ? 'remote' : location;
   const { portals, country } = portalsFor(me.roles[0], where, { remote });
   const live = portals.filter((x) => x.live);
   const place = where ? ` in ${where}` : '';
   const skills = [...me.skills].slice(0, 4).join(', ');
-  const queries = me.roles.flatMap((role) => [
-    { query: `open job posting ${role}${place}`, objective: `Find currently open job postings for "${role}"${place} on any job portal, recruiter or company careers page. Direct posting pages only; exclude articles, salary guides and lists of jobs.` },
-    { query: `${role} job${place} company careers page apply`, objective: `Find open "${role}" positions${place} listed directly on employers' own careers pages (Greenhouse, Lever, Workday, Personio, SmartRecruiters and similar). Single postings only.` },
-    ...live.map((x) => ({
-      query: `${role} job${place} site ${x.domain}`,
-      objective: `Find currently open job postings for "${role}"${place} on ${x.name} (${x.domain}). Only return single posting pages hosted on ${x.domain}.`,
-    })),
-  ]);
+  const queries = me.roles.flatMap((role) => portalQueries(role, where, live).map(({ label, ...q }) => (void label, q)));
   if (skills) {
     queries.push({
       query: `${me.roles[0]} job${place} ${skills}`,
@@ -604,7 +647,7 @@ async function searchPortals(me, location, remote, signal) {
   }
   const [settled, indeed] = await Promise.all([
     pool(
-      queries.map((q) => () => caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { ...q, numResults: 15 }, { signal })),
+      queries.map((q) => () => caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { ...q, numResults: RESULTS_PER_SEARCH }, { signal })),
       6,
     ),
     indeedJobs(me.roles[0], where, { signal }).catch(() => []),

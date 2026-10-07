@@ -3,6 +3,7 @@ import { searchJobs, SOURCE_IDS } from './jobs.js';
 import * as ai from './ai.js';
 import { h, md, toast, copy, download, confirmButton, fmtDate, debounce } from './ui.js';
 import { inArtifact, ready as runtimeReady } from './runtime.js';
+import { skipCachedUntilNow } from './webcache.js';
 import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
@@ -130,6 +131,7 @@ function feedSection() {
   const refresh = h('button', { class: 'btn small', type: 'button', disabled: Boolean(feedRun) }, feedRun ? 'Searching…' : 'Refresh');
   refresh.addEventListener('click', () => {
     feedError = null;
+    skipCachedUntilNow(); // the user wants what is new right now
     runFeed();
     route();
   });
