@@ -166,7 +166,8 @@ const DICT = {
   'Search above, or add your CV and city in your profile to see jobs picked for you here.': ['Suche oben oder füge im Profil Lebenslauf und Stadt hinzu, um hier passende Jobs zu sehen.', 'Lancez une recherche ou ajoutez votre CV et votre ville dans le profil pour voir ici des offres pour vous.', 'Cerca qui sopra o aggiungi CV e città nel profilo per vedere qui offerte per te.', 'Busca arriba o añade tu CV y tu ciudad en el perfil para ver aquí empleos para ti.', 'Busque acima ou adicione currículo e cidade no perfil para ver vagas para você aqui.'],
   'Open profile': ['Profil öffnen', 'Ouvrir le profil', 'Apri il profilo', 'Abrir perfil', 'Abrir perfil'],
   'No other matching jobs found right now. Search above to look for something else.': ['Gerade keine weiteren passenden Jobs gefunden. Suche oben nach etwas anderem.', 'Aucune autre offre trouvée pour le moment. Lancez une autre recherche ci-dessus.', 'Nessun’altra offerta trovata ora. Cerca qualcos’altro qui sopra.', 'No hay más empleos ahora. Busca otra cosa arriba.', 'Nenhuma outra vaga agora. Busque outra coisa acima.'],
-  'Choose which AI does the work. Every task runs with the same senior HR recruiter instructions.': ['Wähle, welche KI die Arbeit macht. Jede Aufgabe läuft mit denselben Anweisungen eines erfahrenen HR-Recruiters.', 'Choisissez l’IA qui fait le travail. Chaque tâche suit les mêmes consignes de recruteur RH senior.', 'Scegli quale IA fa il lavoro. Ogni attività segue le stesse istruzioni di un recruiter HR senior.', 'Elige qué IA hace el trabajo. Cada tarea sigue las mismas instrucciones de un reclutador senior de RR. HH.', 'Escolha qual IA faz o trabalho. Cada tarefa segue as mesmas instruções de um recrutador sênior de RH.'],
+  'Vora is the AI that searches, matches, writes and coaches for you. Choose which model powers it. Every task runs with the same senior HR recruiter instructions.': ['Vora ist die KI, die für dich sucht, abgleicht, schreibt und coacht. Wähle, welches Modell sie antreibt. Jede Aufgabe läuft mit denselben Anweisungen eines erfahrenen HR-Recruiters.', 'Vora est l’IA qui cherche, compare, rédige et vous coache. Choisissez le modèle qui la fait tourner. Chaque tâche suit les mêmes consignes de recruteur RH senior.', 'Vora è l’IA che cerca, abbina, scrive e ti fa da coach. Scegli quale modello la alimenta. Ogni attività segue le stesse istruzioni da recruiter HR senior.', 'Vora es la IA que busca, compara, redacta y te asesora. Elige qué modelo la impulsa. Cada tarea sigue las mismas instrucciones de un reclutador senior de RR. HH.', 'Vora é a IA que busca, compara, escreve e orienta você. Escolha qual modelo a alimenta. Cada tarefa segue as mesmas instruções de um recrutador sênior de RH.'],
+  'Vora AI': ['Vora KI', 'IA Vora', 'IA Vora', 'IA de Vora', 'IA Vora'],
   'AI provider': ['KI-Anbieter', 'Fournisseur d’IA', 'Fornitore IA', 'Proveedor de IA', 'Provedor de IA'],
   'Save and test connection': ['Speichern und Verbindung testen', 'Enregistrer et tester', 'Salva e prova la connessione', 'Guardar y probar conexión', 'Salvar e testar conexão'],
   'Fast model': ['Schnelles Modell', 'Modèle rapide', 'Modello veloce', 'Modelo rápido', 'Modelo rápido'],
@@ -455,7 +456,7 @@ const DICT = {
     'Menus, botões e o coaching do Claude (análise de compatibilidade, avaliação do currículo, perfis de empresa, jogo de entrevista) usam este idioma. Currículos e cartas são escritos no idioma de cada anúncio.',
   ],
   'AI': ['KI', 'IA', 'IA', 'IA', 'IA'],
-  'AI features run on your Claude account here, so no API key is needed. The key and model settings below apply when you run the app outside Claude.': ['KI-Funktionen laufen hier über dein Claude-Konto, du brauchst keinen API-Schlüssel. Schlüssel und Modell unten gelten, wenn du die App ausserhalb von Claude nutzt.', 'Ici, les fonctions IA utilisent votre compte Claude : aucune clé API n’est nécessaire. La clé et le modèle ci-dessous servent quand l’app tourne hors de Claude.', 'Qui le funzioni IA usano il tuo account Claude, quindi non serve una chiave API. Chiave e modello qui sotto valgono fuori da Claude.', 'Aquí las funciones de IA usan tu cuenta de Claude, así que no necesitas clave API. La clave y el modelo de abajo se usan fuera de Claude.', 'Aqui os recursos de IA usam sua conta do Claude, então não precisa de chave de API. A chave e o modelo abaixo valem fora do Claude.'],
+  'AI features run on your Claude account here, so no API key is needed. The key and model settings below apply when you run the app outside the Claude app.': ['KI-Funktionen laufen hier über dein Claude-Konto, du brauchst keinen API-Schlüssel. Schlüssel und Modell unten gelten, wenn du die App ausserhalb von Claude nutzt.', 'Ici, les fonctions IA utilisent votre compte Claude : aucune clé API n’est nécessaire. La clé et le modèle ci-dessous servent quand l’app tourne hors de Claude.', 'Qui le funzioni IA usano il tuo account Claude, quindi non serve una chiave API. Chiave e modello qui sotto valgono fuori da Claude.', 'Aquí las funciones de IA usan tu cuenta de Claude, así que no necesitas clave API. La clave y el modelo de abajo se usan fuera de Claude.', 'Aqui os recursos de IA usam sua conta do Claude, então não precisa de chave de API. A chave e o modelo abaixo valem fora do Claude.'],
   'Anthropic API key': ['Anthropic-API-Schlüssel', 'Clé API Anthropic', 'Chiave API Anthropic', 'Clave API de Anthropic', 'Chave de API da Anthropic'],
   'Get one at console.anthropic.com. Stored only in this browser and sent only to api.anthropic.com.': ['Erhältlich auf console.anthropic.com. Nur in diesem Browser gespeichert und nur an api.anthropic.com gesendet.', 'À obtenir sur console.anthropic.com. Stockée seulement dans ce navigateur et envoyée seulement à api.anthropic.com.', 'Si ottiene su console.anthropic.com. Salvata solo in questo browser e inviata solo a api.anthropic.com.', 'Consíguela en console.anthropic.com. Se guarda solo en este navegador y solo se envía a api.anthropic.com.', 'Obtenha em console.anthropic.com. Guardada só neste navegador e enviada só para api.anthropic.com.'],
   'Claude Opus 5.5 (best quality)': ['Claude Opus 5.5 (beste Qualität)', 'Claude Opus 5.5 (meilleure qualité)', 'Claude Opus 5.5 (qualità migliore)', 'Claude Opus 5.5 (mejor calidad)', 'Claude Opus 5.5 (melhor qualidade)'],
@@ -786,17 +787,19 @@ export function t(text) {
     const out = m[2] && m[2].length < 600 ? lookup(m[2]) : null;
     if (out != null) res = m[1] + out + m[3];
   }
-  if (brand) res = withBrand(res);
+  if (brand && !REAL_CLAUDE.test(key)) res = withBrand(res);
   cache.set(key, res);
   return res;
 }
 
-// When another AI does the work, "Claude is writing…" should name that AI.
-// The Claude app, Claude account and Claude model names keep their name.
+// The AI is called Vora in the interface ("Vora is writing…"), whichever
+// model powers it. The Claude app, Claude account and Claude model names keep
+// their name, and so do the texts about allowing this page to use Claude.
+const REAL_CLAUDE = /Allow (?:this page|web search)[^.]*Claude|use Claude when asked/;
 let brand = '';
 const KEEP = /^(?:\s|-)*(?:app|account|session|Opus|Sonnet|Haiku|App|Konto|-App|-Konto)\b|^\.ai|^'s (?:app|account)/;
 function withBrand(text) {
-  return text.replace(/\bClaude(?:s)?\b/g, (word, i) => (KEEP.test(text.slice(i + word.length)) || /(your|dein|deinem|votre|tuo|tu|sua|seu|eigenen|own)\s+$/i.test(text.slice(0, i)) ? word : word.replace('Claude', brand)));
+  return text.replace(/\bClaude(?:s)?\b/g, (word, i) => (KEEP.test(text.slice(i + word.length)) || /(your|dein|deinem|votre|tuo|tu|sua|seu|eigenen|own|by)\s+$/i.test(text.slice(0, i)) ? word : word.replace('Claude', brand)));
 }
 /** Name the AI that does the work in interface texts ('' = Claude). */
 export function setBrand(name) {

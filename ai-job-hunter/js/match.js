@@ -568,6 +568,7 @@ export async function checkPages(jobs, { signal, max = 24 } = {}) {
     const url = block.match(/^URL:\s*(\S+)/m)?.[1];
     if (!url || !asked.includes(url)) continue;
     const page = block.split('\n').slice(2).join('\n');
+    PAGE_TEXT.set(url, page.slice(0, 2500));
     if (isClosed(page, now)) gone.add(url);
     const ts = findPostedAt(page, now);
     if (ts) dates.set(url, ts);
@@ -590,8 +591,21 @@ export function needsAiCheck(jobs, now = Date.now()) {
     const m = memo[j.url];
     if (m?.[2] || (m?.[3] && now - m[3] < AI_RECHECK)) return false;
     const ts = jobPostedAt(j) || m?.[0] || 0;
-    return !ts || now - ts > 30 * DAY;
+    // Copies on aggregator sites outlive the real posting, so they are always checked.
+    return !ts || now - ts > 14 * DAY || isAggregator(j);
   });
+}
+
+// Sites that copy postings from elsewhere and keep them after the original closed.
+const AGGREGATOR = /jobijoba|jooble|careerjet|talent\.com|jobbasel|jobborse|adzuna|jobrapido|neuvoo|jobted|jobsora|whatjobs|trovit|jobbird|jobvector|stellenonline|jobmonitor/i;
+export function isAggregator(job) {
+  return AGGREGATOR.test(`${job.url || ''} ${job.source || ''}`) || /#J-\d+-Ljbffr/.test(String(job.description || ''));
+}
+
+// Page text read by checkPages, for the AI double check.
+const PAGE_TEXT = new Map();
+export function pageText(url) {
+  return PAGE_TEXT.get(url) || '';
 }
 
 /** Remember the AI's verdicts: closed jobs stay hidden, open ones are not asked about again for a few days. */

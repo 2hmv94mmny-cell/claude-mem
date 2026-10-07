@@ -16,11 +16,12 @@ import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
 import { currentLanguage, languageName } from './i18n.js';
 import { providerById, askProvider } from './providers.js';
 import { searchJobs } from './jobs.js';
-import { postedAt, portalQueries, RESULTS_PER_SEARCH, parseSearchResults, sameJob, readProfile, scoreJob, isClosed, needsAiCheck, rememberAiCheck, jobPostedAt } from './match.js';
+import { postedAt, portalQueries, RESULTS_PER_SEARCH, parseSearchResults, sameJob, readProfile, scoreJob, isClosed, needsAiCheck, rememberAiCheck, jobPostedAt, isAggregator, pageText } from './match.js';
 
 // Every task runs with the same senior HR persona and quality bar, whichever
 // AI does the work (Claude, ChatGPT, Gemini, DeepSeek or Grok).
 const SENIOR_HR =
+  'You are Vora, the AI inside the Vora job app. ' +
   'You are a senior HR professional and hiring manager with more than 15 years of recruiting experience across Europe and ' +
   'international companies. You have screened thousands of CVs, run hundreds of interviews and decided who gets hired. ' +
   'You know what hiring managers look for in the first 30 seconds, how applicant tracking systems read documents, and what ' +
@@ -515,44 +516,103 @@ function toJob(j) {
 
 /**
  * Last resort for "is this job still open?". The rules in match.js read each
- * page for closed notices, passed deadlines and dates; only the jobs they
- * cannot vouch for (no date, or over a month old) come here, in one quick
- * request, and each answer is remembered for a few days.
- * @returns {Promise<Set<string>>} urls of the jobs judged closed
+ * page for closed notices, passed deadlines and dates; the jobs they cannot
+ * vouch for (no date, over two weeks old, or a copy on an aggregator site)
+ * come here. Vora's AI gets fresh evidence first: with a model that can
+ * search the web it looks each job up itself; otherwise each job is looked
+ * up again with the search connector (its own careers page, other portals,
+ * dates). Answers are remembered for a few days.
+ * @returns {Promise<Set<string>>} urls of the jobs judged closed or likely closed
  */
 export async function checkStillOpen(jobs, { signal } = {}) {
   const closed = new Set();
-  const doubtful = needsAiCheck(jobs.filter((j) => j.url)).slice(0, 15);
+  const doubtful = needsAiCheck(jobs.filter((j) => j.url)).slice(0, 12);
   if (!doubtful.length || !hasKey()) return closed;
   const today = new Date().toISOString().slice(0, 10);
+  const liveWeb = canAskWithWebSearch();
+
+  // Fresh evidence from the search connector, for the best matches among them.
+  const evidence = new Map();
+  if (!liveWeb && caps.mcp) {
+    const lookups = doubtful.slice(0, 6);
+    const settled = await Promise.allSettled(
+      lookups.map((j) =>
+        caps.mcp.callTool(
+          SEARCH_SERVER,
+          SEARCH_TOOL,
+          {
+            query: `${j.title} ${j.company || ''} job opening`.trim(),
+            objective: `Find where the job "${j.title}"${j.company ? ` at ${j.company}` : ''} is listed now: the employer's own careers page and job portals, with the dates shown on each page. Single postings only.`,
+            numResults: 5,
+          },
+          { signal },
+        ),
+      ),
+    );
+    settled.forEach((r, i) => {
+      if (r.status !== 'fulfilled') return;
+      const body = typeof r.value.payload === 'string' ? r.value.payload : JSON.stringify(r.value.payload ?? r.value.content);
+      const hits = body
+        .split(/\n-{3,}\n/)
+        .map((b) => {
+          const url = b.match(/^URL:\s*(\S+)/m)?.[1] || '';
+          const title = b.match(/^Title:\s*(.+)$/m)?.[1] || '';
+          const published = b.match(/^Published:\s*(\S+)/m)?.[1] || '';
+          const text = (b.split(/^Highlights:\s*$/m)[1] || '').replace(/\s+/g, ' ').trim().slice(0, 350);
+          return url ? `- ${title} | ${url}${published && published !== 'N/A' ? ` | published ${published.slice(0, 10)}` : ''}\n  ${text}` : '';
+        })
+        .filter(Boolean)
+        .slice(0, 5);
+      if (hits.length) evidence.set(lookups[i].url, hits.join('\n'));
+    });
+  }
+
   const list = doubtful
     .map((j, i) => {
       const ts = jobPostedAt(j);
-      return `[${i}] ${j.title} at ${j.company || 'unknown'} (${j.source})${ts ? `, posted ${new Date(ts).toISOString().slice(0, 10)}` : ', posting date not shown'}\nURL: ${j.url}\n${String(j.description || '').slice(0, 900)}`;
+      return [
+        `[${i}] ${j.title} at ${j.company || 'unknown'} (${j.source}${isAggregator(j) ? ', a site that copies postings from elsewhere' : ''})`,
+        ts ? `Posted: ${new Date(ts).toISOString().slice(0, 10)}` : 'Posted: not shown',
+        `URL: ${j.url}`,
+        `Posting text: ${(pageText(j.url) || String(j.description || '')).replace(/\s+/g, ' ').slice(0, 1200)}`,
+        evidence.has(j.url) ? `Where this job is listed now (fresh search):\n${evidence.get(j.url)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
     })
     .join('\n\n');
   const reply = await ask({
-    quick: true,
     json: true,
+    tools: liveWeb ? [{ type: 'web_search_20260209', name: 'web_search', max_uses: 12 }] : undefined,
     system:
-      'You check whether job postings are still open, for a job seeker who does not want to waste time on closed ones. ' +
-      'Judge only from the text given. Say "closed" only when the text clearly shows it: it says the job is closed, filled, expired or no longer accepting applications; ' +
-      'an application deadline or a fixed start date has clearly passed; or its dates or years are clearly old (for example a posting from an earlier year). ' +
-      'A posting that simply gives no date is "open". When unsure, say "open".',
+      'You check whether job postings are still open, for a job seeker who must not waste time applying to closed ones. ' +
+      (liveWeb ? 'Search the web for each posting: open its page, and look for it on the employer\'s own careers page and on job portals. ' : 'Use the posting text and the fresh search results given. ') +
+      'Answer for each one:\n' +
+      '- "closed": it says closed, filled, expired or no longer accepting applications; an application deadline or fixed start date has passed; it was posted more than 60 days ago; or its dates or years are clearly old.\n' +
+      '- "likely_closed": a copy on an aggregator site with no date and no sign of the original posting being live; posted about 5 to 8 weeks ago with nothing showing it is still current; the employer\'s careers page or the portals no longer list it, or only list it with old dates; or the same role is now posted again with a newer date (the old link is the one asked about).\n' +
+      '- "open": a recent date, or the fresh results show it currently listed with a recent date, on its own page or the employer\'s careers page.\n' +
+      'Be strict: when the evidence points to a stale posting, do not call it open.',
     messages: [
       {
         role: 'user',
-        content: `Today is ${today}.\n\n<postings>\n${list}\n</postings>\n\nReply with ONLY a JSON array of {"index": number, "status": "open" | "closed", "why": string (max 12 words)}.`,
+        content: `Today is ${today}.\n\n<postings>\n${list}\n</postings>\n\nReply with ONLY a JSON array of {"index": number, "status": "open" | "likely_closed" | "closed", "why": string (max 15 words)}.`,
       },
     ],
     signal,
   });
   for (const row of Array.isArray(reply) ? reply : []) {
     const job = doubtful[row?.index];
-    if (job && String(row.status).toLowerCase() === 'closed') closed.add(job.url);
+    if (job && /closed/i.test(String(row.status))) closed.add(job.url);
   }
   rememberAiCheck(doubtful, closed);
   return closed;
+}
+
+/** True when the AI powering Vora can search the live web itself (Gemini, or Claude with an API key). */
+function canAskWithWebSearch() {
+  const prov = activeProvider();
+  if (prov) return Boolean(prov.webSearch);
+  return !usingViewerClaude() && Boolean(store.get().settings.apiKey);
 }
 
 /** Score how well the candidate fits a set of jobs. Returns {id: {score, reason}}. */

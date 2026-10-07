@@ -2830,6 +2830,7 @@ function renderSettings() {
       quick: h('input', { type: 'text', value: s.models?.[`${pv.id}Quick`] || '', placeholder: pv.quickModel, autocomplete: 'off', spellcheck: 'false' }),
     };
   }
+  const poweredBy = h('span', { class: 'tag powered-by', translate: 'no' }, `Powered by ${ai.aiName()}`);
   const providerGroup = h('div', { class: 'lang-grid provider-grid', role: 'radiogroup', 'aria-label': 'AI provider' });
   const details = h('div', { class: 'provider-details' });
   const testOut = h('p', { class: 'small', role: 'status' });
@@ -2848,7 +2849,7 @@ function renderSettings() {
     if (chosen === 'claude') {
       details.replaceChildren(
         ai.usingViewerClaude()
-          ? h('p', { class: 'notice' }, 'AI features run on your Claude account here, so no API key is needed. The key and model settings below apply when you run the app outside Claude.')
+          ? h('p', { class: 'notice' }, 'AI features run on your Claude account here, so no API key is needed. The key and model settings below apply when you run the app outside the Claude app.')
           : '',
         field('Anthropic API key', key, 'Get one at console.anthropic.com. Stored only in this browser and sent only to api.anthropic.com.'),
         h('div', { class: 'grid-2' }, field('Model', model), field('Effort', effort, 'Higher effort gives more thorough results but takes longer.')),
@@ -2886,7 +2887,8 @@ function renderSettings() {
         st.settings.models[`${pv.id}Quick`] = fields[pv.id].quick.value.trim();
       }
     });
-    setBrand(ai.aiName());
+    setBrand('Vora');
+    poweredBy.textContent = `Powered by ${ai.aiName()}`;
   }
   const testBtn = h('button', { type: 'button', class: 'btn small' }, 'Save and test connection');
   testBtn.addEventListener('click', async () => {
@@ -2912,8 +2914,8 @@ function renderSettings() {
   const form = h(
     'form',
     { class: 'card form' },
-    h('h2', {}, 'AI'),
-    h('p', { class: 'muted', style: 'margin:0' }, 'Choose which AI does the work. Every task runs with the same senior HR recruiter instructions.'),
+    h('div', { class: 'row space wrap' }, h('h2', { style: 'margin:0' }, 'Vora AI'), poweredBy),
+    h('p', { class: 'muted', style: 'margin:0' }, 'Vora is the AI that searches, matches, writes and coaches for you. Choose which model powers it. Every task runs with the same senior HR recruiter instructions.'),
     providerGroup,
     details,
     h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, 'Save settings')),
@@ -3215,7 +3217,7 @@ if (!inArtifact && 'serviceWorker' in navigator && location.protocol !== 'file:'
 }
 
 setLanguage(store.get().settings.language || 'en');
-setBrand(ai.aiName());
+setBrand('Vora'); // the AI is called Vora, whichever provider powers it
 route();
 // In the artifact viewer, capabilities arrive a moment after load: redraw
 // once they do so AI and web search light up.
