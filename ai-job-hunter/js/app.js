@@ -8,7 +8,7 @@ import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
 import { renderInterviewGame } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
-import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byNewest, checkPostedDates } from './match.js';
+import { jobsForYou, moreJobsForYou, aboutFromPosting, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPostedDates } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage, setBrand } from './i18n.js';
 import { attachSuggest, rememberSearch } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
@@ -154,8 +154,7 @@ function feedSection() {
 
   const seeAll = h('button', { class: 'btn small', type: 'button' }, `See all ${feed.jobs.length}`);
   seeAll.addEventListener('click', () => {
-    session.results = [...feed.jobs].sort(byNewest);
-    session.ranked = false;
+    session.results = [...feed.jobs].sort(byBestMatch);
     session.scores = Object.fromEntries(feed.jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
     session.examples = false;
     session.more = false;
@@ -169,7 +168,7 @@ function feedSection() {
   const counts = new Map();
   for (const j of feed.jobs) counts.set(j.source, (counts.get(j.source) || 0) + 1);
   if (feedFilter && !counts.has(feedFilter)) feedFilter = '';
-  const list = [...(feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs)].sort(byNewest);
+  const list = [...(feedFilter ? feed.jobs.filter((j) => j.source === feedFilter) : feed.jobs)].sort(byBestMatch);
   const grid = h('div', { class: 'feed-grid' });
   const more = h('button', { class: 'btn feed-more', type: 'button' });
   const chips = h('div', { class: 'chip-row feed-chips', role: 'group', 'aria-label': 'Filter by job site' });
@@ -590,8 +589,7 @@ function renderFind() {
       if (!session.results.length) throw new Error('Search first, then rank the results.');
       status.textContent = 'Ranking each job against your CV…';
       session.scores = await ai.scoreJobs(session.results, { signal });
-      session.results.sort((a, b) => (session.scores[b.id]?.score ?? -1) - (session.scores[a.id]?.score ?? -1));
-      session.ranked = true;
+      session.results = session.results.map((j) => (session.scores[j.id] ? { ...j, match: session.scores[j.id] } : j)).sort(byBestMatch);
       drawResults();
       return '';
     },
@@ -632,9 +630,8 @@ function renderFind() {
     try {
       const found = await ai.searchEverywhere(p, { onText: (t) => (status.textContent = t), signal: ctl.signal, rank: Boolean(store.get().profile.cv.trim()) });
       const at = Date.now();
-      const jobs = onlyIn(found.jobs, p).map((j) => ({ ...j, foundAt: at })).sort(byNewest);
+      const jobs = onlyIn(found.jobs, p).map((j) => ({ ...j, foundAt: at })).sort(byBestMatch);
       session.results = jobs;
-      session.ranked = false;
       session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
       session.examples = false;
       session.more = false;
@@ -655,14 +652,14 @@ function renderFind() {
   }
 
   // Most sites put the posting date on the job page, not in search results:
-  // read the pages of the undated jobs, then re-sort newest first.
+  // read the pages of the undated jobs, then re-sort (best match, then newest).
   async function addDates(signal) {
     const run = (session.datesRun = Symbol('dates'));
     try {
       const dates = await checkPostedDates(session.results.filter((j) => !j.extra), { signal });
       if (session.datesRun !== run || !results.isConnected || !dates.size) return;
       const dated = (j) => (!j.postedAt && dates.has(j.url) ? { ...j, postedAt: dates.get(j.url) } : j);
-      const main = session.results.filter((j) => !j.extra).map(dated).sort(byNewest);
+      const main = session.results.filter((j) => !j.extra).map(dated).sort(byBestMatch);
       session.results = [...main, ...session.results.filter((j) => j.extra).map(dated)];
       drawResults();
     } catch {
@@ -698,8 +695,8 @@ function renderFind() {
         const twin = known.find((k) => sameJob(k, j));
         if (twin) j.postedAt = jobPostedAt(twin);
       }
-      // Into the main results (not the extra CV section), newest first.
-      const main = [...session.results.filter((j) => !j.extra), ...fresh].sort(byNewest);
+      // Into the main results (not the extra CV section), best match first, then newest.
+      const main = [...session.results.filter((j) => !j.extra), ...fresh].sort(byBestMatch);
       session.results = [...main, ...session.results.filter((j) => j.extra)];
       for (const j of fresh) if (j.match) session.scores[j.id] = j.match;
       session.errors = session.errors.filter((e) => e !== 'No open postings found for this search');
@@ -743,7 +740,7 @@ function renderFind() {
       const extra = onlyIn(jobs, { ...p, location: place })
         .filter((j) => !main.some((r) => sameJob(r, j)))
         .map((j) => ({ ...j, extra: true }))
-        .sort(byNewest);
+        .sort(byBestMatch);
       if (!extra.length) return;
       session.results = [...session.results.filter((j) => !j.extra), ...extra];
       for (const j of extra) if (j.match) session.scores[j.id] = j.match;
@@ -763,11 +760,10 @@ function renderFind() {
     status.textContent = 'Searching free job boards…';
     results.replaceChildren(skeleton());
     const found = await searchJobs(p);
-    const jobs = onlyIn(found.jobs.filter((j) => j.source !== 'Demo'), p).sort(byNewest);
+    const jobs = onlyIn(found.jobs.filter((j) => j.source !== 'Demo'), p).sort(byBestMatch);
     session.examples = false;
     session.more = false;
     session.results = jobs;
-    session.ranked = false;
     session.scores = {};
     session.errors = jobs.length ? found.errors.filter((e) => e !== 'Showing demo listings') : ['No open postings found for this search'];
     session.filter = '';
@@ -795,9 +791,8 @@ function renderFind() {
     const feed = store.get().feed;
     const key = JSON.stringify(['more-v1', currentLanguage(), feed?.key || '', where.toLowerCase()]);
     const show = (list) => {
-      const jobs = [...list].sort(byNewest);
+      const jobs = [...list].sort(byBestMatch);
       session.results = jobs;
-      session.ranked = false;
       session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
       session.examples = false;
       session.more = where;
@@ -835,10 +830,10 @@ function renderFind() {
     status.textContent = session.examples
       ? 'Example listings. Search to see live openings near you.'
       : session.more && n
-        ? `${n} more jobs for you near ${session.more} that are not on your home page, newest first`
+        ? `${n} more jobs for you near ${session.more} that are not on your home page, best match first`
       : session.errors.length && !n
         ? session.errors.join(' · ')
-        : `${n} job${n === 1 ? '' : 's'}${counts.size > 1 ? ` from ${counts.size} sites` : ''}${session.ranked ? ', best match first' : n > 1 ? ', newest first' : ''}` +
+        : `${n} job${n === 1 ? '' : 's'}${counts.size > 1 ? ` from ${counts.size} sites` : ''}${all.some((j) => session.scores[j.id] || j.match) ? ', best match first' : n > 1 ? ', newest first' : ''}` +
           (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
 
     const chip = (label, value, c) => {

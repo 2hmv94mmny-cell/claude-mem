@@ -455,12 +455,12 @@ export function jobPostedAt(job) {
   return postedAt(job.posted, job.foundAt || Date.now());
 }
 
-/** Newest posting first; jobs without a date after the dated ones, best match first. */
-export function byNewest(a, b) {
-  const ta = jobPostedAt(a);
-  const tb = jobPostedAt(b);
-  if (ta !== tb) return (tb || 0) - (ta || 0);
-  return (b.match?.score ?? -1) - (a.match?.score ?? -1);
+/** Best match first; among jobs that match equally well, the newest posting first (undated ones last). */
+export function byBestMatch(a, b) {
+  const sa = a.match?.score ?? -1;
+  const sb = b.match?.score ?? -1;
+  if (sa !== sb) return sb - sa;
+  return (jobPostedAt(b) || 0) - (jobPostedAt(a) || 0);
 }
 
 /**
@@ -940,11 +940,11 @@ export async function jobsForYou(profile, { signal, roles: searchRoles, exclude 
     })
     .filter((j) => j.match.score >= 30);
 
-  // Look up the posting date of the best undated matches, then newest first.
+  // Look up the posting date of the best undated matches, then best match first, newest first among equals.
   const undated = [...ranked].sort((a, b) => b.match.score - a.match.score).filter((j) => !jobPostedAt(j));
   const dates = await checkPostedDates(undated, { signal }).catch(() => new Map());
   for (const j of ranked) if (!j.postedAt && dates.has(j.url)) j.postedAt = dates.get(j.url);
-  ranked.sort(byNewest);
+  ranked.sort(byBestMatch);
 
   return { jobs: ranked, roles: me.roles, country: found.country, via, searched: found.searched || [] };
 }
