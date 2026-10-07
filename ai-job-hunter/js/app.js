@@ -1106,76 +1106,336 @@ function field(label, input, hint) {
 }
 
 // ---------------------------------------------------------------------------
-// Tracker (kanban)
+// Applications: pipeline summary, board and list views
 // ---------------------------------------------------------------------------
 
-function renderTracker() {
-  const filter = h('input', { type: 'search', placeholder: 'Filter by title or company', 'aria-label': 'Filter' });
-  const board = h('div', { class: 'board' });
+const DAY_MS = 864e5;
+const ICON_BOARD = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>';
+const ICON_LIST = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>';
+const svg = (markup) => {
+  const span = h('span', { class: 'ico', 'aria-hidden': 'true' });
+  span.innerHTML = markup;
+  return span;
+};
 
-  function draw() {
-    const term = filter.value.trim().toLowerCase();
-    const jobs = Object.values(store.get().jobs).filter((j) => !term || `${j.title} ${j.company}`.toLowerCase().includes(term));
-    board.replaceChildren(
+/** When something last happened to a tracked job. */
+function lastActivity(job) {
+  return Math.max(job.savedAt || 0, job.appliedAt || 0, ...(job.history || []).map((e) => e.at || 0));
+}
+
+function daysAgo(ts) {
+  const d = Math.max(0, Math.floor((Date.now() - ts) / DAY_MS));
+  return d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
+/** What the candidate should do next for a job in its current stage. */
+function nextStep(job) {
+  const since = Date.now() - (job.appliedAt || lastActivity(job));
+  switch (job.status) {
+    case 'saved':
+      return { text: 'Tailor your CV and apply', tab: 'docs' };
+    case 'applied':
+      return since > 7 * DAY_MS ? { text: 'Follow up with the recruiter', tone: 'warn' } : { text: 'Waiting for a reply' };
+    case 'interview':
+      return { text: 'Practise for the interview', tab: 'prep', tone: 'accent' };
+    case 'offer':
+      return { text: 'Review and negotiate the offer', tone: 'ok' };
+    default:
+      return { text: 'Ask for feedback, keep going' };
+  }
+}
+
+/** A company's initial on a tint picked from its name, like the logo slot on big job sites. */
+function companyAvatar(name, size = '') {
+  const text = String(name || '?').trim();
+  let hash = 0;
+  for (const c of text) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+  return h('span', { class: `co-avatar ${size}`, style: `--co-h:${hash % 360}`, 'aria-hidden': 'true' }, (text.match(/[A-Za-zÀ-ÿ0-9]/)?.[0] || '?').toUpperCase());
+}
+
+function renderTracker() {
+  let mode = 'board';
+  try {
+    mode = localStorage.getItem('ajh:trackerView') || 'board';
+  } catch {}
+  let stage = '';
+  let sort = 'recent';
+  const search = h('input', { type: 'search', placeholder: 'Search title or company', 'aria-label': 'Search applications' });
+  const sortSel = h(
+    'select',
+    { 'aria-label': 'Sort by', class: 'sort-select' },
+    h('option', { value: 'recent' }, 'Recently updated'),
+    h('option', { value: 'match' }, 'Best match'),
+    h('option', { value: 'company' }, 'Company A–Z'),
+  );
+  const modeBtn = (id, label, icon) => {
+    const b = h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(mode === id) }, svg(icon), h('span', {}, label));
+    b.addEventListener('click', () => {
+      mode = id;
+      try {
+        localStorage.setItem('ajh:trackerView', id);
+      } catch {}
+      draw();
+    });
+    return b;
+  };
+  const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'View' });
+  const stats = h('section', { class: 'app-pipeline', 'aria-label': 'Pipeline summary' });
+  const toolbar = h('div', { class: 'tracker-toolbar' });
+  const content = h('div', { class: 'tracker-content' });
+
+  const SORTS = {
+    recent: (a, b) => lastActivity(b) - lastActivity(a),
+    match: (a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1) || lastActivity(b) - lastActivity(a),
+    company: (a, b) => String(a.company || '').localeCompare(String(b.company || '')) || String(a.title).localeCompare(String(b.title)),
+  };
+
+  function move(job, to) {
+    store.setStatus(job.id, to);
+    toast(`Moved to ${STATUSES.find((x) => x.id === to).label}`);
+    draw();
+  }
+
+  function drawStats(all) {
+    const n = (id) => all.filter((j) => j.status === id).length;
+    const applied = all.filter((j) => j.appliedAt || ['applied', 'interview', 'offer', 'rejected'].includes(j.status)).length;
+    const heard = n('interview') + n('offer') + n('rejected');
+    const thisWeek = all.filter((j) => j.appliedAt && Date.now() - j.appliedAt < 7 * DAY_MS).length;
+    const tile = (label, value, sub, cls = '') =>
+      h('div', { class: `stat ${cls}` }, h('span', { class: 'stat-label' }, label), h('strong', { class: 'stat-value' }, value), h('span', { class: 'stat-sub' }, sub));
+    stats.replaceChildren(
+      h(
+        'div',
+        { class: 'stat-row' },
+        tile('Tracked', String(all.length), `${n('saved')} saved to apply`),
+        tile('Applied', String(applied), thisWeek ? `${thisWeek} this week` : 'none this week'),
+        tile('Interviews', String(n('interview') + n('offer')), n('interview') ? `${n('interview')} in progress` : 'none in progress', n('interview') + n('offer') ? 'is-interview' : ''),
+        tile('Offers', String(n('offer')), n('offer') ? 'congratulations' : 'keep going', n('offer') ? 'is-offer' : ''),
+        tile('Response rate', applied ? `${Math.round((heard / applied) * 100)}%` : '–', applied ? `${heard} of ${applied} replied` : 'apply to see it'),
+      ),
+      all.length
+        ? h(
+            'div',
+            { class: 'pipe-bar', role: 'img', 'aria-label': STATUSES.map((s) => `${s.label} ${n(s.id)}`).join(', ') },
+            ...STATUSES.filter((s) => n(s.id)).map((s) => h('span', { class: `status-${s.id}`, style: `flex:${n(s.id)}`, title: `${s.label}: ${n(s.id)}` })),
+          )
+        : '',
+    );
+  }
+
+  function menuFor(job) {
+    const menu = h('details', { class: 'card-menu' });
+    const list = h('div', { class: 'menu', role: 'menu' });
+    list.append(h('p', { class: 'menu-label' }, 'Move to'));
+    for (const s of STATUSES) {
+      if (s.id === job.status) continue;
+      const b = h('button', { type: 'button', role: 'menuitem', class: `status-${s.id}` }, h('span', { class: 'dot' }), s.label);
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        move(job, s.id);
+      });
+      list.append(b);
+    }
+    const open = h('a', { role: 'menuitem', href: `#/job/${encodeURIComponent(job.id)}` }, 'Open job');
+    const remove = confirmButton('Remove', 'Tap again to remove', () => {
+      store.removeJob(job.id);
+      toast('Job removed');
+      draw();
+    }, 'menu-danger');
+    list.append(h('hr'), open, job.url ? h('a', { role: 'menuitem', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'View posting ↗') : '', remove);
+    menu.append(h('summary', { 'aria-label': `Actions for ${job.title}`, title: 'Actions' }, '⋯'), list);
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    // Float the menu over the page (columns scroll, so it would be clipped),
+    // below the button, or above it when there is no room underneath.
+    menu.addEventListener('toggle', () => {
+      if (!menu.open) return;
+      for (const d of view.querySelectorAll('details.card-menu[open]')) if (d !== menu) d.open = false;
+      const r = menu.firstChild.getBoundingClientRect();
+      const height = list.offsetHeight;
+      const below = r.bottom + 6 + height < innerHeight;
+      list.style.left = `${Math.max(8, Math.min(r.right - list.offsetWidth, innerWidth - list.offsetWidth - 8))}px`;
+      list.style.top = `${below ? r.bottom + 6 : Math.max(8, r.top - height - 6)}px`;
+    });
+    return menu;
+  }
+
+  function activityText(job) {
+    if (job.status === 'saved') return `Saved ${daysAgo(job.savedAt || Date.now())}`;
+    if (job.status === 'applied') return `Applied ${daysAgo(job.appliedAt || lastActivity(job))}`;
+    const at = [...(job.history || [])].reverse().find((e) => e.status === job.status)?.at || lastActivity(job);
+    return `${STATUSES.find((x) => x.id === job.status)?.label} · ${daysAgo(at)}`;
+  }
+
+  function card(job) {
+    const next = nextStep(job);
+    const href = `#/job/${encodeURIComponent(job.id)}`;
+    const el = h(
+      'article',
+      { class: 'app-card', draggable: 'true', 'data-id': job.id },
+      h(
+        'div',
+        { class: 'app-card-head' },
+        companyAvatar(job.company),
+        h('div', { class: 'app-card-title' }, h('a', { href, class: 'app-title' }, job.title), h('p', { class: 'app-company' }, [job.company, job.location].filter(Boolean).join(' · '))),
+        menuFor(job),
+      ),
+      h('div', { class: 'app-card-meta' }, job.match ? scorePill(job.match) : '', h('span', { class: 'app-when' }, activityText(job))),
+      h('div', { class: `next-step ${next.tone || ''}` }, h('span', { class: 'next-label' }, 'Next'), next.text),
+    );
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('a, button, details')) return;
+      if (next.tab) {
+        try {
+          sessionStorage.setItem('ajh:tab', next.tab);
+        } catch {}
+      }
+      go(`/job/${encodeURIComponent(job.id)}`);
+    });
+    el.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', job.id);
+      e.dataTransfer.effectAllowed = 'move';
+      el.classList.add('dragging');
+    });
+    el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    return el;
+  }
+
+  function board(jobs) {
+    return h(
+      'div',
+      { class: 'board' },
       ...STATUSES.map((s) => {
-        const items = jobs.filter((j) => j.status === s.id).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+        const items = jobs.filter((j) => j.status === s.id);
         const col = h(
           'section',
-          { class: `column status-${s.id}`, 'data-status': s.id },
-          h('header', {}, h('h2', {}, s.label), h('span', { class: 'count' }, String(items.length))),
-          h('div', { class: 'column-body' }, ...(items.length ? items.map(trackerCard) : [h('p', { class: 'muted small empty-col' }, 'Drop jobs here')])),
+          { class: `column status-${s.id}`, 'data-status': s.id, 'aria-label': s.label },
+          h(
+            'header',
+            { class: 'column-head' },
+            h('span', { class: 'dot' }),
+            h('h2', {}, s.label),
+            h('span', { class: 'count' }, String(items.length)),
+            s.id === 'saved' ? h('a', { class: 'col-add', href: '#/add', title: 'Add a job', 'aria-label': 'Add a job' }, '+') : '',
+          ),
+          h('div', { class: 'column-body' }, ...(items.length ? items.map(card) : [h('div', { class: 'empty-col' }, s.id === 'saved' ? 'Save jobs from search to start' : 'Drag a card here')])),
         );
         col.addEventListener('dragover', (e) => {
           e.preventDefault();
           col.classList.add('drop');
         });
-        col.addEventListener('dragleave', () => col.classList.remove('drop'));
+        col.addEventListener('dragleave', (e) => {
+          if (!col.contains(e.relatedTarget)) col.classList.remove('drop');
+        });
         col.addEventListener('drop', (e) => {
           e.preventDefault();
           col.classList.remove('drop');
           const id = e.dataTransfer.getData('text/plain');
-          if (id) {
-            store.setStatus(id, s.id);
-            draw();
-          }
+          const job = store.get().jobs[id];
+          if (job && job.status !== s.id) move(job, s.id);
         });
         return col;
       }),
     );
   }
 
-  function trackerCard(job) {
-    const select = h('select', { 'aria-label': 'Status' }, ...STATUSES.map((s) => h('option', { value: s.id, selected: s.id === job.status }, s.label)));
-    select.addEventListener('change', () => {
-      store.setStatus(job.id, select.value);
-      draw();
+  function list(jobs) {
+    const shown = stage ? jobs.filter((j) => j.status === stage) : jobs;
+    const chip = (id, label, count) => {
+      const b = h('button', { type: 'button', class: `chip ${id ? `status-${id}` : ''}`, 'aria-pressed': String(stage === id) }, id ? h('span', { class: 'dot' }) : '', label, h('span', { class: 'chip-count' }, String(count)));
+      b.addEventListener('click', () => {
+        stage = id;
+        draw();
+      });
+      return b;
+    };
+    const rows = shown.map((job) => {
+      const next = nextStep(job);
+      const select = h('select', { class: `stage-select status-${job.status}`, 'aria-label': `Stage of ${job.title}` }, ...STATUSES.map((s) => h('option', { value: s.id, selected: s.id === job.status }, s.label)));
+      select.addEventListener('change', () => move(job, select.value));
+      const tr = h(
+        'tr',
+        { tabindex: '0' },
+        h('td', { class: 'cell-role' }, h('div', { class: 'role-wrap' }, companyAvatar(job.company, 'sm'), h('div', {}, h('a', { href: `#/job/${encodeURIComponent(job.id)}`, class: 'app-title' }, job.title), h('span', { class: 'app-company' }, job.company || '')))),
+        h('td', { class: 'cell-stage', 'data-label': 'Stage' }, select),
+        h('td', { class: 'cell-match', 'data-label': 'Match' }, job.match ? scorePill(job.match) : h('span', { class: 'muted' }, '–')),
+        h('td', { class: 'cell-loc', 'data-label': 'Location' }, job.location || h('span', { class: 'muted' }, '–')),
+        h('td', { class: 'cell-when', 'data-label': 'Activity' }, activityText(job)),
+        h('td', { class: 'cell-next', 'data-label': 'Next' }, h('span', { class: `next-step inline ${next.tone || ''}` }, next.text)),
+        h('td', { class: 'cell-menu' }, menuFor(job)),
+      );
+      const open = (e) => {
+        if (e.target.closest('a, button, select, details')) return;
+        go(`/job/${encodeURIComponent(job.id)}`);
+      };
+      tr.addEventListener('click', open);
+      tr.addEventListener('keydown', (e) => e.key === 'Enter' && open(e));
+      return tr;
     });
-    const card = h(
-      'article',
-      { class: 'tracker-card', draggable: 'true' },
-      h('a', { href: `#/job/${encodeURIComponent(job.id)}` }, h('strong', {}, job.title)),
-      h('p', { class: 'muted small' }, job.company),
-      job.match && scorePill(job.match),
-      h(
-        'div',
-        { class: 'tracker-card-foot' },
-        h('span', { class: 'muted small' }, job.appliedAt ? `Applied ${fmtDate(job.appliedAt)}` : `Saved ${fmtDate(job.savedAt)}`),
-        select,
-      ),
+    return h(
+      'div',
+      { class: 'list-view' },
+      h('div', { class: 'chip-row stage-chips', role: 'group', 'aria-label': 'Filter by stage' }, chip('', 'All', jobs.length), ...STATUSES.map((s) => chip(s.id, s.label, jobs.filter((j) => j.status === s.id).length))),
+      shown.length
+        ? h(
+            'div',
+            { class: 'table-wrap' },
+            h(
+              'table',
+              { class: 'app-table' },
+              h('thead', {}, h('tr', {}, ...['Role', 'Stage', 'Match', 'Location', 'Activity', 'Next step', ''].map((t) => h('th', { scope: 'col' }, t)))),
+              h('tbody', {}, ...rows),
+            ),
+          )
+        : h('p', { class: 'muted empty-col' }, 'No applications in this stage.'),
     );
-    card.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData('text/plain', job.id);
-      card.classList.add('dragging');
-    });
-    card.addEventListener('dragend', () => card.classList.remove('dragging'));
-    return card;
   }
 
-  filter.addEventListener('input', debounce(draw, 120));
+  function emptyState() {
+    return h(
+      'section',
+      { class: 'card tracker-empty' },
+      svg(ICON_BOARD),
+      h('h2', {}, 'Track every application in one place'),
+      h('p', { class: 'muted' }, 'Save jobs from your matches or search, then move them from Saved to Applied, Interview and Offer. Vora tells you the next step for each one.'),
+      h('div', { class: 'row' }, h('a', { class: 'btn primary', href: '#/find' }, 'Find jobs'), h('a', { class: 'btn', href: '#/add' }, 'Add a job')),
+    );
+  }
+
+  function draw() {
+    const all = Object.values(store.get().jobs);
+    drawStats(all);
+    seg.replaceChildren(modeBtn('board', 'Board', ICON_BOARD), modeBtn('list', 'List', ICON_LIST));
+    toolbar.replaceChildren(h('label', { class: 'search-field' }, svg(ICON_SEARCH), search), h('div', { class: 'toolbar-right' }, sortSel, seg));
+    toolbar.hidden = !all.length;
+    if (!all.length) return content.replaceChildren(emptyState());
+    const term = search.value.trim().toLowerCase();
+    const jobs = all.filter((j) => !term || `${j.title} ${j.company} ${j.location || ''}`.toLowerCase().includes(term)).sort(SORTS[sort]);
+    content.replaceChildren(mode === 'list' ? list(jobs) : board(jobs));
+  }
+
+  search.addEventListener('input', debounce(draw, 120));
+  sortSel.addEventListener('change', () => {
+    sort = sortSel.value;
+    draw();
+  });
+  // Close an open card menu when clicking elsewhere.
+  const closeMenus = (e) => {
+    if (!view.contains(stats)) return document.removeEventListener('click', closeMenus);
+    for (const d of view.querySelectorAll('details.card-menu[open]')) if (!d.contains(e.target)) d.open = false;
+  };
+  document.addEventListener('click', closeMenus);
+  // A floating menu would drift away from its card on scroll, so scrolling closes it.
+  const closeOnScroll = () => {
+    if (!view.contains(stats)) return removeEventListener('scroll', closeOnScroll, true);
+    for (const d of view.querySelectorAll('details.card-menu[open]')) d.open = false;
+  };
+  addEventListener('scroll', closeOnScroll, true);
+
   view.append(
-    pageHeader('Applications', 'Drag cards between columns, or use the dropdown on each card.', h('a', { class: 'btn', href: '#/add' }, '+ Add job')),
-    h('div', { class: 'toolbar' }, filter),
-    board,
+    pageHeader('Applications', 'Your job search pipeline, from saved to offer.', h('a', { class: 'btn primary', href: '#/add' }, '+ Add job')),
+    stats,
+    toolbar,
+    content,
   );
   draw();
 }
