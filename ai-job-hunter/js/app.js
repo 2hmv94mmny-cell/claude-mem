@@ -615,40 +615,92 @@ function renderFind() {
     toast('Allow this page to use Claude to search job sites.');
   }
 
+  const NO_RESULTS = 'No open postings found for this search';
+
+  // Results appear as each job site answers; the AI pass, Indeed and the extra
+  // CV matches run alongside and add their jobs as soon as they have them.
   async function aiSearch() {
     const p = params();
+    const run = (session.searchRun = Symbol('search'));
     session.query = p;
     session.extraRun = null;
     session.indeedRun = null;
     session.datesRun = null;
+    session.results = [];
+    session.scores = {};
+    session.examples = false;
+    session.more = false;
+    session.filter = '';
+    session.selected = null;
+    session.picked = false;
+    session.errors = [];
+    session.searching = `Searching job sites${p.location ? ` in ${p.location}` : ''}…`;
     bar.submit.disabled = true;
     bar.submit.textContent = 'Searching…';
     results.replaceChildren(skeleton());
     detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Searching job sites…'));
-    status.textContent = `Searching job sites${p.location ? ` in ${p.location}` : ''}. This usually takes under a minute.`;
+    detail.dataset.sig = '';
+    status.textContent = session.searching;
     const ctl = newAbort();
-    try {
-      const found = await ai.searchEverywhere(p, { onText: (t) => (status.textContent = t), signal: ctl.signal, rank: Boolean(store.get().profile.cv.trim()) });
-      const at = Date.now();
-      const jobs = onlyIn(found.jobs, p).map((j) => ({ ...j, foundAt: at })).sort(byBestMatch);
-      session.results = jobs;
-      session.scores = Object.fromEntries(jobs.filter((j) => j.match).map((j) => [j.id, j.match]));
-      session.examples = false;
-      session.more = false;
-      session.filter = '';
-      session.selected = jobs[0]?.id;
-      session.errors = jobs.length ? [] : ['No open postings found for this search'];
-    } catch (err) {
-      if (ctl.signal.aborted) return;
-      session.errors = [err.message];
-    } finally {
-      bar.submit.disabled = false;
-      bar.submit.textContent = 'Search';
-    }
-    drawResults();
-    addDates(ctl.signal);
+    const live = () => session.searchRun === run && results.isConnected;
     addIndeed(p, ctl.signal);
     addCvMatches(p);
+    try {
+      const found = await ai.searchEverywhere(p, {
+        onText: (t) => {
+          if (!live()) return;
+          session.searching = t;
+          drawStatus();
+        },
+        onFound: (jobs) => live() && mergeMain(jobs, p),
+        signal: ctl.signal,
+        rank: Boolean(store.get().profile.cv.trim()),
+      });
+      if (!live()) return;
+      mergeMain(found.jobs, p);
+    } catch (err) {
+      if (ctl.signal.aborted || !live()) return;
+      if (!session.results.some((j) => !j.extra)) session.errors = [err.message];
+    } finally {
+      if (session.searchRun === run) {
+        session.searching = '';
+        bar.submit.disabled = false;
+        bar.submit.textContent = 'Search';
+      }
+    }
+    if (!session.results.some((j) => !j.extra) && !session.errors.length) session.errors = [NO_RESULTS];
+    drawResults();
+    addDates(ctl.signal);
+  }
+
+  // Add jobs to the main results: only the searched place, no repeats, scored
+  // against the CV where the source did not score them, best match first.
+  function mergeMain(jobs, p) {
+    const profile = store.get().profile;
+    const me = readProfile(profile);
+    const place = p.remoteOnly ? 'remote' : p.location || profile.location;
+    const at = Date.now();
+    const main = session.results.filter((j) => !j.extra);
+    const fresh = [];
+    for (const j of onlyIn(jobs, p)) {
+      const seen = [...main, ...fresh].some((r) => (r.url && r.url === j.url) || sameJob(r, j) || (norm(r.title) === norm(j.title) && norm(r.company) === norm(j.company)));
+      if (seen) continue;
+      let match = j.match || session.scores[j.id];
+      if (!match && (me.roles.length || me.skills.size)) {
+        match = scoreJob(j, me, profile.prefs || {}, place);
+        if (match.score < 30) continue; // clearly another field or level
+      }
+      const { _text, ...job } = j;
+      void _text;
+      fresh.push({ foundAt: at, ...job, ...(match ? { match } : {}) });
+    }
+    if (!fresh.length) return false;
+    for (const j of fresh) if (j.match) session.scores[j.id] = j.match;
+    const extras = session.results.filter((j) => j.extra && !fresh.some((f) => f.url === j.url || sameJob(f, j)));
+    session.results = [...[...main, ...fresh].sort(byBestMatch), ...extras];
+    session.errors = session.errors.filter((e) => e !== NO_RESULTS);
+    drawResults();
+    return true;
   }
 
   // Most sites put the posting date on the job page, not in search results:
@@ -677,31 +729,15 @@ function renderFind() {
     if (!query) return;
     const run = (session.indeedRun = Symbol('indeed'));
     try {
-      const found = onlyIn(await indeedJobs(query, place, { signal }), p);
+      const found = await indeedJobs(query, place, { signal });
       if (session.indeedRun !== run || !results.isConnected || !found.length) return;
-      const me = readProfile(profile);
-      const fresh = found
-        .filter((j) => !session.results.some((r) => sameJob(r, j) || (norm(r.title) === norm(j.title) && norm(r.company) === norm(j.company))))
-        .map((j) => {
-          const { _text, ...job } = j;
-          const match = me.roles.length || me.skills.size ? scoreJob(j, me, profile.prefs || {}, place) : undefined;
-          void _text;
-          return match ? { ...job, match } : job;
-        });
-      if (!fresh.length) return;
       // Indeed hides the posting date; the same job on another site often shows it.
       const known = [...(store.get().feed?.jobs || []), ...(store.get().more?.jobs || []), ...session.results].filter((k) => jobPostedAt(k));
-      for (const j of fresh) {
+      for (const j of found) {
         const twin = known.find((k) => sameJob(k, j));
         if (twin) j.postedAt = jobPostedAt(twin);
       }
-      // Into the main results (not the extra CV section), best match first, then newest.
-      const main = [...session.results.filter((j) => !j.extra), ...fresh].sort(byBestMatch);
-      session.results = [...main, ...session.results.filter((j) => j.extra)];
-      for (const j of fresh) if (j.match) session.scores[j.id] = j.match;
-      session.errors = session.errors.filter((e) => e !== 'No open postings found for this search');
-      if (!session.selected) session.selected = session.results[0]?.id;
-      drawResults();
+      mergeMain(found, p);
     } catch {
       // Indeed is a bonus source; the search results stand on their own.
     }
@@ -745,8 +781,7 @@ function renderFind() {
       session.results = [...session.results.filter((j) => !j.extra), ...extra];
       for (const j of extra) if (j.match) session.scores[j.id] = j.match;
       session.extraPlace = p.remoteOnly ? 'remote' : place;
-      if (!session.selected) session.selected = session.results[0]?.id;
-      session.errors = session.errors.filter((e) => e !== 'No open postings found for this search');
+      session.errors = session.errors.filter((e) => e !== NO_RESULTS);
       drawResults();
     } catch {
       // Extra matches are a bonus; the search results stand on their own.
@@ -755,6 +790,9 @@ function renderFind() {
 
   async function runBoardSearch() {
     const p = params();
+    session.searchRun = null;
+    session.searching = '';
+    session.picked = false;
     session.query = p;
     session.extraRun = null;
     status.textContent = 'Searching free job boards…';
@@ -765,7 +803,7 @@ function renderFind() {
     session.more = false;
     session.results = jobs;
     session.scores = {};
-    session.errors = jobs.length ? found.errors.filter((e) => e !== 'Showing demo listings') : ['No open postings found for this search'];
+    session.errors = jobs.length ? found.errors.filter((e) => e !== 'Showing demo listings') : [NO_RESULTS];
     session.filter = '';
     session.selected = jobs[0]?.id;
     drawResults();
@@ -786,10 +824,14 @@ function renderFind() {
         h('div', { class: 'empty card' }, h('p', {}, 'Search above, or add your CV and city in your profile to see jobs picked for you here.'), h('a', { class: 'btn', href: '#/profile' }, 'Open profile')),
       );
       detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Pick a job to see the details here.'));
+      detail.dataset.sig = '';
       return;
     }
     const feed = store.get().feed;
     const key = JSON.stringify(['more-v1', currentLanguage(), feed?.key || '', where.toLowerCase()]);
+    session.searchRun = null;
+    session.searching = '';
+    session.picked = false;
     const show = (list) => {
       const jobs = [...list].sort(byBestMatch);
       session.results = jobs;
@@ -819,22 +861,32 @@ function renderFind() {
     }
   }
 
+  // The line above the results; while a search runs, what it is doing now.
+  function drawStatus() {
+    const all = session.results;
+    const n = all.length;
+    const sites = new Set(all.map((j) => j.source)).size;
+    const text = session.examples
+      ? 'Example listings. Search to see live openings near you.'
+      : session.more && n
+        ? `${n} more jobs for you near ${session.more} that are not on your home page, best match first`
+      : session.errors.length && !n
+        ? session.errors.join(' · ')
+        : `${n} job${n === 1 ? '' : 's'}${sites > 1 ? ` from ${sites} sites` : ''}${all.some((j) => session.scores[j.id] || j.match) ? ', best match first' : n > 1 ? ', newest first' : ''}` +
+          (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
+    if (!session.searching) return void (status.textContent = text);
+    if (!n) return void (status.textContent = session.searching);
+    status.replaceChildren(h('span', {}, text), ' · ', h('span', { class: 'searching-more' }, 'Still searching, more jobs will appear…'));
+  }
+
   function drawResults() {
     const all = session.results;
     const counts = new Map();
     for (const j of all) counts.set(j.source, (counts.get(j.source) || 0) + 1);
     if (session.filter && !counts.has(session.filter)) session.filter = '';
     const shown = session.filter ? all.filter((j) => j.source === session.filter) : all;
-
     const n = all.length;
-    status.textContent = session.examples
-      ? 'Example listings. Search to see live openings near you.'
-      : session.more && n
-        ? `${n} more jobs for you near ${session.more} that are not on your home page, best match first`
-      : session.errors.length && !n
-        ? session.errors.join(' · ')
-        : `${n} job${n === 1 ? '' : 's'}${counts.size > 1 ? ` from ${counts.size} sites` : ''}${all.some((j) => session.scores[j.id] || j.match) ? ', best match first' : n > 1 ? ', newest first' : ''}` +
-          (session.errors.length ? ` · ${session.errors.join(' · ')}` : '');
+    drawStatus();
 
     const chip = (label, value, c) => {
       const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(session.filter === value) }, label, h('span', { class: 'chip-count' }, String(c)));
@@ -849,12 +901,15 @@ function renderFind() {
       ...(counts.size > 1 && !session.examples ? [chip('All sites', '', n), ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => chip(k, k, c))] : []),
     );
 
+    if (!shown.length && session.searching) return; // keep the placeholder until the first jobs arrive
     if (!shown.length) {
       results.replaceChildren(h('div', { class: 'empty card' }, h('p', {}, 'No jobs to show. Try broader keywords, or open one of the job sites below.')));
       detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Pick a job to see the details here.'));
+      detail.dataset.sig = '';
       return;
     }
-    if (!shown.some((j) => j.id === session.selected)) session.selected = shown[0].id;
+    // Until the visitor picks a job, the side panel shows the top result.
+    if (!session.picked || !shown.some((j) => j.id === session.selected)) session.selected = shown[0].id;
     // Search results first, then the extra CV matches under their own heading.
     const firstExtra = shown.findIndex((j) => j.extra);
     const cards = shown.map(jobCard);
@@ -863,11 +918,17 @@ function renderFind() {
       cards.splice(firstExtra, 0, h('div', { class: 'results-divider', role: 'presentation' }, h('strong', {}, `Also matching your CV in ${session.extraPlace}`), h('span', { class: 'small muted' }, `${count} more, not on your home page`)));
     }
     results.replaceChildren(...cards);
-    drawDetail();
+    // Leave the open job alone while new results come in, so reading it is not interrupted.
+    const sig = `${session.selected}|${session.scores[session.selected]?.score ?? ''}`;
+    if (detail.dataset.sig !== sig) {
+      detail.dataset.sig = sig;
+      drawDetail();
+    }
   }
 
   function select(job) {
     session.selected = job.id;
+    session.picked = true;
     for (const c of results.children) c.classList.toggle('selected', c.dataset.id === job.id);
     drawDetail();
     detail.scrollTop = 0;
@@ -921,7 +982,10 @@ function renderFind() {
 
   function drawDetail() {
     const job = session.results.find((j) => j.id === session.selected);
-    if (!job) return detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Pick a job to see the details here.'));
+    if (!job) {
+      detail.dataset.sig = '';
+      return detail.replaceChildren(h('div', { class: 'detail-empty' }, 'Pick a job to see the details here.'));
+    }
     const score = session.scores[job.id];
     const open = (tab) => () => {
       try {

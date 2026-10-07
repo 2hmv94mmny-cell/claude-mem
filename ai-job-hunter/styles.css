@@ -452,6 +452,10 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .find-tools .chip-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; padding-bottom: 2px; }
 .find-tools .chip-row::-webkit-scrollbar { display: none; }
 .find-status { font-size: var(--fs-sm); color: var(--muted); margin: var(--sp-2) 0 var(--sp-3); }
+.searching-more { color: var(--accent-text); font-weight: 600; }
+.searching-more::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: 1px; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .searching-more::before { animation: none; } }
 .split { display: grid; grid-template-columns: minmax(340px, 440px) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
 @media (max-width: 1023px) { .split { grid-template-columns: 1fr; } .split .detail-pane { display: none; } }
 .results { display: grid; gap: var(--sp-3); }

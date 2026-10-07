@@ -295,7 +295,12 @@ const HONESTY =
  * location (plus LinkedIn, Glassdoor and company careers pages).
  * @returns {Promise<{jobs: object[], country: string|null}>}
  */
-export async function searchEverywhere({ query, location, remoteOnly }, { onText, signal, rank = false } = {}) {
+/**
+ * `onFound(jobs)` is called with the postings of each job site as soon as
+ * that site answers (read on the device, no AI), so they can be shown while
+ * the rest of the search is still running.
+ */
+export async function searchEverywhere({ query, location, remoteOnly }, { onText, onFound, signal, rank = false } = {}) {
   const p = store.get().profile;
   const what = query || p.targetRoles.split(',')[0] || p.headline || 'jobs that fit my profile';
   const where = location || (remoteOnly ? 'remote' : p.location) || '';
@@ -304,7 +309,7 @@ export async function searchEverywhere({ query, location, remoteOnly }, { onText
   const prov = activeProvider();
   let jobs =
     caps.mcp && (caps.sample || prov)
-      ? await viewerSearch(what, where, remoteOnly, live, { onText, signal, rank })
+      ? await viewerSearch(what, where, remoteOnly, live, { onText, onFound, signal, rank })
       : prov && !prov.webSearch
         ? await boardSearch(what, where, remoteOnly, { onText, signal, rank })
         : await sdkSearch(what, where, remoteOnly, live, { onText, signal, rank });
@@ -353,15 +358,24 @@ function placeRule(where, remoteOnly) {
 
 // Viewer route: search each portal with the viewer's Exa connector in
 // parallel, then have Claude pick out the real postings.
-async function viewerSearch(what, where, remoteOnly, portals, { onText, signal, rank }) {
+async function viewerSearch(what, where, remoteOnly, portals, { onText, onFound, signal, rank }) {
   if (!caps.mcp) throw new Error('Live job search needs the Exa connector. Add it in claude.ai Settings → Connectors, then reload.');
   const place = where ? ` in ${where}` : '';
   // Worded exactly like the home feed's searches, so repeats come from the cache.
   const searches = portalQueries(what, where, portals);
   onText?.(`Searching ${portals.length} job portals${place}…`);
+  const city = String(where || '').split(',')[0].trim();
   const settled = await Promise.allSettled(
     searches.map((q) =>
-      caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { query: q.query, objective: q.objective, numResults: RESULTS_PER_SEARCH }, { signal }),
+      caps.mcp.callTool(SEARCH_SERVER, SEARCH_TOOL, { query: q.query, objective: q.objective, numResults: RESULTS_PER_SEARCH }, { signal }).then((r) => {
+        // Show this site's postings now; the AI pass below adds what it finds later.
+        if (onFound) {
+          try {
+            onFound(parseSearchResults(typeof r.payload === 'string' ? r.payload : JSON.stringify(r.payload ?? r.content), { city }));
+          } catch {}
+        }
+        return r;
+      }),
     ),
   );
   const blocks = [];
