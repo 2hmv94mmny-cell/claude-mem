@@ -2003,6 +2003,154 @@ function renderTracker() {
 // Documents: the main CV and a general cover letter, edited like a Word page
 // ---------------------------------------------------------------------------
 
+// ----- template preview: the whole page in a template before you switch to it -----
+// render(id, accent) draws the user's own document in that template; onUse(id, accent) applies it.
+function templatePreview({ start, current, currentAccent, render, onUse, list = TEMPLATES }) {
+  document.querySelector('.tp')?.remove();
+  let i = Math.max(0, list.findIndex((x) => x.id === start));
+  let color = start === current ? currentAccent : '';
+  let dir = 0;
+  const back = document.activeElement;
+  const close = () => {
+    root.classList.add('closing');
+    document.removeEventListener('keydown', onKey, true);
+    document.documentElement.classList.remove('tp-lock');
+    setTimeout(() => root.remove(), 180);
+    back?.focus?.({ preventScroll: true });
+  };
+  const go = (step) => {
+    i = (i + step + list.length) % list.length;
+    color = list[i].id === current ? currentAccent : '';
+    dir = step;
+    draw();
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') (e.preventDefault(), e.stopPropagation(), close());
+    else if (e.key === 'ArrowRight' && !e.target.closest?.('input,textarea,[contenteditable="true"]')) (e.preventDefault(), go(1));
+    else if (e.key === 'ArrowLeft' && !e.target.closest?.('input,textarea,[contenteditable="true"]')) (e.preventDefault(), go(-1));
+  };
+  const btn = (cls, label, html, run) => {
+    const b = h('button', { type: 'button', class: cls, 'aria-label': label, title: label });
+    b.innerHTML = html;
+    b.addEventListener('click', run);
+    return b;
+  };
+  const ARROW_L = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+  const ARROW_R = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+  const X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+  const name = h('h2', { class: 'tp-name', id: 'tp-name' });
+  const badge = h('span', { class: 'tp-badge' });
+  const count = h('span', { class: 'tp-count' });
+  const stage = h('div', { class: 'tp-stage' });
+  const frame = h('div', { class: 'tp-frame' });
+  stage.append(frame);
+  const blurb = h('p', { class: 'tp-blurb' });
+  const swatches = h('div', { class: 'tp-swatches', role: 'group', 'aria-label': 'Colour' });
+  const use = h('button', { type: 'button', class: 'btn primary tp-use' });
+  use.addEventListener('click', () => {
+    const x = list[i];
+    close();
+    onUse(x.id, color || '');
+  });
+  const strip = h('div', { class: 'tp-strip', role: 'radiogroup', 'aria-label': 'Template' });
+
+  const root = h(
+    'div',
+    { class: 'tp', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'tp-name' },
+    h('div', { class: 'tp-scrim' }),
+    h(
+      'div',
+      { class: 'tp-box' },
+      h('header', { class: 'tp-head' }, h('div', { class: 'tp-title' }, h('span', { class: 'tp-eyebrow' }, 'Template preview'), h('div', { class: 'tp-name-row' }, name, badge)), count, btn('icon-btn tp-close', 'Close', X, close)),
+      h('div', { class: 'tp-body' }, btn('tp-nav prev', 'Previous template', ARROW_L, () => go(-1)), stage, btn('tp-nav next', 'Next template', ARROW_R, () => go(1))),
+      strip,
+      h('footer', { class: 'tp-foot' }, h('div', { class: 'tp-info' }, blurb, swatches), h('div', { class: 'tp-actions' }, h('button', { type: 'button', class: 'btn tp-cancel' }, 'Cancel'), use)),
+    ),
+  );
+  root.querySelector('.tp-scrim').addEventListener('click', close);
+  root.querySelector('.tp-cancel').addEventListener('click', close);
+
+  // Swipe between templates on touch screens.
+  let sx = null, sy = 0;
+  stage.addEventListener('touchstart', (e) => ((sx = e.touches[0].clientX), (sy = e.touches[0].clientY)), { passive: true });
+  stage.addEventListener('touchend', (e) => {
+    if (sx == null) return;
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    sx = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx < 0 ? 1 : -1);
+  });
+
+  // Fit the A4 page: whole page on wide screens, full width on phones (scroll for the rest).
+  function fit() {
+    const pg = frame.querySelector('.cv-page');
+    if (!pg) return;
+    const w = stage.clientWidth - 8, hgt = stage.clientHeight - 8;
+    const s = window.innerWidth <= 700 ? w / 794 : Math.min(w / 794, hgt / 1123);
+    pg.style.transform = `scale(${s})`;
+    frame.style.width = `${794 * s}px`;
+    frame.style.height = `${Math.max(1123, pg.offsetHeight) * s}px`;
+  }
+
+  function draw() {
+    const x = list[i];
+    const col = accentFor(x, color);
+    name.textContent = x.name;
+    badge.textContent = x.ats ? 'ATS friendly' : 'Less ATS friendly';
+    badge.className = `tp-badge ${x.ats ? '' : 'warn'}`;
+    count.textContent = `${i + 1} / ${list.length}`;
+    blurb.textContent = x.blurb || '';
+    const pg = render(x.id, col);
+    frame.replaceChildren(pg);
+    frame.classList.remove('in-l', 'in-r');
+    void frame.offsetWidth;
+    if (dir) frame.classList.add(dir > 0 ? 'in-r' : 'in-l');
+    stage.scrollTop = 0;
+    fit();
+    swatches.replaceChildren(
+      ...(x.accents || []).map((c) => {
+        const sw = h('button', { type: 'button', class: 'swatch', style: `background:${c}`, 'aria-label': `Colour ${c}`, 'aria-pressed': String(col === c) });
+        sw.addEventListener('click', () => {
+          color = c;
+          dir = 0;
+          draw();
+        });
+        return sw;
+      }),
+    );
+    const same = x.id === current && col === accentFor(x, currentAccent);
+    use.textContent = same ? 'Keep this template' : x.id === current ? 'Use this colour' : 'Use this template';
+    for (const b of strip.children) {
+      const on = b.dataset.id === x.id;
+      b.setAttribute('aria-checked', String(on));
+      if (on) b.scrollIntoView({ block: 'nearest', inline: 'center', behavior: dir ? 'smooth' : 'auto' });
+    }
+  }
+
+  strip.append(
+    ...list.map((x, n) => {
+      const b = h('button', { type: 'button', role: 'radio', class: 'tp-chip', 'data-id': x.id, 'aria-checked': 'false' }, h('span', { class: 'tp-chip-thumb', 'aria-hidden': 'true' }, render(x.id, accentFor(x, x.id === current ? currentAccent : ''))), h('span', { class: 'tp-chip-name' }, x.name), x.id === current ? h('span', { class: 'tp-chip-now' }, 'Current') : '');
+      b.addEventListener('click', () => {
+        if (n === i) return;
+        dir = n > i ? 1 : -1;
+        i = n;
+        color = x.id === current ? currentAccent : '';
+        draw();
+      });
+      return b;
+    }),
+  );
+
+  document.body.append(root);
+  document.documentElement.classList.add('tp-lock');
+  document.addEventListener('keydown', onKey, true);
+  const ro = new ResizeObserver(() => fit());
+  ro.observe(stage);
+  draw();
+  requestAnimationFrame(() => (fit(), use.focus({ preventScroll: true })));
+  return root;
+}
+
 const ICON_UNDO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
 const ICON_REDO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>';
 const ICON_DOC = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>';
@@ -2498,7 +2646,18 @@ function renderDocuments(initialKind) {
           h('strong', {}, x.name),
           h('span', { class: `tpl-badge ${x.ats ? '' : 'warn'}` }, x.ats ? 'ATS friendly' : 'Less ATS friendly'),
         );
-        b.addEventListener('click', () => pick({ template: x.id }));
+        b.addEventListener('click', () =>
+          templatePreview({
+            start: x.id,
+            current: t.id,
+            currentAccent: accent(),
+            render: (id, c) => page(id, c),
+            onUse: (id, c) => {
+              if (id !== tplId()) pick({ template: id });
+              if (c && c !== accent()) pick({ accent: c });
+            },
+          }),
+        );
         return b;
       }),
     );
@@ -3045,6 +3204,26 @@ function renderDocuments(initialKind) {
       preview.classList.add('swap');
     };
     drawPreview();
+    // The full page in any of the templates, with the sample content.
+    const openPreview = (start) =>
+      templatePreview({
+        start,
+        current: tplId(),
+        currentAccent: accent(),
+        render: (id, c) => (isCV ? renderCV(sampleCV(), id, c, { font: fontId() }) : renderLetter(letterCV(), SAMPLE_LETTER, id, c, letterMeta(), { font: fontId() })),
+        onUse: (id, c) => {
+          if (isCV) saveMaster({ template: id, accent: c || '' });
+          else saveLetter({ template: id, accent: c || '' });
+          drawLooks();
+          drawPreview();
+        },
+      });
+    const zoomBtn = h('button', { type: 'button', class: 'ds-zoom', 'aria-label': 'See the full page' });
+    zoomBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>See full page</span>';
+    zoomBtn.addEventListener('click', () => openPreview(tplId()));
+    preview.addEventListener('click', () => openPreview(tplId()));
+    const allBtn = h('button', { type: 'button', class: 'ds-all' }, `See all ${TEMPLATES.length} templates`);
+    allBtn.addEventListener('click', () => openPreview(tplId()));
 
     // Look picker
     const looks = h('div', { class: 'ds-looks', role: 'radiogroup', 'aria-label': 'Template' });
@@ -3118,7 +3297,7 @@ function renderDocuments(initialKind) {
       h(
         'div',
         { class: 'ds-hero' },
-        h('div', { class: 'ds-stage' }, h('span', { class: 'ds-glow', 'aria-hidden': 'true' }), h('span', { class: 'ds-sheet back', 'aria-hidden': 'true' }), preview, h('span', { class: 'ds-live' }, h('i', { 'aria-hidden': 'true' }), 'Live preview')),
+        h('div', { class: 'ds-stage' }, h('span', { class: 'ds-glow', 'aria-hidden': 'true' }), h('span', { class: 'ds-sheet back', 'aria-hidden': 'true' }), preview, h('span', { class: 'ds-live' }, h('i', { 'aria-hidden': 'true' }), 'Live preview'), zoomBtn),
         h(
           'div',
           { class: 'ds-intro' },
@@ -3130,7 +3309,7 @@ function renderDocuments(initialKind) {
           h('ul', { class: 'ds-ticks' }, ...ticks.map((t) => h('li', {}, t))),
         ),
       ),
-      h('div', { class: 'ds-block' }, h('div', { class: 'ds-label-row' }, h('p', { class: 'ds-label' }, 'Choose a look'), h('span', { class: 'small muted' }, `${TEMPLATES.length} templates in the editor`)), looks),
+      h('div', { class: 'ds-block' }, h('div', { class: 'ds-label-row' }, h('p', { class: 'ds-label' }, 'Choose a look'), allBtn), looks),
     );
   }
 
@@ -4091,8 +4270,18 @@ function renderJob(id) {
               h('span', { class: `tpl-badge ${x.ats ? '' : 'warn'}` }, x.ats ? 'ATS friendly' : 'Less ATS friendly'),
             );
             b.addEventListener('click', () => {
-              cfg.pick({ template: x.id });
-              refresh();
+              const cur = getTemplate(cfg.tplId());
+              templatePreview({
+                start: x.id,
+                current: cur.id,
+                currentAccent: cfg.accent(),
+                render: (id, c) => cfg.page(id, c),
+                onUse: (id, c) => {
+                  if (id !== getTemplate(cfg.tplId()).id) cfg.pick({ template: id });
+                  if (c && c !== cfg.accent()) cfg.pick({ accent: c });
+                  refresh();
+                },
+              });
             });
             return b;
           }),

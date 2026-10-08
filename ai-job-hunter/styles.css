@@ -3196,3 +3196,83 @@ body.in-arena { overflow: hidden; }
   .ds-opt-text small { font-size: var(--fs-xs); }
   .ds-looks { margin: 0; padding: 4px 2px 10px; }
 }
+
+/* ===================================================================
+   Template preview: the whole page before switching (Canva / Word style)
+   =================================================================== */
+html.tp-lock, html.tp-lock body { overflow: hidden; }
+.tp { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 24px; }
+.tp-scrim { position: absolute; inset: 0; background: rgb(8 12 24 / .62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: tp-fade .2s ease both; }
+.tp-box { position: relative; width: min(1080px, 100%); height: min(940px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; background: var(--surface); color: var(--text); border-radius: 22px; box-shadow: 0 40px 100px -30px rgb(0 0 0 / .6), 0 0 0 1px var(--border); overflow: hidden; animation: tp-pop .32s cubic-bezier(.16, 1, .3, 1) both; }
+.tp.closing .tp-scrim { animation: tp-fade .18s ease reverse both; }
+.tp.closing .tp-box { animation: tp-pop .18s ease reverse both; }
+@keyframes tp-fade { from { opacity: 0; } }
+@keyframes tp-pop { from { opacity: 0; transform: translateY(18px) scale(.97); } }
+.tp-head { display: flex; align-items: center; gap: 14px; padding: 16px 18px 12px 22px; border-bottom: 1px solid var(--border); }
+.tp-title { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.tp-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.tp-name-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tp-name { margin: 0; font-size: 1.3rem; letter-spacing: -.02em; line-height: 1.2; }
+.tp-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; color: var(--ok); background: color-mix(in srgb, var(--ok-solid) 14%, transparent); }
+.tp-badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.tp-count { font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.tp-close { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+.tp-close svg, .tp-nav svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tp-body { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 18px 16px; min-height: 0; background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%), var(--surface-2); }
+.tp-stage { height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; display: grid; justify-items: center; align-content: start; padding: 4px; overscroll-behavior: contain; }
+.tp-frame { position: relative; flex: none; border-radius: 4px; background: #fff; box-shadow: 0 0 0 1px rgb(15 23 42 / .08), 0 30px 60px -28px rgb(15 23 42 / .55); overflow: hidden; }
+.tp-frame .cv-page { position: absolute; top: 0; left: 0; width: 794px; max-width: none; min-height: 1123px; margin: 0; transform-origin: top left; box-shadow: none; border-radius: 0; pointer-events: none; text-align: left; }
+.tp-frame.in-r { animation: tp-in-r .38s cubic-bezier(.16, 1, .3, 1); }
+.tp-frame.in-l { animation: tp-in-l .38s cubic-bezier(.16, 1, .3, 1); }
+@keyframes tp-in-r { from { opacity: 0; transform: translateX(40px); } }
+@keyframes tp-in-l { from { opacity: 0; transform: translateX(-40px); } }
+.tp-nav { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; box-shadow: var(--shadow-2, 0 6px 18px -10px rgb(0 0 0 / .4)); transition: transform .15s, background .15s; }
+.tp-nav:hover { transform: scale(1.06); background: var(--accent); border-color: var(--accent); color: #fff; }
+.tp-strip { display: flex; gap: 10px; overflow-x: auto; padding: 12px 18px; border-top: 1px solid var(--border); scrollbar-width: thin; scroll-snap-type: x proximity; }
+.tp-chip { position: relative; flex: none; display: grid; gap: 5px; justify-items: center; padding: 0; border: 0; background: none; font: inherit; color: var(--text-2); cursor: pointer; scroll-snap-align: center; }
+.tp-chip-thumb { position: relative; width: 62px; height: 88px; border-radius: 6px; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px var(--border); transition: box-shadow .15s, transform .15s; }
+.tp-chip-thumb .cv-page { position: absolute; top: 0; left: 0; width: 794px; max-width: none; min-height: 1123px; transform: scale(.0781); transform-origin: top left; box-shadow: none; border-radius: 0; pointer-events: none; }
+.tp-chip:hover .tp-chip-thumb { transform: translateY(-2px); }
+.tp-chip[aria-checked="true"] .tp-chip-thumb { box-shadow: 0 0 0 2.5px var(--accent); }
+.tp-chip-name { font-size: 11px; font-weight: 600; max-width: 72px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-chip[aria-checked="true"] .tp-chip-name { color: var(--accent-text); }
+.tp-chip-now { position: absolute; top: -4px; right: -6px; font-size: 9px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; padding: 2px 5px; border-radius: 999px; background: var(--text); color: var(--surface); }
+.tp-foot { display: flex; align-items: center; gap: 16px; padding: 14px 18px 16px 22px; border-top: 1px solid var(--border); }
+.tp-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.tp-blurb { margin: 0; font-size: var(--fs-sm); color: var(--text-2); max-width: 52ch; }
+.tp-swatches { display: flex; gap: 7px; }
+.tp-swatches .swatch { width: 26px; height: 26px; }
+.tp-actions { display: flex; gap: 8px; flex: none; }
+.tp-use { min-width: 170px; justify-content: center; }
+
+/* Start screen: open the full page */
+.ds-paper { cursor: zoom-in; }
+.ds-zoom { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(6px); color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 16px -10px rgb(15 23 42 / .5); transition: transform .15s; z-index: 2; }
+.ds-zoom:hover { transform: translateY(-1px); color: var(--accent-text); }
+.ds-zoom svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.ds-all { border: 0; background: none; padding: 4px 2px; font: inherit; font-size: var(--fs-sm); font-weight: 700; color: var(--accent-text); cursor: pointer; }
+.ds-all:hover { text-decoration: underline; }
+
+@media (max-width: 700px) {
+  .tp { padding: 0; }
+  .tp-box { width: 100%; height: 100%; border-radius: 0; animation-name: tp-up; }
+  @keyframes tp-up { from { transform: translateY(40px); opacity: 0; } }
+  .tp-head { padding: calc(10px + env(safe-area-inset-top)) 12px 10px 16px; }
+  .tp-name { font-size: 1.1rem; }
+  .tp-body { grid-template-columns: minmax(0, 1fr); padding: 12px 12px 0; }
+  .tp-nav { position: absolute; top: 50%; z-index: 2; width: 40px; height: 40px; opacity: .92; }
+  .tp-nav.prev { left: 6px; }
+  .tp-nav.next { right: 6px; }
+  .tp-strip { padding: 10px 12px; gap: 8px; }
+  .tp-chip-thumb { width: 52px; height: 74px; }
+  .tp-chip-thumb .cv-page { transform: scale(.0655); }
+  .tp-foot { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); }
+  .tp-blurb { display: none; }
+  .tp-info { justify-content: center; }
+  .tp-actions .btn { flex: 1; min-height: 46px; }
+  .tp-use { min-width: 0; }
+  .ds-zoom span { display: none; }
+  .ds-zoom { padding: 7px; top: 4px; right: 4px; }
+}
+@media (prefers-reduced-motion: reduce) { .tp-box, .tp-scrim, .tp-frame { animation: none !important; } }
+@media (max-width: 700px) { .tp-nav { width: 34px; height: 34px; top: auto; bottom: 14px; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(6px); } .tp-nav svg { width: 17px; height: 17px; } }

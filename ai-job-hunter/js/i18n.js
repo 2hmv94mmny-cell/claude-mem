@@ -615,6 +615,15 @@ const DICT = {
   'Write it yourself on a proper business letter page.': ["Schreibe es selbst auf einer richtigen Geschäftsbrief-Seite.", "Rédige-la toi-même sur une vraie page de lettre professionnelle.", "Scrivila tu su una vera pagina di lettera commerciale.", "Escríbela tú mismo en una página de carta formal.", "Escreve-a tu mesmo numa página de carta formal."],
   'Your own words, nothing invented': ["Deine eigenen Worte, nichts erfunden", "Tes propres mots, rien d’inventé", "Le tue parole, niente di inventato", "Tus propias palabras, nada inventado", "As tuas palavras, nada inventado"],
   'Your profile CV in this look, word for word. About 30 seconds.': ["Dein Profil-Lebenslauf in diesem Look, Wort für Wort. Etwa 30 Sekunden.", "Le CV de ton profil dans ce style, mot pour mot. Environ 30 secondes.", "Il CV del tuo profilo in questo stile, parola per parola. Circa 30 secondi.", "El CV de tu perfil con este estilo, palabra por palabra. Unos 30 segundos.", "O currículo do teu perfil neste estilo, palavra por palavra. Cerca de 30 segundos."],
+  'Template preview': ["Vorlagen-Vorschau", "Aperçu du modèle", "Anteprima del modello", "Vista previa de la plantilla", "Pré-visualização do modelo"],
+  'Previous template': ["Vorherige Vorlage", "Modèle précédent", "Modello precedente", "Plantilla anterior", "Modelo anterior"],
+  'Next template': ["Nächste Vorlage", "Modèle suivant", "Modello successivo", "Plantilla siguiente", "Modelo seguinte"],
+  'Keep this template': ["Diese Vorlage behalten", "Garder ce modèle", "Mantieni questo modello", "Mantener esta plantilla", "Manter este modelo"],
+  'Use this colour': ["Diese Farbe verwenden", "Utiliser cette couleur", "Usa questo colore", "Usar este color", "Usar esta cor"],
+  'Use this template': ["Diese Vorlage verwenden", "Utiliser ce modèle", "Usa questo modello", "Usar esta plantilla", "Usar este modelo"],
+  'Current': ["Aktuell", "Actuel", "Attuale", "Actual", "Atual"],
+  'See the full page': ["Ganze Seite ansehen", "Voir la page entière", "Vedi la pagina intera", "Ver la página completa", "Ver a página inteira"],
+  'See full page': ["Ganze Seite", "Page entière", "Pagina intera", "Página completa", "Página inteira"],
   'Vora AI': ['Vora KI', 'IA Vora', 'IA Vora', 'IA de Vora', 'IA Vora'],
   'AI provider': ['KI-Anbieter', 'Fournisseur d’IA', 'Fornitore IA', 'Proveedor de IA', 'Provedor de IA'],
   'Save and test connection': ['Speichern und Verbindung testen', 'Enregistrer et tester', 'Salva e prova la connessione', 'Guardar y probar conexión', 'Salvar e testar conexão'],
@@ -1066,6 +1075,7 @@ const DICT = {
 
 // [regex on the English text, [de, fr, it, es, pt]]; {1}, {2} … are the captured parts.
 const PATTERNS = [
+  [/^See all (\d+) templates$/, ['Alle {1} Vorlagen ansehen', 'Voir les {1} modèles', 'Vedi tutti i {1} modelli', 'Ver las {1} plantillas', 'Ver os {1} modelos']],
   [/^Start from my letter for (.+)$/, ['Mit meinem Anschreiben für {1} beginnen', 'Partir de ma lettre pour {1}', 'Parti dalla mia lettera per {1}', 'Empezar con mi carta para {1}', 'Começar com a minha carta para {1}']],
   [/^(\d+) templates in the editor$/, ['{1} Vorlagen im Editor', '{1} modèles dans l’éditeur', '{1} modelli nell’editor', '{1} plantillas en el editor', '{1} modelos no editor']],
   [/^Templates \((\d+)\)$/, ['Vorlagen ({1})', 'Modèles ({1})', 'Modelli ({1})', 'Plantillas ({1})', 'Modelos ({1})']],
