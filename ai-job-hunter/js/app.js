@@ -14,6 +14,7 @@ import { attachSuggest, rememberSearch, recentSearches } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
+import { keywordCoverage } from './playbook.js';
 import { TEMPLATES, FONT_CHOICES, LAYOUT_OPTIONS, PT_SIZES, basePt, textPt, applyLayout, fontChoice, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
 
 const view = document.getElementById('view');
@@ -4691,7 +4692,7 @@ function renderDocuments(initialKind) {
         'div',
         { class: `chat-msg ${own ? 'own' : 'vora'}${m.error ? ' error' : ''}` },
         own ? '' : h('span', { class: 'chat-avatar', 'aria-hidden': 'true' }, svgIcon(ICON_SPARK)),
-        h('div', { class: 'chat-bubble' }, h('p', {}, m.text), m.undone ? h('small', { class: 'muted' }, 'Undone') : '', undo),
+        h('div', { class: 'chat-bubble' }, h('p', {}, m.text), m.remembered ? h('p', { class: 'chat-remembered' }, svgIcon(ICON_BOOKMARK), h('span', {}, 'Vora will remember: '), h('em', {}, m.remembered)) : '', m.undone ? h('small', { class: 'muted' }, 'Undone') : '', undo),
       );
     });
     const empty = !log.length
@@ -4720,10 +4721,38 @@ function renderDocuments(initialKind) {
     chat.replaceChildren(
       h('div', { class: 'chat-grab', 'aria-hidden': 'true' }),
       h('header', { class: 'chat-head' }, h('span', { class: 'chat-avatar lg', 'aria-hidden': 'true' }, svgIcon(ICON_SPARK)), h('div', {}, h('strong', {}, 'Vora AI'), h('span', {}, kind === 'cv' ? 'Edits your CV' : 'Edits your cover letter')), close),
+      memoryList(),
       chatList,
       h('div', { class: 'chat-compose' }, log.length < 2 && !chatBusy ? chips : '', h('div', { class: 'chat-box' }, chatInput, sendBtn), h('p', { class: 'chat-note' }, `Vora only changes this ${label}.`)),
     );
     requestAnimationFrame(() => (chatList.scrollTop = chatList.scrollHeight));
+  }
+
+  // What Vora has learned about how this person wants their documents written.
+  let memoryOpen = false;
+  function memoryList() {
+    const mem = ai.writingMemory();
+    if (!mem.length) return '';
+    const d = h(
+      'details',
+      { class: 'chat-memory', open: memoryOpen },
+      h('summary', {}, svgIcon(ICON_BOOKMARK), h('span', {}, 'Vora remembers'), h('span', { class: 'chip-count' }, String(mem.length))),
+      h('p', { class: 'small muted' }, 'Vora follows these in every CV and letter it writes for you.'),
+      h(
+        'ul',
+        {},
+        ...mem.map((m) => {
+          const x = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Forget this', title: 'Forget this' }, '×');
+          x.addEventListener('click', () => {
+            ai.forgetPreference(m.rule);
+            drawChat();
+          });
+          return h('li', {}, h('span', {}, m.rule), x);
+        }),
+      ),
+    );
+    d.addEventListener('toggle', () => (memoryOpen = d.open));
+    return d;
   }
 
   async function send(text) {
@@ -4758,7 +4787,7 @@ function renderDocuments(initialKind) {
         paperScale.classList.add('flash');
       }
       const log = master().chat?.[docKind] || [];
-      saveChat([...log, { role: 'vora', text: res.reply || (res.changed ? 'Done.' : 'I can only edit this document.'), changed: res.changed, at: Date.now() }], docKind);
+      saveChat([...log, { role: 'vora', text: res.reply || (res.changed ? 'Done.' : 'I can only edit this document.'), changed: res.changed, remembered: res.remembered || '', at: Date.now() }], docKind);
     } catch (err) {
       const log = master().chat?.[docKind] || [];
       if (!signal.aborted) saveChat([...log, { role: 'vora', text: err.message || 'Vora could not finish that. Try again.', error: true, at: Date.now() }], docKind);
@@ -4887,6 +4916,20 @@ function lookupCompany(job) {
     );
   }
   return companyRuns.get(key);
+}
+
+/** What Vora knows about the employer, for the letter: the saved lookup, or a fresh one (at most ~25 s). */
+async function companyFacts(posting) {
+  const job = { ...posting, company: resolveCompany(posting) };
+  if (!job.company) return null;
+  const cached = store.get().companies?.[companyKey(job.company)];
+  if (cached?.data && cached.v === 2) return cached.data;
+  if (!ai.hasKey()) return null;
+  try {
+    return await Promise.race([lookupCompany(job), new Promise((r) => setTimeout(() => r(null), 25000))]);
+  } catch {
+    return null;
+  }
 }
 
 function companySection(posting) {
@@ -5249,6 +5292,20 @@ function renderJob(id) {
   }
 
   // One document card: a live preview on the left (or a blank page), what it is and what you can do.
+  // How many of the posting's ATS keywords the tailored CV contains.
+  function atsMeter(cvData) {
+    const cov = cvData?.brief ? keywordCoverage(cvToText(cvData), cvData.brief) : null;
+    if (!cov) return '';
+    const tone = cov.pct >= 75 ? 'ok' : cov.pct >= 50 ? 'mid' : 'low';
+    return h(
+      'div',
+      { class: `jd-ats ${tone}` },
+      h('div', { class: 'jd-ats-head' }, h('strong', {}, `ATS keywords: ${cov.found.length} of ${cov.found.length + cov.missing.length}`), h('span', { class: 'jd-ats-pct' }, `${cov.pct}%`)),
+      h('span', { class: 'jd-ats-bar' }, h('i', { style: `width:${cov.pct}%` })),
+      cov.missing.length ? h('p', { class: 'small muted' }, 'Not in your CV: ', h('span', { translate: 'no' }, cov.missing.slice(0, 6).join(', ')), '. Add one only if it is true for you.') : h('p', { class: 'small muted' }, 'Every key term from the posting is in your CV.'),
+    );
+  }
+
   function docCard({ kind, ready, preview, onOpen, title, meta, notes, actions, emptyText }) {
     const prev = ready
       ? (() => {
@@ -5605,7 +5662,7 @@ function renderJob(id) {
           onOpen: openStudio,
           title: 'Tailored CV',
           meta: `${t.name} template${jobFont() ? ` · ${fontChoice(jobFont()).name}` : ''}${d.updatedAt ? ` · updated ${fmtDate(d.updatedAt)}` : ''}`,
-          notes: d.cvData?.changes?.length ? h('div', { class: 'jd-changes' }, h('p', { class: 'jd-label' }, 'What Vora changed for this job'), h('ul', { translate: 'no' }, ...d.cvData.changes.slice(0, 3).map((c) => h('li', {}, c)))) : '',
+          notes: h('div', {}, atsMeter(d.cvData), d.cvData?.changes?.length ? h('div', { class: 'jd-changes' }, h('p', { class: 'jd-label' }, 'What Vora changed for this job'), h('ul', { translate: 'no' }, ...d.cvData.changes.slice(0, 3).map((c) => h('li', {}, c)))) : ''),
           actions: d.cvData ? [open, pdfBtn, gen] : [gen],
           emptyText: 'Your CV rewritten around what this role asks for, with the posting\'s own keywords, in a professional template. Nothing invented.',
         }),
@@ -5746,7 +5803,7 @@ function renderJob(id) {
         const screen = writingScreen('letter');
         let text;
         try {
-          text = await ai.writeCoverLetter(job, { tone: tone.value, signal });
+          text = await ai.writeCoverLetter(job, { tone: tone.value, signal, company: await companyFacts(job) });
           stopIfCancelled(signal);
         } catch (err) {
           screen.close();

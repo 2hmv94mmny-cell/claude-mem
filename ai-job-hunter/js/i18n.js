@@ -772,6 +772,13 @@ const DICT = {
   "Pick a time in the future": ["Wähle eine Zeit in der Zukunft", "Choisis une heure à venir", "Scegli un orario futuro", "Elige una hora futura", "Escolhe uma hora futura"],
   "Remind me…": ["Erinnere mich…", "Me le rappeler…", "Ricordamelo…", "Recuérdamelo…", "Lembrar-me…"],
   "Show": ["Anzeigen", "Afficher", "Mostra", "Mostrar", "Mostrar"],
+  "Vora will remember:": ["Vora merkt sich:", "Vora retiendra :", "Vora ricorderà:", "Vora recordará:", "A Vora vai lembrar:"],
+  "Vora remembers": ["Vora merkt sich", "Vora retient", "Vora ricorda", "Vora recuerda", "A Vora lembra-se"],
+  "Vora follows these in every CV and letter it writes for you.": ["Vora hält sich daran in jedem Lebenslauf und Anschreiben, das es für dich schreibt.", "Vora les applique à chaque CV et lettre qu’il rédige pour toi.", "Vora li segue in ogni CV e lettera che scrive per te.", "Vora los sigue en cada CV y carta que escribe para ti.", "A Vora segue-os em cada currículo e carta que escreve para ti."],
+  "Forget this": ["Vergessen", "Oublier", "Dimentica", "Olvidar", "Esquecer"],
+  "Every key term from the posting is in your CV.": ["Alle wichtigen Begriffe aus dem Inserat stehen in deinem Lebenslauf.", "Tous les termes clés de l’annonce figurent dans ton CV.", "Tutti i termini chiave dell’annuncio sono nel tuo CV.", "Todos los términos clave de la oferta están en tu CV.", "Todos os termos-chave do anúncio estão no teu currículo."],
+  "Not in your CV:": ["Nicht in deinem Lebenslauf:", "Absent de ton CV :", "Non nel tuo CV:", "No está en tu CV:", "Não está no teu currículo:"],
+  ". Add one only if it is true for you.": [". Füge einen nur hinzu, wenn er für dich stimmt.", ". Ajoute-en un seulement s’il est vrai pour toi.", ". Aggiungine uno solo se è vero per te.", ". Añade uno solo si es cierto en tu caso.", ". Adiciona um só se for verdade para ti."],
   'Vora AI': ['Vora KI', 'IA Vora', 'IA Vora', 'IA de Vora', 'IA Vora'],
   'AI provider': ['KI-Anbieter', 'Fournisseur d’IA', 'Fornitore IA', 'Proveedor de IA', 'Provedor de IA'],
   'Save and test connection': ['Speichern und Verbindung testen', 'Enregistrer et tester', 'Salva e prova la connessione', 'Guardar y probar conexión', 'Salvar e testar conexão'],
@@ -1223,6 +1230,7 @@ const DICT = {
 
 // [regex on the English text, [de, fr, it, es, pt]]; {1}, {2} … are the captured parts.
 const PATTERNS = [
+  [/^ATS keywords: (\d+) of (\d+)$/, ['ATS-Begriffe: {1} von {2}', 'Mots-clés ATS : {1} sur {2}', 'Parole chiave ATS: {1} su {2}', 'Palabras clave ATS: {1} de {2}', 'Palavras-chave ATS: {1} de {2}']],
   [/^(\d+) reminders from Vora$/, ['{1} Erinnerungen von Vora', '{1} rappels de Vora', '{1} promemoria da Vora', '{1} recordatorios de Vora', '{1} lembretes da Vora']],
   [/^(\d+) due now$/, ['{1} jetzt fällig', '{1} à faire maintenant', '{1} in scadenza ora', '{1} pendientes ahora', '{1} para agora']],
   [/^Reminders, (\d+) due$/, ['Erinnerungen, {1} fällig', 'Rappels, {1} à faire', 'Promemoria, {1} in scadenza', 'Recordatorios, {1} pendientes', 'Lembretes, {1} pendentes']],

@@ -12,7 +12,8 @@ import { store } from './store.js';
 import { caps, disable, SEARCH_SERVER, SEARCH_TOOL } from './runtime.js';
 import { portalsFor, portalForUrl } from './portals.js';
 import { normalizeCV } from './cvdoc.js';
-import { HUMAN_STYLE, cleanCV, cleanText } from './style.js';
+import { HUMAN_STYLE, cleanCV, cleanText, styleIssues } from './style.js';
+import { playbookFor, briefBlock, companyBlock, memoryBlock, checkLetter, RECRUITER_FACTS, ATS_RULES, CV_RULES, LETTER_RULES } from './playbook.js';
 import { currentLanguage, languageName } from './i18n.js';
 import { providerById, askProvider } from './providers.js';
 import { searchJobs } from './jobs.js';
@@ -652,12 +653,94 @@ const CV_SHAPE =
   '"education": [{"degree": string, "school": string, "location": string, "start": string, "end": string, "details": string}], ' +
   '"projects": [{"name": string, "description": string, "link": string}], "certifications": [string], "languages": [string]';
 
+// ---------------------------------------------------------------------------
+// Knowing the job before writing: a short brief of what the employer really
+// wants (must-haves, exact keywords, signals about the company, what the
+// letter must answer), kept per posting so CV and letter use the same one.
+// ---------------------------------------------------------------------------
+
+const briefRuns = new Map();
+export async function jobBrief(job, { signal } = {}) {
+  if (!job?.description || String(job.description).length < 120 || !job.company) return null;
+  const key = `b${hash(`${job.title}|${job.company}|${String(job.description).slice(0, 6000)}`)}`;
+  const cached = store.get().briefs?.[key];
+  if (cached) return cached.data;
+  if (briefRuns.has(key)) return briefRuns.get(key);
+  const run = ask({
+    quick: true,
+    json: true,
+    signal,
+    system: 'You are a senior recruiter who reads job postings the way the hiring manager meant them. You separate real requirements from wish lists and boilerplate.',
+    messages: [
+      {
+        role: 'user',
+        content:
+          `${jobBlock(job)}\n\n${profileBlock()}\n\n` +
+          'Analyse this posting for writing a tailored CV and cover letter. Keep every item in the language of the posting. Reply with only a JSON object:\n' +
+          '{"realNeed": string (1-2 sentences: the problem this hire solves for the team), ' +
+          '"mustHave": [string] (3-6 real requirements, most important first), ' +
+          '"niceToHave": [string] (0-4), ' +
+          '"keywords": [string] (8-15 exact terms an ATS search would use: the job title, hard skills, tools, certifications, languages, written exactly as in the posting), ' +
+          '"softSkills": [string] (0-4, only ones the posting stresses), ' +
+          '"companySignals": [string] (0-4 things the posting says about the company, team, mission or values that a letter can connect to), ' +
+          '"letterMustAnswer": [string] (things the posting asks applicants to state, e.g. salary expectation, earliest start date, work permit, references; empty if none), ' +
+          '"contactPerson": string (name and title of the contact person if the posting names one, else ""), ' +
+          '"leadWith": [string] (2-3 strengths from the candidate\'s CV that best match, phrased as evidence), ' +
+          '"gaps": [string] (0-3 must-haves the CV does not show)}',
+      },
+    ],
+  })
+    .then((raw) => {
+      const arr = (v, n) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean).slice(0, n) : []);
+      const data = raw && typeof raw === 'object' ? { realNeed: String(raw.realNeed || '').trim(), mustHave: arr(raw.mustHave, 6), niceToHave: arr(raw.niceToHave, 4), keywords: arr(raw.keywords, 15), softSkills: arr(raw.softSkills, 4), companySignals: arr(raw.companySignals, 4), letterMustAnswer: arr(raw.letterMustAnswer, 4), contactPerson: String(raw.contactPerson || '').trim(), leadWith: arr(raw.leadWith, 3), gaps: arr(raw.gaps, 3) } : null;
+      if (data)
+        store.update((s) => {
+          s.briefs = s.briefs || {};
+          s.briefs[key] = { data, at: Date.now() };
+          const keys = Object.keys(s.briefs).sort((a, b) => s.briefs[b].at - s.briefs[a].at);
+          for (const k of keys.slice(40)) delete s.briefs[k];
+        });
+      return data;
+    })
+    .catch((e) => {
+      if (e?.code === 'cancelled' || signal?.aborted) throw e;
+      return null; // the writer still works without a brief
+    })
+    .finally(() => briefRuns.delete(key));
+  briefRuns.set(key, run);
+  return run;
+}
+
+/** Lasting writing preferences the candidate has given ("always shorter", "never say passionate"). */
+export function writingMemory() {
+  return store.get().profile.writingMemory || [];
+}
+export function rememberPreference(rule) {
+  const r = cleanText(String(rule || '')).trim().replace(/\.$/, '');
+  if (!r || r.length < 6 || r.length > 160) return false;
+  const low = r.toLowerCase();
+  let added = false;
+  store.update((s) => {
+    const list = (s.profile.writingMemory || []).filter((m) => m.rule.toLowerCase() !== low);
+    list.push({ rule: r, at: Date.now() });
+    s.profile.writingMemory = list.slice(-15);
+    added = true;
+  });
+  return added;
+}
+export function forgetPreference(rule) {
+  store.update((s) => (s.profile.writingMemory = (s.profile.writingMemory || []).filter((m) => m.rule !== rule)));
+}
+const REMEMBER_FIELD =
+  '"remember": string (only if the request states a lasting preference about how the candidate wants their documents written in general, e.g. "Keep cover letters under 250 words" or "Never use the word passionate": that rule as one short imperative sentence in English; otherwise "")';
+
 /**
  * Rewrite the CV for one job as structured data, ready for the layout
  * templates. `instructions` lets the user ask for changes to a previous draft.
  */
 export async function tailorCV(job, { instructions = '', previous = null, signal, onText } = {}) {
   const p = store.get().profile;
+  const brief = await jobBrief(job, { signal });
   const draft = previous
     ? `\n\n<current_draft>\n${JSON.stringify(previous)}\n</current_draft>\nApply this change to the current draft: ${instructions}`
     : instructions
@@ -669,13 +752,17 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
       'and read as if the candidate wrote it themselves. ' +
       HONESTY +
       '\n\n' +
+      playbookFor('cv', job, p) +
+      '\n\n' +
       HUMAN_STYLE,
     messages: [
       {
         role: 'user',
         content:
-          `${profileBlock()}\n\n${jobBlock(job)}\n\n` +
-          'Rewrite the master CV for this job:\n' +
+          `${profileBlock()}\n\n${jobBlock(job)}\n\n${[briefBlock(brief), memoryBlock(writingMemory())].filter(Boolean).join('\n\n')}\n\n` +
+          'Rewrite the master CV for this job, following the hiring playbook:\n' +
+          '- Make the top third answer "has this person done this job?" within seconds: a target title matching the posting where true, then the profile.\n' +
+          '- Cover the brief\'s must-haves and exact keywords wherever the master CV truly supports them, inside real bullets and in the skills. Never add a skill the CV does not show.\n' +
           '- Lead with a 2-3 sentence profile aimed squarely at this role.\n' +
           '- Order sections and experience so the most relevant evidence comes first; trim or drop what does not help.\n' +
           '- Rewrite bullets so each one says what the person actually did and, where the CV supports it, what came of it. Vary how bullets are built. 3-5 bullets for recent roles, fewer for older ones.\n' +
@@ -685,7 +772,9 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
           `${[p.linkedin, p.portfolio, p.github].filter(Boolean).length ? `, links ${JSON.stringify([p.linkedin, p.portfolio, p.github].filter(Boolean))}` : ''} unless the CV says otherwise.` +
           draft +
           `\n\nReply with only a JSON object: ${CV_SHAPE}, ` +
-          '"changes": [string] (3-6 short notes on what you changed for this job and why), "keywords": [string] (posting keywords the CV now covers)}. ' +
+          '"changes": [string] (3-6 short notes on what you changed for this job and why), "keywords": [string] (posting keywords the CV now covers)' +
+          (instructions ? `, ${REMEMBER_FIELD}` : '') +
+          '}. ' +
           'Use empty strings or arrays for anything unknown.',
       },
     ],
@@ -693,7 +782,10 @@ export async function tailorCV(job, { instructions = '', previous = null, signal
     signal,
     onText,
   });
-  return cleanCV(normalizeCV(raw));
+  if (instructions && raw?.remember) rememberPreference(raw.remember);
+  const out = cleanCV(normalizeCV(raw));
+  if (brief) out.brief = { keywords: brief.keywords, mustHave: brief.mustHave, gaps: brief.gaps };
+  return out;
 }
 
 /**
@@ -724,12 +816,12 @@ export async function structureCV({ signal } = {}) {
 /** Change the main CV (structured) as the user asks, keeping everything else as it is. */
 export async function reviseCV(cv, instructions, { signal } = {}) {
   const raw = await ask({
-    system: 'You edit the candidate\'s own CV exactly as they ask. ' + HONESTY + '\n\n' + HUMAN_STYLE,
+    system: 'You edit the candidate\'s own CV exactly as they ask. ' + HONESTY + '\n\n' + playbookFor('cv', {}, store.get().profile) + '\n\n' + HUMAN_STYLE,
     messages: [
       {
         role: 'user',
         content:
-          `<current_cv>\n${JSON.stringify({ ...cv, changes: undefined, keywords: undefined })}\n</current_cv>\n\n` +
+          `<current_cv>\n${JSON.stringify({ ...cv, changes: undefined, keywords: undefined, brief: undefined })}\n</current_cv>\n\n` +
           `Change it as follows: ${instructions}\nKeep everything that was not mentioned exactly as it is, in the same language. ` +
           `Reply with only a JSON object: ${CV_SHAPE}, "titles": object (keep as given)}.`,
       },
@@ -756,14 +848,17 @@ export async function chatEdit(kind, doc, history, message, { signal } = {}) {
     .slice(-8)
     .map((m) => `${m.role === 'user' ? 'User' : 'Vora'}: ${m.text}`)
     .join('\n');
-  const current = kind === 'cv' ? JSON.stringify({ ...doc, changes: undefined, keywords: undefined }) : JSON.stringify({ body: doc.body || '', subject: doc.subject || '', to: doc.to || '' });
+  const current = kind === 'cv' ? JSON.stringify({ ...doc, changes: undefined, keywords: undefined, brief: undefined }) : JSON.stringify({ body: doc.body || '', subject: doc.subject || '', to: doc.to || '' });
   const shape = kind === 'cv' ? `${CV_SHAPE}, "titles": object (keep as given)}` : '{"body": string (the full letter text, paragraphs separated by an empty line), "subject": string, "to": string (recipient lines separated by \\n)}';
   const reply = await ask({
     json: true,
     system:
       `You are Vora, the editor inside the Vora job app. Your only job here is to change the user's ${label} the way they ask. ` +
       `You do not answer general questions, give advice on other topics, write other documents, or do anything else. ` +
+      `When you make a change, make it the way a top recruiter would want it (see the playbook), unless the user asks for something specific. ` +
       HONESTY +
+      '\n\n' +
+      playbookFor(kind === 'cv' ? 'cv' : 'letter', {}, store.get().profile) +
       '\n\n' +
       HUMAN_STYLE,
     messages: [
@@ -772,11 +867,12 @@ export async function chatEdit(kind, doc, history, message, { signal } = {}) {
         content:
           `<current_${kind}>\n${current}\n</current_${kind}>\n\n` +
           (recent ? `<conversation_so_far>\n${recent}\n</conversation_so_far>\n\n` : '') +
+          (memoryBlock(writingMemory()) ? `${memoryBlock(writingMemory())}\n\n` : '') +
           `<request>\n${message}\n</request>\n\n` +
           `If the request is about changing this ${label}, apply it and keep everything else exactly as it is, in the same language as the ${label}. ` +
           `If it is not about changing this ${label}, change nothing and set "changed" to false, with a short friendly reply that you can only edit the ${label} here. ` +
           `If the request is unclear, change nothing, set "changed" to false and ask one short question. ` +
-          `Reply with only a JSON object: {"changed": boolean, "reply": string (1-2 short sentences in the language the user wrote in: what you changed, or why not), "${kind}": ${shape}}.`,
+          `Reply with only a JSON object: {"changed": boolean, "reply": string (1-2 short sentences in the language the user wrote in: what you changed, or why not), "${kind}": ${shape}, ${REMEMBER_FIELD}}.`,
       },
     ],
     signal,
@@ -791,7 +887,8 @@ export async function chatEdit(kind, doc, history, message, { signal } = {}) {
     const l = reply.letter;
     out = { body: cleanText(String(l.body ?? doc.body ?? '')), subject: String(l.subject ?? doc.subject ?? ''), to: String(l.to ?? doc.to ?? '') };
   }
-  return { changed, reply: cleanText(String(reply.reply || (changed ? 'Done.' : ''))), doc: out };
+  const remembered = changed && reply.remember && rememberPreference(reply.remember) ? cleanText(String(reply.remember)) : '';
+  return { changed, reply: cleanText(String(reply.reply || (changed ? 'Done.' : ''))), doc: out, remembered };
 }
 
 /** A general cover letter for the roles the user wants (not one job). */
@@ -807,7 +904,7 @@ export async function writeGeneralLetter({ tone = 'professional', signal } = {})
 /** Change a letter as the user asks. */
 export async function reviseText(letter, instructions, { signal } = {}) {
   const text = await ask({
-    system: 'You edit cover letters exactly as the candidate asks, so they still sound like the candidate. ' + HONESTY + '\n\n' + HUMAN_STYLE,
+    system: 'You edit cover letters exactly as the candidate asks, so they still sound like the candidate. ' + HONESTY + '\n\n' + playbookFor('letter', {}, store.get().profile) + '\n\n' + HUMAN_STYLE,
     messages: [{ role: 'user', content: `<letter>\n${letter}\n</letter>\n\nChange it as follows: ${instructions}\nKeep what was not mentioned and the same language. Output only the full letter.` }],
     signal,
   });
@@ -820,7 +917,7 @@ export async function reviseText(letter, instructions, { signal } = {}) {
  */
 export async function analyzeCV({ text = '', images = [] }, { signal, onText } = {}) {
   const reply = await ask({
-    system: 'You are a senior recruiter and CV coach. You give specific, honest, practical feedback.' + uiLanguage(' (verdict, strengths, improvements, atsIssues), but keep the profile fields and cvText in the language of the CV'),
+    system: 'You are a senior recruiter and CV coach. You give specific, honest, practical feedback, judged by these rules:\n' + RECRUITER_FACTS + '\n' + CV_RULES + '\n' + ATS_RULES + '\n' + uiLanguage(' (verdict, strengths, improvements, atsIssues), but keep the profile fields and cvText in the language of the CV'),
     messages: [
       {
         role: 'user',
@@ -845,24 +942,47 @@ export async function analyzeCV({ text = '', images = [] }, { signal, onText } =
   return reply;
 }
 
-export async function writeCoverLetter(job, { tone = 'professional', instructions = '', previous = '', ...opts } = {}) {
+export async function writeCoverLetter(job, { tone = 'professional', instructions = '', previous = '', company = null, ...opts } = {}) {
   // The app lays out the letterhead, date, recipient and subject line itself,
   // so the model writes only the greeting, the body and the sign-off.
+  const p = store.get().profile;
+  const general = !job.company;
+  const brief = general || previous ? null : await jobBrief(job, { signal: opts.signal });
   const shape =
-    'Write it in the language of the job posting. Begin with a greeting line (to the named hiring manager if the posting names one, otherwise the usual neutral greeting in that language). ' +
+    'Write it in the language of the job posting. Begin with a greeting line (to the named contact person if the posting names one, with the correct form for the language, otherwise the usual neutral greeting in that language). ' +
     'Do not include a letterhead, address, date or subject line. Separate paragraphs with an empty line. ';
+  const context = [briefBlock(brief), companyBlock(company), memoryBlock(writingMemory())].filter(Boolean).join('\n\n');
   const task = previous
     ? `Here is the current letter:\n<letter>\n${previous}\n</letter>\n\nChange it as follows: ${instructions}\nKeep what was not mentioned. ${shape}Output only the full letter.`
-    : `Write a ${tone} cover letter for this job, 220-320 words, in the first person. ${shape}` +
-      'After the greeting, start with something specific about this role or company and why it fits the candidate, not with "I am writing to" or "I am excited to apply". ' +
-      'Connect two concrete things from the CV to what the job needs, in plain words. End with one simple, direct closing line and a sign-off with the candidate\'s name. ' +
-      'Contractions are fine. No placeholders like [Company]: use the real details, or leave out what is unknown. Output only the letter.';
-  const text = await ask({
-    system: 'You help people write their own cover letters. The letter must sound like the candidate wrote it, not a template. ' + HONESTY + '\n\n' + HUMAN_STYLE,
-    messages: [{ role: 'user', content: `${profileBlock()}\n\n${jobBlock(job)}\n\n${task}` }],
-    ...opts,
-  });
-  return cleanText(text);
+    : `Write a ${tone} cover letter for this job in the first person, following the hiring playbook (one page, about 250-350 words unless the country norm or the candidate's preferences say otherwise). ${shape}` +
+      'Opening: one specific reason this role and this company fit the candidate, using a real fact from the posting or the company research; never "I am writing to", "I am excited" or similar. ' +
+      'Middle: answer the 2-3 most important requirements from the brief, each with concrete evidence from the CV (what, where, result), using the posting\'s own key terms where they are true. ' +
+      'Then what the candidate would bring to this team. Close with one simple, confident line inviting a conversation, plus anything the posting asks applicants to state, only with the candidate\'s real details. Sign off with the candidate\'s name. ' +
+      (general ? 'This is a general letter for any employer hiring for this role: do not name a company or invent one. ' : '') +
+      'Contractions are fine where the language allows. No placeholders like [Company]: use the real details, or leave out what is unknown. Output only the letter.';
+  const system = 'You help people write their own cover letters. The letter must sound like the candidate wrote it, not a template, and must be the letter a hiring manager remembers. ' + HONESTY + '\n\n' + playbookFor('letter', job, p) + '\n\n' + HUMAN_STYLE;
+  let text = cleanText(await ask({ system, messages: [{ role: 'user', content: `${profileBlock()}\n\n${jobBlock(job)}\n\n${context ? `${context}\n\n` : ''}${task}` }], ...opts }));
+  // One review pass, like a recruiter reading it: fix what a hiring manager or an ATS would trip over.
+  if (!previous) {
+    const issues = [...checkLetter(text, general ? {} : job, brief)];
+    const { phrases, dashes } = styleIssues(text);
+    if (phrases.length) issues.push(`It uses stock phrases that read as AI-written: ${phrases.join(', ')}. Say the same thing plainly and specifically.`);
+    if (dashes) issues.push('Remove dashes used as punctuation.');
+    if (issues.length && !opts.signal?.aborted) {
+      try {
+        const fixed = await ask({
+          system,
+          messages: [{ role: 'user', content: `${profileBlock()}\n\n${jobBlock(job)}\n\n${context ? `${context}\n\n` : ''}<letter>\n${text}\n</letter>\n\nA recruiter reviewed this draft and found:\n${issues.map((x) => `- ${x}`).join('\n')}\n\nRewrite the letter to fix these points and nothing else that works. Same language, same facts, nothing invented. ${shape}Output only the full letter.` }],
+          signal: opts.signal,
+        });
+        const out = cleanText(fixed);
+        if (out && out.length > 200) text = out;
+      } catch (e) {
+        if (e?.code === 'cancelled' || opts.signal?.aborted) throw e;
+      }
+    }
+  }
+  return text;
 }
 
 /** Rewrite only the lines of a letter that contain the given phrases. */
