@@ -101,7 +101,7 @@ const buzz = (pattern) => {
 };
 
 /** A burst of confetti from an element (skipped with reduced motion). */
-function confetti(from, count = 36) {
+export function confetti(from, count = 36) {
   if (reduceMotion() || !from?.isConnected) return;
   const r = from.getBoundingClientRect();
   const layer = h('div', { class: 'confetti', 'aria-hidden': 'true' });

@@ -6,7 +6,7 @@ import { inArtifact, ready as runtimeReady } from './runtime.js';
 import { skipCachedUntilNow } from './webcache.js';
 import { portalsFor, detectCountry, COUNTRIES } from './portals.js';
 import { styleIssues, cvProse } from './style.js';
-import { renderInterviewGame } from './game.js';
+import { renderInterviewGame, confetti } from './game.js';
 import { account, onAccountChange, signIn, signOut, syncNow, accountsAvailable, initAccount } from './account.js';
 import { jobsForYou, moreJobsForYou, aboutFromPosting, resolveCompany, norm, indeedJobs, readProfile, scoreJob, sameJob, jobPostedAt, byBestMatch, checkPages, isStale, knownClosed } from './match.js';
 import { LANGUAGES, setLanguage, currentLanguage, setBrand, locale, t as tr } from './i18n.js';
@@ -1712,19 +1712,56 @@ function companyAvatar(name, size = '') {
   return h('span', { class: `co-avatar ${size}`, style: `--co-h:${hash % 360}`, 'aria-hidden': 'true' }, (text.match(/[A-Za-zÀ-ÿ0-9]/)?.[0] || '?').toUpperCase());
 }
 
+const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>';
+const ICON_CAL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
+const ICON_FLAME = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.2 1-3.6 2.2-4.8.3 1.6 1 2.6 2.3 3.1C11 9 11 6 12 3z"/></svg>';
+const ICON_MAIL_SM = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
+const ICON_TROPHY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H4.5a3 3 0 0 0 3.5 4M16 6h3.5a3 3 0 0 1-3.5 4M12 13v4M8.5 20h7M10 17h4v3h-4z"/></svg>';
+const ICON_PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+const ICON_SEND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 16-2.5-6.5z"/><path d="M11.5 13.5L20 4"/></svg>';
+const ICON_DOWN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
+const ICON_SPARK_SM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>';
+
+/** Monday 00:00 of the week a time falls in. */
+function weekStart(ts = Date.now()) {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.getTime();
+}
+/** "today 14:00", "tomorrow 09:30", "Thu 10 Oct, 14:00". */
+function whenLabel(ts) {
+  const d = new Date(ts);
+  const day = Math.round((new Date(ts).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / DAY_MS);
+  const time = d.getHours() || d.getMinutes() ? d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) : '';
+  const date = day === 0 ? 'today' : day === 1 ? 'tomorrow' : day === -1 ? 'yesterday' : d.toLocaleDateString(locale(), { weekday: 'short', day: 'numeric', month: 'short' });
+  return time ? `${date}, ${time}` : date;
+}
+const everReached = (job, id) => job.status === id || (job.history || []).some((e) => e.status === id);
+const hasApplied = (job) => Boolean(job.appliedAt) || ['applied', 'interview', 'offer', 'rejected'].includes(job.status) && job.status !== 'saved';
+const followDue = (job) => job.status === 'applied' && Date.now() - Math.max(job.appliedAt || lastActivity(job), job.followedUpAt || 0) > 7 * DAY_MS;
+
 function renderTracker() {
   let mode = 'board';
+  let tabStage = '';
   try {
     mode = localStorage.getItem('ajh:trackerView') || 'board';
+    tabStage = localStorage.getItem('ajh:trackerStage') || '';
   } catch {}
   let stage = '';
   let sort = 'recent';
+  let quick = 'all';
+  let showAllFocus = false;
+  let justMoved = '';
+  const phone = () => window.innerWidth <= 700;
+
   const search = h('input', { type: 'search', placeholder: 'Search title or company', 'aria-label': 'Search applications' });
   const sortSel = h(
     'select',
     { 'aria-label': 'Sort by', class: 'sort-select' },
     h('option', { value: 'recent' }, 'Recently updated'),
     h('option', { value: 'match' }, 'Best match'),
+    h('option', { value: 'excitement' }, 'Most excited'),
     h('option', { value: 'company' }, 'Company A–Z'),
   );
   const modeBtn = (id, label, icon) => {
@@ -1738,74 +1775,326 @@ function renderTracker() {
     });
     return b;
   };
-  const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'View' });
-  const stats = h('section', { class: 'app-pipeline', 'aria-label': 'Pipeline summary' });
-  const toolbar = h('div', { class: 'tracker-toolbar' });
+  const top = h('section', { class: 'ap-top', 'aria-label': 'Overview' });
+  const toolbar = h('div', { class: 'tracker-toolbar ap-toolbar' });
   const content = h('div', { class: 'tracker-content' });
+  const sub = h('p', { class: 'muted ap-sub' });
 
   const SORTS = {
     recent: (a, b) => lastActivity(b) - lastActivity(a),
     match: (a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1) || lastActivity(b) - lastActivity(a),
+    excitement: (a, b) => (b.excitement || 0) - (a.excitement || 0) || lastActivity(b) - lastActivity(a),
     company: (a, b) => String(a.company || '').localeCompare(String(b.company || '')) || String(a.title).localeCompare(String(b.title)),
   };
+  const docsOf = (job) => store.get().docs[job.id] || {};
+  const openJob = (job, tab) => {
+    if (tab) {
+      try {
+        sessionStorage.setItem('ajh:tab', tab);
+      } catch {}
+    }
+    go(`/job/${encodeURIComponent(job.id)}`);
+  };
 
-  function move(job, to) {
+  // ----- moving between stages, with undo and a little celebration -----
+  function move(job, to, from) {
+    const before = structuredClone(store.get().jobs[job.id]);
     store.setStatus(job.id, to);
-    toast(`Moved to ${STATUSES.find((x) => x.id === to).label}`);
+    justMoved = job.id;
+    const label = STATUSES.find((x) => x.id === to).label;
+    const msg = to === 'offer' ? `An offer from ${job.company || 'them'}. Congratulations!` : to === 'interview' ? 'Interview! Add the date and practise with Vora.' : to === 'rejected' ? 'Not this time. Every no gets you closer.' : to === 'applied' ? 'Applied. Vora reminds you to follow up in a week.' : `Moved to ${label}`;
+    toast(msg, {
+      action: 'Undo',
+      run: () => {
+        store.update((s) => (s.jobs[job.id] = before));
+        justMoved = job.id;
+        draw();
+      },
+    });
+    draw();
+    if (to === 'offer') {
+      const el = from?.isConnected ? from : content.querySelector(`[data-id="${CSS.escape(job.id)}"]`);
+      confetti(el || content, 60);
+    }
+  }
+  function remove(job) {
+    const before = structuredClone(store.get());
+    const snap = { job: before.jobs[job.id], docs: before.docs[job.id], prep: before.prep[job.id] };
+    store.removeJob(job.id);
+    toast(`Removed ${job.title}`, {
+      action: 'Undo',
+      run: () => {
+        store.update((s) => {
+          s.jobs[job.id] = snap.job;
+          if (snap.docs) s.docs[job.id] = snap.docs;
+          if (snap.prep) s.prep[job.id] = snap.prep;
+        });
+        draw();
+      },
+    });
     draw();
   }
+  const NEXT_STAGE = { saved: ['applied', 'Mark applied'], applied: ['interview', 'Got an interview'], interview: ['offer', 'Got an offer'] };
 
-  function drawStats(all) {
-    const n = (id) => all.filter((j) => j.status === id).length;
-    const applied = all.filter((j) => j.appliedAt || ['applied', 'interview', 'offer', 'rejected'].includes(j.status)).length;
-    const heard = n('interview') + n('offer') + n('rejected');
-    const thisWeek = all.filter((j) => j.appliedAt && Date.now() - j.appliedAt < 7 * DAY_MS).length;
-    const tile = (label, value, sub, cls = '') =>
-      h('div', { class: `stat ${cls}` }, h('span', { class: 'stat-label' }, label), h('strong', { class: 'stat-value' }, value), h('span', { class: 'stat-sub' }, sub));
-    stats.replaceChildren(
+  // ----- small dialog for the interview date -----
+  function dateDialog(job) {
+    const toLocal = (ts) => {
+      const d = new Date(ts - new Date(ts).getTimezoneOffset() * 6e4);
+      return d.toISOString().slice(0, 16);
+    };
+    const input = h('input', { type: 'datetime-local', value: job.interviewAt ? toLocal(job.interviewAt) : '', class: 'ap-date-input', 'aria-label': 'Interview date and time' });
+    const dlg = h('dialog', { class: 'ap-dialog', 'aria-labelledby': 'ap-dlg-title' });
+    const close = () => (dlg.close(), dlg.remove());
+    const save = h('button', { type: 'button', class: 'btn primary' }, 'Save');
+    save.addEventListener('click', () => {
+      const ts = input.value ? new Date(input.value).getTime() : null;
+      store.patchJob(job.id, { interviewAt: ts || null });
+      if (ts && job.status !== 'interview' && job.status !== 'offer') store.setStatus(job.id, 'interview');
+      close();
+      toast(ts ? `Interview saved for ${whenLabel(ts)}` : 'Interview date removed');
+      draw();
+    });
+    const clear = h('button', { type: 'button', class: 'btn ghost' }, 'Remove date');
+    clear.addEventListener('click', () => ((input.value = ''), save.click()));
+    const cancel = h('button', { type: 'button', class: 'btn' }, 'Cancel');
+    cancel.addEventListener('click', close);
+    dlg.addEventListener('cancel', (e) => (e.preventDefault(), close()));
+    dlg.addEventListener('click', (e) => e.target === dlg && close());
+    dlg.append(
       h(
         'div',
-        { class: 'stat-row' },
-        tile('Tracked', String(all.length), `${n('saved')} saved to apply`),
-        tile('Applied', String(applied), thisWeek ? `${thisWeek} this week` : 'none this week'),
-        tile('Interviews', String(n('interview') + n('offer')), n('interview') ? `${n('interview')} in progress` : 'none in progress', n('interview') + n('offer') ? 'is-interview' : ''),
-        tile('Offers', String(n('offer')), n('offer') ? 'congratulations' : 'keep going', n('offer') ? 'is-offer' : ''),
-        tile('Response rate', applied ? `${Math.round((heard / applied) * 100)}%` : '–', applied ? `${heard} of ${applied} replied` : 'apply to see it'),
+        { class: 'ap-dialog-box' },
+        h('div', { class: 'ap-dialog-icon' }, svg(ICON_CAL)),
+        h('h2', { id: 'ap-dlg-title' }, 'When is the interview?'),
+        h('p', { class: 'muted' }, h('span', { translate: 'no' }, job.title), ' · ', h('span', { translate: 'no' }, job.company || '')),
+        input,
+        h('div', { class: 'ap-dialog-actions' }, job.interviewAt ? clear : '', h('span', { class: 'grow' }), cancel, save),
       ),
-      all.length
-        ? h(
-            'div',
-            { class: 'pipe-bar', role: 'img', 'aria-label': STATUSES.map((s) => `${s.label} ${n(s.id)}`).join(', ') },
-            ...STATUSES.filter((s) => n(s.id)).map((s) => h('span', { class: `status-${s.id}`, style: `flex:${n(s.id)}`, title: `${s.label}: ${n(s.id)}` })),
-          )
-        : '',
+    );
+    document.body.append(dlg);
+    dlg.showModal();
+    input.focus();
+  }
+
+  function followUpText(job) {
+    const name = store.get().profile.name || '';
+    const date = job.appliedAt ? new Date(job.appliedAt).toLocaleDateString(locale(), { day: 'numeric', month: 'long' }) : 'recently';
+    return `Subject: Following up on my application for ${job.title}\n\nHello,\n\nI applied for the ${job.title} role at ${job.company || 'your company'} on ${date} and wanted to ask whether there is any news. I am still very interested and happy to send anything else you need.\n\nKind regards,\n${name}`;
+  }
+
+  // ----- what needs doing: the focus list -----
+  function focusItems(all) {
+    const items = [];
+    const now = Date.now();
+    for (const job of all) {
+      const d = docsOf(job);
+      const at = (s) => [...(job.history || [])].reverse().find((e) => e.status === s)?.at || lastActivity(job);
+      if (job.status === 'offer') items.push({ job, rank: 0, tone: 'ok', icon: ICON_TROPHY, title: `Decide on the offer from ${job.company || 'the company'}`, text: `${job.title} · offer ${daysAgo(at('offer'))}`, actions: [['Open', () => openJob(job), true]] });
+      else if (job.status === 'interview' && job.interviewAt && job.interviewAt > now - 6 * 36e5)
+        items.push({ job, rank: job.interviewAt - now < 3 * DAY_MS ? 1 : 3, tone: 'accent', icon: ICON_CAL, title: `Interview at ${job.company || 'the company'}, ${whenLabel(job.interviewAt)}`, text: 'Practise with the interview deck: 8 questions with feedback.', actions: [['Practise', () => openJob(job, 'prep'), true], ['Change date', () => dateDialog(job)]] });
+      else if (job.status === 'interview' && job.interviewAt)
+        items.push({ job, rank: 2, tone: 'accent', icon: ICON_CAL, title: `How did the ${job.company || ''} interview go?`.replace('  ', ' '), text: `${job.title} · ${whenLabel(job.interviewAt)}`, actions: [['Got an offer', (el) => move(job, 'offer', el), true], ['Not this time', () => move(job, 'rejected')]] });
+      else if (job.status === 'interview') items.push({ job, rank: 2, tone: 'accent', icon: ICON_CAL, title: `Add the date of your ${job.company || ''} interview`.replace('  ', ' '), text: 'Vora reminds you and helps you practise before it.', actions: [['Add date', () => dateDialog(job), true], ['Practise', () => openJob(job, 'prep')]] });
+      else if (followDue(job))
+        items.push({
+          job,
+          rank: 4,
+          tone: 'warn',
+          icon: ICON_MAIL_SM,
+          title: `Follow up with ${job.company || 'the company'}`,
+          text: `Applied ${daysAgo(job.appliedAt || lastActivity(job))}${job.followedUpAt ? `, last follow-up ${daysAgo(job.followedUpAt)}` : ', no reply yet'}`,
+          actions: [
+            ['Copy email', () => copy(followUpText(job)), true],
+            [
+              'Done',
+              () => {
+                store.patchJob(job.id, { followedUpAt: Date.now() });
+                toast('Nice. Vora checks again in a week.');
+                draw();
+              },
+            ],
+          ],
+        });
+      else if (job.status === 'saved' && d.cvData && d.coverLetter) items.push({ job, rank: 5, tone: 'accent', icon: ICON_SEND, title: `Send your application to ${job.company || 'the company'}`, text: 'Your CV and letter are ready.', actions: [['Mark applied', () => move(job, 'applied'), true], ...(job.url ? [['Open posting', () => window.open(safeUrl(job.url), '_blank', 'noopener')]] : [])] });
+      else if (job.status === 'saved') items.push({ job, rank: 6 + Math.min(1, (job.excitement || 0) ? 0 : 0.5), tone: '', icon: ICON_PEN, title: `Tailor your CV for ${job.company || 'this job'}`, text: `${job.title} · saved ${daysAgo(job.savedAt || now)}`, actions: [['Start', () => openJob(job, 'docs'), true]] });
+    }
+    return items.sort((a, b) => a.rank - b.rank || (b.job.excitement || 0) - (a.job.excitement || 0) || (b.job.match?.score || 0) - (a.job.match?.score || 0));
+  }
+  function focusCard(all) {
+    const items = focusItems(all);
+    const shown = showAllFocus ? items : items.slice(0, phone() ? 3 : 5);
+    const row = (it, i) => {
+      const acts = it.actions.map(([label, run, primary]) => {
+        const b = h('button', { type: 'button', class: `btn small ${primary ? 'primary' : 'ghost'}` }, label);
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          run(b);
+        });
+        return b;
+      });
+      const li = h(
+        'li',
+        { class: `fx-item ${it.tone}`, style: `--i:${i}` },
+        h('span', { class: 'fx-icon' }, svg(it.icon)),
+        h('div', { class: 'fx-text' }, h('strong', {}, it.title), h('small', {}, it.text)),
+        h('div', { class: 'fx-actions' }, ...acts),
+      );
+      li.addEventListener('click', (e) => !e.target.closest('button') && openJob(it.job));
+      return li;
+    };
+    const more = items.length > shown.length || showAllFocus ? h('button', { type: 'button', class: 'link-btn fx-more' }, showAllFocus ? 'Show less' : `Show ${items.length - shown.length} more`) : '';
+    if (more)
+      more.addEventListener('click', () => {
+        showAllFocus = !showAllFocus;
+        draw();
+      });
+    return h(
+      'section',
+      { class: 'ap-card ap-focus' },
+      h('header', { class: 'ap-card-head' }, h('div', {}, h('p', { class: 'eyebrow' }, 'Focus'), h('h2', {}, items.length ? 'What to do next' : 'You are all caught up')), items.length ? h('span', { class: 'fx-count' }, String(items.length)) : ''),
+      items.length
+        ? h('ol', { class: 'fx-list' }, ...shown.map(row))
+        : h('div', { class: 'fx-empty' }, svg(ICON_CHECK), h('p', {}, 'Nothing is waiting on you. Find a few new jobs to keep the pipeline full.'), h('a', { class: 'btn small primary', href: '#/find' }, 'Find jobs')),
+      more,
     );
   }
 
+  // ----- weekly goal with a ring, the last 6 weeks and a streak -----
+  function goalOf() {
+    return Math.max(1, Math.min(30, Number(store.get().profile.prefs?.weekGoal) || 5));
+  }
+  function weekCard(all) {
+    const goal = goalOf();
+    const start = weekStart();
+    const weeks = Array.from({ length: 6 }, (_, i) => start - (5 - i) * 7 * DAY_MS);
+    const countIn = (w) => all.filter((j) => j.appliedAt && j.appliedAt >= w && j.appliedAt < w + 7 * DAY_MS).length;
+    const counts = weeks.map(countIn);
+    const now = counts.at(-1);
+    let streak = 0;
+    for (let i = counts.length - 2; i >= 0 && counts[i] >= goal; i--) streak++;
+    if (now >= goal) streak++;
+    const pct = Math.min(1, now / goal);
+    const R = 34, C = 2 * Math.PI * R;
+    const ring = h('div', { class: `wk-ring${now >= goal ? ' done' : ''}`, role: 'img', 'aria-label': `${now} of ${goal} applications this week` });
+    ring.innerHTML = `<svg viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="${R}" class="trk"/><circle cx="40" cy="40" r="${R}" class="val" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/></svg>`;
+    ring.append(h('span', { class: 'wk-num' }, h('strong', {}, String(now)), h('small', {}, `/ ${goal}`)));
+    const setGoal = (v) => {
+      store.update((s) => (s.profile.prefs = { ...(s.profile.prefs || {}), weekGoal: Math.max(1, Math.min(30, v)) }));
+      draw();
+    };
+    const minus = h('button', { type: 'button', class: 'wk-step', 'aria-label': 'Lower the weekly goal' }, '−');
+    const plus = h('button', { type: 'button', class: 'wk-step', 'aria-label': 'Raise the weekly goal' }, '+');
+    minus.addEventListener('click', () => setGoal(goal - 1));
+    plus.addEventListener('click', () => setGoal(goal + 1));
+    const max = Math.max(goal, ...counts, 1);
+    const days = Math.max(0, 7 - Math.floor((Date.now() - start) / DAY_MS) - 1);
+    return h(
+      'section',
+      { class: 'ap-card ap-week' },
+      h('header', { class: 'ap-card-head' }, h('div', {}, h('p', { class: 'eyebrow' }, 'This week'), h('h2', {}, now >= goal ? 'Goal reached' : `${goal - now} to go`)), streak ? h('span', { class: 'wk-streak', title: 'Weeks in a row at your goal' }, svg(ICON_FLAME), `${streak}`) : ''),
+      h(
+        'div',
+        { class: 'wk-body' },
+        ring,
+        h(
+          'div',
+          { class: 'wk-side' },
+          h('p', { class: 'wk-line' }, now >= goal ? 'Great pace. Keep the streak going next week.' : days ? `${days} ${days === 1 ? 'day' : 'days'} left this week` : 'Last day of the week'),
+          h('div', { class: 'wk-goal' }, h('span', {}, 'Weekly goal'), minus, h('strong', {}, String(goal)), plus),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'wk-bars', role: 'img', 'aria-label': `Applications per week: ${counts.join(', ')}` },
+        ...counts.map((c, i) => h('span', { class: `wk-bar${i === counts.length - 1 ? ' now' : ''}${c >= goal ? ' hit' : ''}`, style: `--h:${Math.max(6, (c / max) * 100)}%`, title: `${c}` }, h('i', {}))),
+        h('span', { class: 'wk-goal-line', style: `--g:${(goal / max) * 100}%` }),
+      ),
+      h('div', { class: 'wk-axis' }, h('span', {}, '6 weeks ago'), h('span', {}, 'This week')),
+    );
+  }
+
+  // ----- the funnel: how far applications get -----
+  function funnelCard(all) {
+    const applied = all.filter(hasApplied).length;
+    const interviews = all.filter((j) => everReached(j, 'interview') || everReached(j, 'offer')).length;
+    const offers = all.filter((j) => everReached(j, 'offer')).length;
+    const steps = [
+      ['saved', 'Tracked', all.length],
+      ['applied', 'Applied', applied],
+      ['interview', 'Interviews', interviews],
+      ['offer', 'Offers', offers],
+    ];
+    const max = Math.max(1, all.length);
+    return h(
+      'section',
+      { class: 'ap-card ap-funnel' },
+      h('header', { class: 'ap-card-head' }, h('div', {}, h('p', { class: 'eyebrow' }, 'Pipeline'), h('h2', {}, applied ? `${Math.round((interviews / applied) * 100)}% interview rate` : 'Your funnel'))),
+      h(
+        'ol',
+        { class: 'fn-list' },
+        ...steps.map(([id, label, n], i) =>
+          h(
+            'li',
+            { class: `fn-row status-${id}`, style: `--w:${Math.max(4, (n / max) * 100)}%;--i:${i}` },
+            h('span', { class: 'fn-label' }, label),
+            h('span', { class: 'fn-track' }, h('span', { class: 'fn-fill' })),
+            h('strong', { class: 'fn-n' }, String(n)),
+            i ? h('small', { class: 'fn-rate' }, steps[i - 1][2] ? `${Math.round((n / steps[i - 1][2]) * 100)}%` : '–') : h('small', { class: 'fn-rate' }, ''),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ----- cards -----
+  function stars(job) {
+    const wrap = h('div', { class: 'stars', role: 'radiogroup', 'aria-label': 'How excited are you?' });
+    const val = job.excitement || 0;
+    for (let i = 1; i <= 5; i++) {
+      const b = h('button', { type: 'button', role: 'radio', class: `star${i <= val ? ' on' : ''}`, 'aria-checked': String(i === val), 'aria-label': `${i} of 5` });
+      b.innerHTML = STAR;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        store.patchJob(job.id, { excitement: val === i ? 0 : i });
+        draw();
+      });
+      wrap.append(b);
+    }
+    return wrap;
+  }
   function menuFor(job) {
     const menu = h('details', { class: 'card-menu' });
     const list = h('div', { class: 'menu', role: 'menu' });
+    const item = (label, run, cls = '') => {
+      const b = h('button', { type: 'button', role: 'menuitem', class: cls }, label);
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        menu.open = false;
+        run();
+      });
+      return b;
+    };
     list.append(h('p', { class: 'menu-label' }, 'Move to'));
     for (const s of STATUSES) {
       if (s.id === job.status) continue;
       const b = h('button', { type: 'button', role: 'menuitem', class: `status-${s.id}` }, h('span', { class: 'dot' }), s.label);
       b.addEventListener('click', (e) => {
         e.preventDefault();
+        menu.open = false;
         move(job, s.id);
       });
       list.append(b);
     }
-    const open = h('a', { role: 'menuitem', href: `#/job/${encodeURIComponent(job.id)}` }, 'Open job');
-    const remove = confirmButton('Remove', 'Tap again to remove', () => {
-      store.removeJob(job.id);
-      toast('Job removed');
-      draw();
-    }, 'menu-danger');
-    list.append(h('hr'), open, job.url ? h('a', { role: 'menuitem', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'View posting ↗') : '', remove);
+    list.append(h('hr'), item(job.interviewAt ? 'Change interview date' : 'Add interview date', () => dateDialog(job)));
+    if (job.status === 'applied') list.append(item('Copy follow-up email', () => copy(followUpText(job))));
+    list.append(
+      h('a', { role: 'menuitem', href: `#/job/${encodeURIComponent(job.id)}` }, 'Open job'),
+      job.url ? h('a', { role: 'menuitem', href: safeUrl(job.url), target: '_blank', rel: 'noopener noreferrer' }, 'View posting ↗') : '',
+      h('hr'),
+      item('Remove', () => remove(job), 'menu-danger'),
+    );
     menu.append(h('summary', { 'aria-label': `Actions for ${job.title}`, title: 'Actions' }, '⋯'), list);
     menu.addEventListener('click', (e) => e.stopPropagation());
-    // Float the menu over the page (columns scroll, so it would be clipped),
-    // below the button, or above it when there is no room underneath.
     menu.addEventListener('toggle', () => {
       if (!menu.open) return;
       for (const d of view.querySelectorAll('details.card-menu[open]')) if (d !== menu) d.open = false;
@@ -1817,52 +2106,73 @@ function renderTracker() {
     });
     return menu;
   }
-
   function activityText(job) {
     if (job.status === 'saved') return `Saved ${daysAgo(job.savedAt || Date.now())}`;
     if (job.status === 'applied') return `Applied ${daysAgo(job.appliedAt || lastActivity(job))}`;
     const at = [...(job.history || [])].reverse().find((e) => e.status === job.status)?.at || lastActivity(job);
     return `${STATUSES.find((x) => x.id === job.status)?.label} · ${daysAgo(at)}`;
   }
-
-  function card(job) {
+  function whenChip(job) {
+    if (job.status === 'interview' && job.interviewAt) {
+      const soon = job.interviewAt - Date.now() < 2 * DAY_MS && job.interviewAt > Date.now() - 6 * 36e5;
+      return h('span', { class: `ap-chip ${soon ? 'hot' : 'accent'}` }, svg(ICON_CAL), whenLabel(job.interviewAt));
+    }
+    if (followDue(job)) return h('span', { class: 'ap-chip warn' }, svg(ICON_MAIL_SM), 'Follow up due');
+    return h('span', { class: 'ap-when' }, activityText(job));
+  }
+  function docDots(job) {
+    const d = docsOf(job);
+    if (job.status === 'rejected') return '';
+    const dot = (on, label) => h('span', { class: `ap-doc${on ? ' on' : ''}`, title: `${label}: ${on ? 'ready' : 'not written yet'}` }, label);
+    return h('span', { class: 'ap-docs', 'aria-label': `CV ${d.cvData ? 'ready' : 'missing'}, letter ${d.coverLetter ? 'ready' : 'missing'}` }, dot(d.cvData, 'CV'), dot(d.coverLetter, 'Letter'));
+  }
+  function card(job, i = 0) {
     const next = nextStep(job);
     const href = `#/job/${encodeURIComponent(job.id)}`;
+    const adv = NEXT_STAGE[job.status];
+    const advBtn = adv ? h('button', { type: 'button', class: `ap-advance status-${adv[0]}` }, adv[1], svg(ICON_CHEVRON)) : '';
     const el = h(
       'article',
-      { class: 'app-card', draggable: 'true', 'data-id': job.id },
+      { class: `app-card ap2 status-${job.status}${justMoved === job.id ? ' just-moved' : ''}`, draggable: phone() ? 'false' : 'true', 'data-id': job.id, tabindex: '0', style: `--i:${Math.min(i, 8)}` },
       h(
         'div',
         { class: 'app-card-head' },
         companyAvatar(job.company),
-        h('div', { class: 'app-card-title' }, h('a', { href, class: 'app-title' }, job.title), h('p', { class: 'app-company' }, [job.company, job.location].filter(Boolean).join(' · '))),
+        h('div', { class: 'app-card-title' }, h('a', { href, class: 'app-title' }, job.title), h('p', { class: 'app-company' }, h('span', { translate: 'no' }, job.company || ''), job.location ? ` · ${job.location}` : '')),
         menuFor(job),
       ),
-      h('div', { class: 'app-card-meta' }, job.match ? scorePill(job.match) : '', h('span', { class: 'app-when' }, activityText(job))),
-      h('div', { class: `next-step ${next.tone || ''}` }, h('span', { class: 'next-label' }, 'Next'), next.text),
+      h('div', { class: 'ap-row' }, job.match ? scorePill(job.match) : '', job.salary ? h('span', { class: 'ap-chip money' }, job.salary) : '', job.status === 'rejected' ? '' : stars(job)),
+      h('div', { class: 'ap-row ap-row-2' }, whenChip(job), docDots(job)),
+      h('div', { class: 'ap-foot' }, h('div', { class: `next-step ${next.tone || ''}` }, h('span', { class: 'next-label' }, 'Next'), next.text), advBtn),
     );
+    if (advBtn)
+      advBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (adv[0] === 'interview') {
+          move(job, 'interview', el);
+          setTimeout(() => dateDialog(store.get().jobs[job.id]), 350);
+        } else move(job, adv[0], el);
+      });
     el.addEventListener('click', (e) => {
       if (e.target.closest('a, button, details')) return;
-      if (next.tab) {
-        try {
-          sessionStorage.setItem('ajh:tab', next.tab);
-        } catch {}
-      }
-      go(`/job/${encodeURIComponent(job.id)}`);
+      openJob(job, next.tab);
     });
+    el.addEventListener('keydown', (e) => e.key === 'Enter' && e.target === el && openJob(job, next.tab));
     el.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('text/plain', job.id);
       e.dataTransfer.effectAllowed = 'move';
       el.classList.add('dragging');
+      content.classList.add('is-dragging');
     });
-    el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    el.addEventListener('dragend', () => (el.classList.remove('dragging'), content.classList.remove('is-dragging')));
     return el;
   }
+  const emptyText = (id) => ({ saved: 'Save jobs from your matches or search', applied: 'Mark a job as applied when you send it', interview: 'Interviews show up here', offer: 'Your offers land here', rejected: 'Nothing here. Good.' })[id];
 
   function board(jobs) {
     return h(
       'div',
-      { class: 'board' },
+      { class: 'board ap-board' },
       ...STATUSES.map((s) => {
         const items = jobs.filter((j) => j.status === s.id);
         const col = h(
@@ -1876,7 +2186,7 @@ function renderTracker() {
             h('span', { class: 'count' }, String(items.length)),
             s.id === 'saved' ? h('a', { class: 'col-add', href: '#/add', title: 'Add a job', 'aria-label': 'Add a job' }, '+') : '',
           ),
-          h('div', { class: 'column-body' }, ...(items.length ? items.map(card) : [h('div', { class: 'empty-col' }, s.id === 'saved' ? 'Save jobs from search to start' : 'Drag a card here')])),
+          h('div', { class: 'column-body' }, ...(items.length ? items.map(card) : [h('div', { class: 'empty-col' }, emptyText(s.id))])),
         );
         col.addEventListener('dragover', (e) => {
           e.preventDefault();
@@ -1888,6 +2198,7 @@ function renderTracker() {
         col.addEventListener('drop', (e) => {
           e.preventDefault();
           col.classList.remove('drop');
+          content.classList.remove('is-dragging');
           const id = e.dataTransfer.getData('text/plain');
           const job = store.get().jobs[id];
           if (job && job.status !== s.id) move(job, s.id);
@@ -1895,6 +2206,41 @@ function renderTracker() {
         return col;
       }),
     );
+  }
+
+  // Phones: one stage at a time, with tabs and swipe, instead of five columns scrolling sideways.
+  function stageTabs(jobs) {
+    if (!tabStage || !STATUSES.some((s) => s.id === tabStage)) tabStage = (STATUSES.find((s) => s.id !== 'rejected' && jobs.some((j) => j.status === s.id)) || STATUSES[0]).id;
+    const items = jobs.filter((j) => j.status === tabStage);
+    const pick = (id, dir = 0) => {
+      tabStage = id;
+      try {
+        localStorage.setItem('ajh:trackerStage', id);
+      } catch {}
+      draw(dir);
+    };
+    const tabs = h(
+      'div',
+      { class: 'ap-tabs', role: 'tablist', 'aria-label': 'Stage' },
+      ...STATUSES.map((s) => {
+        const n = jobs.filter((j) => j.status === s.id).length;
+        const b = h('button', { type: 'button', role: 'tab', class: `ap-tab status-${s.id}`, 'aria-selected': String(s.id === tabStage) }, h('span', { class: 'dot' }), s.label, h('span', { class: 'ap-tab-n' }, String(n)));
+        b.addEventListener('click', () => pick(s.id, Math.sign(STATUSES.indexOf(s) - STATUSES.findIndex((x) => x.id === tabStage))));
+        return b;
+      }),
+    );
+    const listEl = h('div', { class: 'ap-stack' }, ...(items.length ? items.map(card) : [h('div', { class: 'empty-col ap-empty-stage' }, emptyText(tabStage))]));
+    let sx = null, sy = 0;
+    listEl.addEventListener('touchstart', (e) => ((sx = e.touches[0].clientX), (sy = e.touches[0].clientY)), { passive: true });
+    listEl.addEventListener('touchend', (e) => {
+      if (sx == null) return;
+      const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+      sx = null;
+      if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const i = STATUSES.findIndex((s) => s.id === tabStage) + (dx < 0 ? 1 : -1);
+      if (STATUSES[i]) pick(STATUSES[i].id, dx < 0 ? 1 : -1);
+    });
+    return h('div', { class: 'ap-phone' }, tabs, listEl);
   }
 
   function list(jobs) {
@@ -1913,18 +2259,19 @@ function renderTracker() {
       select.addEventListener('change', () => move(job, select.value));
       const tr = h(
         'tr',
-        { tabindex: '0' },
-        h('td', { class: 'cell-role' }, h('div', { class: 'role-wrap' }, companyAvatar(job.company, 'sm'), h('div', {}, h('a', { href: `#/job/${encodeURIComponent(job.id)}`, class: 'app-title' }, job.title), h('span', { class: 'app-company' }, job.company || '')))),
+        { tabindex: '0', class: justMoved === job.id ? 'just-moved' : '' },
+        h('td', { class: 'cell-role' }, h('div', { class: 'role-wrap' }, companyAvatar(job.company, 'sm'), h('div', {}, h('a', { href: `#/job/${encodeURIComponent(job.id)}`, class: 'app-title' }, job.title), h('span', { class: 'app-company', translate: 'no' }, job.company || '')))),
         h('td', { class: 'cell-stage', 'data-label': 'Stage' }, select),
         h('td', { class: 'cell-match', 'data-label': 'Match' }, job.match ? scorePill(job.match) : h('span', { class: 'muted' }, '–')),
-        h('td', { class: 'cell-loc', 'data-label': 'Location' }, job.location || h('span', { class: 'muted' }, '–')),
-        h('td', { class: 'cell-when', 'data-label': 'Activity' }, activityText(job)),
+        h('td', { class: 'cell-stars', 'data-label': 'Interest' }, stars(job)),
+        h('td', { class: 'cell-when', 'data-label': 'Activity' }, whenChip(job)),
+        h('td', { class: 'cell-docs', 'data-label': 'Documents' }, docDots(job)),
         h('td', { class: 'cell-next', 'data-label': 'Next' }, h('span', { class: `next-step inline ${next.tone || ''}` }, next.text)),
         h('td', { class: 'cell-menu' }, menuFor(job)),
       );
       const open = (e) => {
         if (e.target.closest('a, button, select, details')) return;
-        go(`/job/${encodeURIComponent(job.id)}`);
+        openJob(job, next.tab);
       };
       tr.addEventListener('click', open);
       tr.addEventListener('keydown', (e) => e.key === 'Enter' && open(e));
@@ -1941,7 +2288,7 @@ function renderTracker() {
             h(
               'table',
               { class: 'app-table' },
-              h('thead', {}, h('tr', {}, ...['Role', 'Stage', 'Match', 'Location', 'Activity', 'Next step', ''].map((t) => h('th', { scope: 'col' }, t)))),
+              h('thead', {}, h('tr', {}, ...['Role', 'Stage', 'Match', 'Interest', 'Activity', 'Documents', 'Next step', ''].map((t) => h('th', { scope: 'col' }, t)))),
               h('tbody', {}, ...rows),
             ),
           )
@@ -1950,52 +2297,101 @@ function renderTracker() {
   }
 
   function emptyState() {
+    const step = (n, title, text) => h('li', {}, h('span', { class: 'ap-step-n' }, String(n)), h('div', {}, h('strong', {}, title), h('small', {}, text)));
     return h(
       'section',
-      { class: 'card tracker-empty' },
-      svg(ICON_BOARD),
+      { class: 'ap-card tracker-empty ap-empty' },
+      h('div', { class: 'ap-empty-art', 'aria-hidden': 'true' }, ...['saved', 'applied', 'interview', 'offer'].map((s, i) => h('span', { class: `status-${s}`, style: `--i:${i}` }))),
       h('h2', {}, 'Track every application in one place'),
-      h('p', { class: 'muted' }, 'Save jobs from your matches or search, then move them from Saved to Applied, Interview and Offer. Vora tells you the next step for each one.'),
+      h('p', { class: 'muted' }, 'Save jobs you like and Vora walks you through each one: tailor the CV, write the letter, apply, follow up and practise for the interview.'),
+      h('ol', { class: 'ap-steps' }, step(1, 'Saved', 'From your matches or search'), step(2, 'Applied', 'With a tailored CV and letter'), step(3, 'Follow-up', 'Vora reminds you after a week'), step(4, 'Interview', 'Practise with the card game')),
       h('div', { class: 'row' }, h('a', { class: 'btn primary', href: '#/find' }, 'Find jobs'), h('a', { class: 'btn', href: '#/add' }, 'Add a job')),
     );
   }
 
-  function draw() {
+  function exportCSV() {
+    const all = Object.values(store.get().jobs).sort(SORTS.recent);
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const day = (ts) => (ts ? new Date(ts).toISOString().slice(0, 10) : '');
+    const rows = [['Title', 'Company', 'Location', 'Stage', 'Match', 'Interest', 'Saved', 'Applied', 'Interview', 'Salary', 'Link', 'Notes']];
+    for (const j of all) rows.push([j.title, j.company, j.location, STATUSES.find((s) => s.id === j.status)?.label, j.match?.score ?? '', j.excitement || '', day(j.savedAt), day(j.appliedAt), j.interviewAt ? new Date(j.interviewAt).toISOString().slice(0, 16).replace('T', ' ') : '', j.salary, j.url, j.notes]);
+    download(`vora-applications-${day(Date.now())}.csv`, '﻿' + rows.map((r) => r.map(esc).join(',')).join('\r\n'), 'text/csv');
+  }
+
+  let lastPhone = phone();
+  let drawn = 0;
+  function draw(dir = 0) {
+    // Entry animations only the first time; later redraws (a star, a move) stay calm.
+    top.classList.toggle('no-anim', drawn > 0);
+    content.classList.toggle('no-anim', drawn++ > 0 && !dir);
     const all = Object.values(store.get().jobs);
-    drawStats(all);
-    seg.replaceChildren(modeBtn('board', 'Board', ICON_BOARD), modeBtn('list', 'List', ICON_LIST));
-    toolbar.replaceChildren(h('label', { class: 'search-field' }, svg(ICON_SEARCH), search), h('div', { class: 'toolbar-right' }, sortSel, seg));
+    const upcoming = all.filter((j) => j.status === 'interview' && j.interviewAt && j.interviewAt > Date.now()).length;
+    sub.textContent = all.length
+      ? `${all.length} ${all.length === 1 ? 'job' : 'jobs'} tracked${upcoming ? ` · ${upcoming} ${upcoming === 1 ? 'interview' : 'interviews'} coming up` : ''}`
+      : 'Your job search pipeline, from saved to offer.';
+    top.hidden = !all.length;
+    if (all.length) top.replaceChildren(focusCard(all), h('div', { class: 'ap-side' }, weekCard(all), funnelCard(all)));
+    const attention = focusItems(all).length;
+    const qchip = (id, label, n) => {
+      const b = h('button', { type: 'button', class: 'chip ap-q', 'aria-pressed': String(quick === id) }, label, n != null ? h('span', { class: 'chip-count' }, String(n)) : '');
+      b.addEventListener('click', () => {
+        quick = quick === id ? 'all' : id;
+        draw();
+      });
+      return b;
+    };
+    const seg = h('div', { class: 'segmented ap-seg', role: 'group', 'aria-label': 'View' }, modeBtn('board', 'Board', ICON_BOARD), modeBtn('list', 'List', ICON_LIST));
+    toolbar.replaceChildren(
+      h('label', { class: 'search-field' }, svg(ICON_SEARCH), search),
+      h('div', { class: 'ap-quick', role: 'group', 'aria-label': 'Quick filters' }, qchip('all', 'All', null), qchip('attention', 'Needs action', attention), qchip('starred', 'Excited', all.filter((j) => (j.excitement || 0) >= 4).length)),
+      h('div', { class: 'toolbar-right' }, sortSel, seg),
+    );
     toolbar.hidden = !all.length;
     if (!all.length) return content.replaceChildren(emptyState());
     const term = search.value.trim().toLowerCase();
-    const jobs = all.filter((j) => !term || `${j.title} ${j.company} ${j.location || ''}`.toLowerCase().includes(term)).sort(SORTS[sort]);
-    content.replaceChildren(mode === 'list' ? list(jobs) : board(jobs));
+    const need = new Set(focusItems(all).map((x) => x.job.id));
+    const jobs = all
+      .filter((j) => !term || `${j.title} ${j.company} ${j.location || ''}`.toLowerCase().includes(term))
+      .filter((j) => quick === 'all' || (quick === 'attention' ? need.has(j.id) : (j.excitement || 0) >= 4))
+      .sort(SORTS[sort]);
+    content.dataset.dir = String(dir);
+    content.replaceChildren(phone() ? stageTabs(jobs) : mode === 'list' ? list(jobs) : board(jobs));
+    if (phone()) content.querySelector('.ap-tab[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    const moved = content.querySelector('.just-moved');
+    if (moved && !phone()) moved.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    justMoved = '';
   }
 
-  search.addEventListener('input', debounce(draw, 120));
+  search.addEventListener('input', debounce(() => draw(), 120));
   sortSel.addEventListener('change', () => {
     sort = sortSel.value;
     draw();
   });
-  // Close an open card menu when clicking elsewhere.
+  const onResize = debounce(() => {
+    if (!view.contains(top)) return removeEventListener('resize', onResize);
+    if (phone() !== lastPhone) {
+      lastPhone = phone();
+      draw();
+    }
+  }, 150);
+  addEventListener('resize', onResize);
   const closeMenus = (e) => {
-    if (!view.contains(stats)) return document.removeEventListener('click', closeMenus);
+    if (!view.contains(top)) return document.removeEventListener('click', closeMenus);
     for (const d of view.querySelectorAll('details.card-menu[open]')) if (!d.contains(e.target)) d.open = false;
   };
   document.addEventListener('click', closeMenus);
-  // A floating menu would drift away from its card on scroll, so scrolling closes it.
   const closeOnScroll = () => {
-    if (!view.contains(stats)) return removeEventListener('scroll', closeOnScroll, true);
+    if (!view.contains(top)) return removeEventListener('scroll', closeOnScroll, true);
     for (const d of view.querySelectorAll('details.card-menu[open]')) d.open = false;
   };
   addEventListener('scroll', closeOnScroll, true);
 
-  view.append(
-    pageHeader('Applications', 'Your job search pipeline, from saved to offer.', h('a', { class: 'btn primary', href: '#/add' }, '+ Add job')),
-    stats,
-    toolbar,
-    content,
-  );
+  const exportBtn = h('button', { type: 'button', class: 'btn ap-export', title: 'Download all applications as a spreadsheet (CSV)' }, svg(ICON_DOWN), h('span', {}, 'Export'));
+  exportBtn.addEventListener('click', exportCSV);
+  const header = pageHeader('Applications', '', h('div', { class: 'ap-head-actions' }, exportBtn, h('a', { class: 'btn primary', href: '#/add' }, '+ Add job')));
+  header.querySelector('p')?.replaceWith(sub);
+  if (!header.contains(sub)) header.querySelector('h1')?.after(sub);
+  view.append(header, top, toolbar, content);
   draw();
 }
 

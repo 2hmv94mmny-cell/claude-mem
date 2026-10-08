@@ -126,6 +126,11 @@ export const store = {
       if (status === 'applied' && !job.appliedAt) job.appliedAt = Date.now();
     });
   },
+  patchJob(id, patch) {
+    this.update((s) => {
+      if (s.jobs[id]) Object.assign(s.jobs[id], patch);
+    });
+  },
   removeJob(id) {
     this.update((s) => {
       delete s.jobs[id];

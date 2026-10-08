@@ -109,12 +109,25 @@ export function md(src = '') {
 }
 
 let toastTimer;
-export function toast(message) {
+export function toast(message, { action, run } = {}) {
   const el = document.getElementById('toast');
-  el.textContent = message;
+  el.classList.toggle('has-action', Boolean(action));
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'toast-action';
+    b.textContent = action;
+    b.addEventListener('click', () => {
+      el.classList.remove('show');
+      run?.();
+    });
+    const text = document.createElement('span');
+    text.textContent = message;
+    el.replaceChildren(text, b);
+  } else el.textContent = message;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), action ? 6000 : 3200);
 }
 
 export async function copy(text) {
