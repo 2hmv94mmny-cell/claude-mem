@@ -3007,41 +3007,130 @@ function renderDocuments(initialKind) {
     record();
   }
 
+  // The start screen of an empty CV or letter: a live preview of the page in
+  // the chosen look, the look picker, and clear choices as cards.
   function startCard() {
     const p = store.get().profile;
-    const tailored = Object.entries(store.get().docs || {})
-      .filter(([, d]) => d?.cvData)
-      .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))[0];
-    const btn = (label, cls, fn) => {
-      const b = h('button', { type: 'button', class: `btn ${cls}` }, label);
-      b.addEventListener('click', fn);
-      return b;
+    const isCV = kind === 'cv';
+    const docsAll = Object.entries(store.get().docs || {});
+    const latest = (pick) => docsAll.filter(([, d]) => pick(d)).sort((x, y) => (y[1].updatedAt || 0) - (x[1].updatedAt || 0))[0];
+    const tailored = latest((d) => d?.cvData);
+    const jobLetter = latest((d) => d?.coverLetter);
+    const companyOf = (entry) => store.get().jobs[entry[0]]?.company || 'a job';
+    const TONES = [['professional', 'Professional'], ['warm and enthusiastic', 'Warm'], ['concise and direct', 'Concise'], ['formal', 'Formal']];
+    let tone = 'professional';
+    const LOOKS = ['harvard', 'modern', 'professional', 'executive', 'clean', 'banner', 'jakes', 'elegant'];
+
+    // Preview: the real page in the chosen template, with your own details where we have them.
+    const sampleCV = () => {
+      const base = cvFromProfile(p);
+      if ((base.experience || []).length) return base;
+      return {
+        ...base,
+        name: base.name || p.name || 'Your Name',
+        headline: base.headline || p.headline || 'Your headline',
+        summary: base.summary || 'A short profile that says what you do and what you are good at.',
+        experience: [{ title: p.targetRoles.split(',')[0]?.trim() || 'Your role', company: 'Company', location: p.location || 'City', start: '2022', end: 'Present', bullets: ['What you did and what came of it.', 'A result with a number.'] }],
+        education: base.education?.length ? base.education : [{ degree: 'Your degree', school: 'School', location: '', start: '2018', end: '2021', details: '' }],
+        skills: base.skills?.length ? base.skills : [{ label: 'Skills', items: (p.skills || 'Skill one, Skill two').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 5) }],
+      };
     };
-    const tone = h('select', { 'aria-label': 'Tone' }, ...['professional', 'warm and enthusiastic', 'concise and direct', 'formal'].map((t) => h('option', { value: t }, t)));
-    const actions =
-      kind === 'cv'
-        ? [
-            p.cv.trim() ? btn('Lay out my CV with Vora', 'primary', () => withAI({ kind: 'layout' }, async (signal) => (async () => { const cvData = await ai.structureCV({ signal }); stopIfCancelled(signal); saveMaster({ cvData }); })())) : h('a', { class: 'btn primary', href: '#/profile' }, 'Upload your CV first'),
-            tailored ? btn(`Start from my CV for ${store.get().jobs[tailored[0]]?.company || 'a job'}`, '', () => (record(), saveMaster({ cvData: structuredClone(tailored[1].cvData), template: tailored[1].template, accent: tailored[1].accent }), refresh(), record())) : '',
-            btn('Start from a blank page', 'ghost', () => startBlank()),
-          ]
-        : [
-            h('div', { class: 'row wrap', style: 'justify-content:center' }, tone, btn('Write a general letter with Vora', 'primary', () => withAI({ kind: 'letter' }, async (signal) => (async () => { const body = await ai.writeGeneralLetter({ tone: tone.value, signal }); stopIfCancelled(signal); saveLetter({ body, date: Date.now() }); })()))),
-            btn('Start from a blank page', 'ghost', () => startBlank()),
-          ];
+    const SAMPLE_LETTER = 'Dear Hiring Manager,\n\nThe opening says which role you want and why this company.\n\nThe middle shows one or two real results from your experience that match what they need.\n\nThe close asks for a conversation.\n\nKind regards,\n' + (p.name || 'Your Name');
+    const preview = h('div', { class: 'ds-paper', 'aria-hidden': 'true' });
+    const drawPreview = () => {
+      const id = tplId();
+      preview.replaceChildren(isCV ? renderCV(sampleCV(), id, accent(), { font: fontId() }) : renderLetter(letterCV(), SAMPLE_LETTER, id, accent(), letterMeta(), { font: fontId() }));
+      preview.classList.remove('swap');
+      void preview.offsetWidth;
+      preview.classList.add('swap');
+    };
+    drawPreview();
+
+    // Look picker
+    const looks = h('div', { class: 'ds-looks', role: 'radiogroup', 'aria-label': 'Template' });
+    const drawLooks = () =>
+      looks.replaceChildren(
+        ...LOOKS.map((id) => {
+          const t = getTemplate(id);
+          const on = tplId() === t.id;
+          const b = h('button', { type: 'button', role: 'radio', 'aria-checked': String(on), class: 'ds-look', title: t.blurb }, h('span', { class: 'ds-look-thumb', 'aria-hidden': 'true' }, isCV ? renderCV(sampleCV(), t.id, t.accent) : renderLetter(letterCV(), SAMPLE_LETTER, t.id, t.accent, letterMeta())), h('span', { class: 'ds-look-name' }, t.name));
+          b.addEventListener('click', () => {
+            if (isCV) saveMaster({ template: t.id, accent: '' });
+            else saveLetter({ template: t.id, accent: '' });
+            drawLooks();
+            drawPreview();
+          });
+          return b;
+        }),
+      );
+    drawLooks();
+
+    // Choice cards
+    const card = ({ icon, title, text, badge = '', primary = false, run, href }) => {
+      const inner = [h('span', { class: 'ds-opt-icon', 'aria-hidden': 'true' }, svgIcon(icon)), h('span', { class: 'ds-opt-text' }, h('strong', {}, title, badge ? h('span', { class: 'ds-badge' }, badge) : ''), h('small', {}, text)), h('span', { class: 'ds-opt-go', 'aria-hidden': 'true' }, svgIcon(ICON_CHEVRON))];
+      const el = href ? h('a', { class: `ds-opt${primary ? ' primary' : ''}`, href }, ...inner) : h('button', { type: 'button', class: `ds-opt${primary ? ' primary' : ''}` }, ...inner);
+      if (run) el.addEventListener('click', run);
+      return el;
+    };
+    const ICON_BLANK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>';
+    const ICON_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h2"/></svg>';
+    const ICON_UP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>';
+    const options = isCV
+      ? [
+          p.cv.trim()
+            ? card({ icon: ICON_SPARK, primary: true, badge: 'Recommended', title: 'Lay out my CV with Vora', text: 'Your profile CV in this look, word for word. About 30 seconds.', run: () => withAI({ kind: 'layout' }, async (signal) => { const cvData = await ai.structureCV({ signal }); stopIfCancelled(signal); saveMaster({ cvData }); }) })
+            : card({ icon: ICON_UP, primary: true, title: 'Upload your CV first', text: 'Add it in your profile, then Vora lays it out here.', href: '#/profile' }),
+          tailored ? card({ icon: ICON_COPY, title: `Start from my CV for ${companyOf(tailored)}`, text: 'Copy the version you tailored for that job and make it general.', run: () => (record(), saveMaster({ cvData: structuredClone(tailored[1].cvData) }), refresh(), record()) }) : '',
+          card({ icon: ICON_BLANK, title: 'Start from a blank page', text: 'Fill in every section yourself, like in Word.', run: () => startBlank() }),
+        ]
+      : [
+          card({ icon: ICON_SPARK, primary: true, badge: 'Recommended', title: 'Write a general letter with Vora', text: 'From your CV and the roles you want, in the tone you pick. About 30 seconds.', run: () => withAI({ kind: 'letter' }, async (signal) => { const body = await ai.writeGeneralLetter({ tone, signal }); stopIfCancelled(signal); saveLetter({ body, date: Date.now() }); }) }),
+          jobLetter ? card({ icon: ICON_COPY, title: `Start from my letter for ${companyOf(jobLetter)}`, text: 'Copy the letter you wrote for that job and adapt it.', run: () => (record(), saveLetter({ body: jobLetter[1].coverLetter, date: Date.now() }), refresh(), record()) }) : '',
+          card({ icon: ICON_BLANK, title: 'Start from a blank page', text: 'Write it yourself on a proper business letter page.', run: () => startBlank() }),
+        ];
+
+    const toneRow = isCV
+      ? ''
+      : (() => {
+          const row = h('div', { class: 'ds-tones', role: 'radiogroup', 'aria-label': 'Tone' });
+          const draw = () =>
+            row.replaceChildren(
+              ...TONES.map(([v, label]) => {
+                const b = h('button', { type: 'button', role: 'radio', 'aria-checked': String(tone === v), class: 'ds-tone' }, label);
+                b.addEventListener('click', () => {
+                  tone = v;
+                  draw();
+                });
+                return b;
+              }),
+            );
+          draw();
+          return h('div', { class: 'ds-block' }, h('p', { class: 'ds-label' }, 'Tone'), row);
+        })();
+
+    const ticks = isCV
+      ? ['Your own words, nothing invented', 'ATS-friendly templates', 'Edit on the page, download PDF or Word']
+      : ['Matches your CV template', 'Sounds like a person, not a robot', 'Edit on the page, download PDF or Word'];
+
     return h(
       'section',
-      { class: 'docs-start' },
-      h('div', { class: 'docs-start-icon' }, svgIcon(kind === 'cv' ? ICON_DOC : ICON_MAIL)),
-      h('h2', {}, kind === 'cv' ? 'Your CV, ready to edit like a Word page' : 'A cover letter you can send anywhere'),
+      { class: 'docs-start ds' },
       h(
-        'p',
-        { class: 'muted' },
-        kind === 'cv'
-          ? 'Vora lays out the CV from your profile in a professional template, word for word. Then click any text to change it, switch templates and colours, and download a PDF.'
-          : 'A general letter for the roles you want, laid out as a proper business letter in the same template as your CV. Edit it on the page and download it as a PDF.',
+        'div',
+        { class: 'ds-hero' },
+        h('div', { class: 'ds-stage' }, h('span', { class: 'ds-glow', 'aria-hidden': 'true' }), h('span', { class: 'ds-sheet back', 'aria-hidden': 'true' }), preview, h('span', { class: 'ds-live' }, h('i', { 'aria-hidden': 'true' }), 'Live preview')),
+        h(
+          'div',
+          { class: 'ds-intro' },
+          h('span', { class: 'ds-kind' }, svgIcon(isCV ? ICON_DOC : ICON_MAIL), isCV ? 'CV' : 'Cover letter'),
+          h('h2', {}, isCV ? 'Build your CV in minutes' : 'A cover letter that gets read'),
+          h('p', {}, isCV ? 'Let Vora lay out your CV in the look you pick, or start from scratch. You can change everything afterwards.' : 'Pick a tone and a look. Vora writes a general letter you can adapt to any job.'),
+          toneRow,
+          h('div', { class: 'ds-opts' }, ...options.filter(Boolean)),
+          h('ul', { class: 'ds-ticks' }, ...ticks.map((t) => h('li', {}, t))),
+        ),
       ),
-      h('div', { class: 'docs-start-actions' }, ...actions.filter(Boolean)),
+      h('div', { class: 'ds-block' }, h('div', { class: 'ds-label-row' }, h('p', { class: 'ds-label' }, 'Choose a look'), h('span', { class: 'small muted' }, `${TEMPLATES.length} templates in the editor`)), looks),
     );
   }
 
