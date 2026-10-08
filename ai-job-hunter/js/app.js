@@ -1933,34 +1933,381 @@ function interviewDialog(job, { onDone, step } = {}) {
   else stepDate();
 }
 
-/** Reminders while Vora is open: a system notification when allowed, else a toast. */
-function checkReminders() {
-  const now = Date.now();
-  const due = [];
+// ---------------------------------------------------------------------------
+// Vora reminders: your own ("Call Anna at Roche, Friday 10:00") and the ones
+// Vora sets for you (follow up a week after applying, practise the evening
+// before an interview, apply to a saved job, reply to an offer). Shown under
+// the bell, as a notification or alert when due, and caught up when you return.
+// ---------------------------------------------------------------------------
+
+const ICON_BELL_LG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>';
+const AUTO_KINDS = [
+  ['follow', 'Follow-ups a week after you apply'],
+  ['prep', 'Practice the evening before an interview'],
+  ['apply', 'Apply to jobs saved 3 days ago'],
+  ['offer', 'Reply to offers within 2 days'],
+];
+const atHour = (ts, hour, min = 0) => {
+  const d = new Date(ts);
+  d.setHours(hour, min, 0, 0);
+  return d.getTime();
+};
+const autoOn = (kind) => store.get().profile.prefs?.autoRemind?.[kind] !== false;
+const remState = () => store.get().reminderState || {};
+
+/** Every reminder: your own plus the ones Vora derives from your applications. */
+function allReminders() {
+  const out = [];
+  const st = remState();
+  for (const r of store.get().reminders || []) out.push({ ...r, kind: 'custom' });
   for (const job of Object.values(store.get().jobs)) {
-    if (job.status !== 'interview' || !job.interviewAt || job.interviewAt < now) continue;
-    for (const m of job.reminders?.length ? job.reminders : DEFAULT_REMINDERS) {
-      const at = job.interviewAt - m * 6e4;
-      const key = `${job.interviewAt}:${m}`;
-      // Fire when due, but not for reminders long past (the app was closed then).
-      if (now >= at && now - at < 30 * 6e4 && !job.remindersFired?.[key]) due.push([job, key]);
+    const co = job.company || job.title;
+    const lastAt = (s) => [...(job.history || [])].reverse().find((e) => e.status === s)?.at;
+    if (job.status === 'applied' && autoOn('follow')) {
+      const base = Math.max(job.appliedAt || lastActivity(job), job.followedUpAt || 0);
+      out.push({ id: `follow:${job.id}:${base}`, kind: 'follow', jobId: job.id, at: atHour(base + 7 * DAY_MS, 9), text: `Follow up with ${co}`, sub: `Applied ${fmtDate(base)}, no reply yet. Vora has an email ready.` });
+    }
+    if (job.status === 'interview' && job.interviewAt && autoOn('prep')) {
+      const eve = atHour(job.interviewAt - DAY_MS, 18);
+      out.push({ id: `prep:${job.id}:${job.interviewAt}`, kind: 'prep', jobId: job.id, at: Math.min(eve, job.interviewAt - 3 * 36e5), text: `Practise for your ${co} interview`, sub: `Interview ${whenLabel(job.interviewAt)}. 8 questions, about 10 minutes.` });
+    }
+    if (job.status === 'interview' && job.interviewAt)
+      for (const m of job.reminders?.length ? job.reminders : DEFAULT_REMINDERS) out.push({ id: `iv:${job.id}:${job.interviewAt}:${m}`, kind: 'interview', jobId: job.id, at: job.interviewAt - m * 6e4, until: job.interviewAt, text: `Interview ${whenLabel(job.interviewAt)}: ${job.title}`, sub: [job.company, job.interviewWhere].filter(Boolean).join(' · ') });
+    if (job.status === 'saved' && autoOn('apply') && job.savedAt) out.push({ id: `apply:${job.id}`, kind: 'apply', jobId: job.id, at: atHour(job.savedAt + 3 * DAY_MS, 9), text: `Apply to ${co}`, sub: `${job.title}. Saved ${daysAgo(job.savedAt)}, good jobs fill fast.` });
+    if (job.status === 'offer' && autoOn('offer')) {
+      const at = lastAt('offer') || lastActivity(job);
+      out.push({ id: `offer:${job.id}:${at}`, kind: 'offer', jobId: job.id, at: atHour(at + 2 * DAY_MS, 9), text: `Reply to the offer from ${co}`, sub: 'Say thanks, ask questions or negotiate.' });
     }
   }
-  if (!due.length) return;
-  store.update((s) => {
-    for (const [job, key] of due) if (s.jobs[job.id]) s.jobs[job.id].remindersFired = { ...(s.jobs[job.id].remindersFired || {}), [key]: now };
-  });
-  for (const job of new Set(due.map(([j]) => j))) {
-    const text = `Interview ${whenLabel(job.interviewAt)}: ${job.title}${job.company ? ` · ${job.company}` : ''}`;
-    if (canNotify() && Notification.permission === 'granted') {
-      const opts = { body: text, tag: `interview-${job.id}`, icon: './icons/icon-192.png', data: { url: `#/job/${encodeURIComponent(job.id)}` } };
-      navigator.serviceWorker?.ready.then((r) => r.showNotification('Vora', opts)).catch(() => new Notification('Vora', opts));
-    } else if (document.visibilityState === 'visible') toast(text, { action: 'Practise', run: () => (sessionStorage.setItem('ajh:tab', 'prep'), go(`/job/${encodeURIComponent(job.id)}`)) });
-  }
+  const now = Date.now();
+  const list = out.map((r) => ({ ...r, ...(st[r.id] || {}), at: Math.max(r.at, st[r.id]?.snoozeUntil || 0) })).filter((r) => !r.done && !(r.until && r.until < now));
+  // Of an interview's reminders, only the latest one that is due counts.
+  const latest = {};
+  for (const r of list) if (r.kind === 'interview' && r.at <= now && (!latest[r.jobId] || r.at > latest[r.jobId])) latest[r.jobId] = r.at;
+  // Coming up, an interview shows once: its next reminder.
+  const next = {};
+  for (const r of list) if (r.kind === 'interview' && r.at > now && (!next[r.jobId] || r.at < next[r.jobId])) next[r.jobId] = r.at;
+  return list.filter((r) => r.kind !== 'interview' || (r.at > now ? r.at === next[r.jobId] && !latest[r.jobId] : r.at === latest[r.jobId])).sort((a, b) => a.at - b.at);
 }
-setTimeout(checkReminders, 4000);
-setInterval(checkReminders, 60e3);
-document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && checkReminders());
+const dueReminders = () => allReminders().filter((r) => r.at <= Date.now());
+
+function setRemState(id, patch) {
+  store.update((s) => {
+    s.reminderState ||= {};
+    s.reminderState[id] = { ...(s.reminderState[id] || {}), ...patch };
+    // Your own reminders keep their state on the reminder itself.
+    const own = (s.reminders || []).find((r) => r.id === id);
+    if (own) Object.assign(own, patch);
+  });
+  paintBell();
+}
+const completeReminder = (r) => setRemState(r.id, { done: Date.now() });
+const snoozeReminder = (r, until) => setRemState(r.id, { snoozeUntil: until, notified: false });
+
+function addReminder({ text, at, jobId }) {
+  const r = { id: `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text, at, jobId: jobId || '', createdAt: Date.now() };
+  store.update((s) => (s.reminders = [...(s.reminders || []), r]));
+  paintBell();
+  return r;
+}
+
+/** What tapping a reminder does. */
+function reminderActions(r, after) {
+  const job = r.jobId ? store.get().jobs[r.jobId] : null;
+  const open = (tab) => () => {
+    if (tab) sessionStorage.setItem('ajh:tab', tab);
+    after?.();
+    go(`/job/${encodeURIComponent(r.jobId)}`);
+  };
+  if (!job) return [];
+  if (r.kind === 'follow')
+    return [
+      ['Copy email', () => copy(`Subject: Following up on my application for ${job.title}\n\nHello,\n\nI applied for the ${job.title} role at ${job.company || 'your company'} on ${new Date(job.appliedAt || Date.now()).toLocaleDateString(locale(), { day: 'numeric', month: 'long' })} and wanted to ask whether there is any news. I am still very interested and happy to send anything else you need.\n\nKind regards,\n${store.get().profile.name || ''}`)],
+      ['Followed up', () => (store.patchJob(job.id, { followedUpAt: Date.now() }), completeReminder(r), toast('Nice. Vora checks again in a week.'))],
+    ];
+  if (r.kind === 'prep' || r.kind === 'interview') return [['Practise', open('prep')]];
+  if (r.kind === 'apply') return [['Open job', open('docs')]];
+  return [['Open job', open()]];
+}
+
+/** Deliver what is due: a system notification where allowed, else an alert in the app. */
+function deliverReminders() {
+  const fresh = dueReminders().filter((r) => !r.notified);
+  if (!fresh.length) return paintBell();
+  store.update((s) => {
+    s.reminderState ||= {};
+    for (const r of fresh) {
+      s.reminderState[r.id] = { ...(s.reminderState[r.id] || {}), notified: Date.now() };
+      const own = (s.reminders || []).find((x) => x.id === r.id);
+      if (own) own.notified = Date.now();
+    }
+  });
+  paintBell();
+  const system = canNotify() && Notification.permission === 'granted';
+  if (system) {
+    for (const r of fresh.slice(0, 3)) {
+      const opts = { body: r.sub || '', tag: r.id, icon: './icons/icon-192.png', data: { url: r.jobId ? `#/job/${encodeURIComponent(r.jobId)}` : '#/tracker' } };
+      navigator.serviceWorker?.ready.then((reg) => reg.showNotification(r.text, opts)).catch(() => new Notification(r.text, opts));
+    }
+    if (fresh.length > 3) new Notification(`${fresh.length} reminders from Vora`).onclick = () => openBell();
+    return;
+  }
+  if (document.visibilityState !== 'visible') return;
+  bellBtn?.classList.remove('ring');
+  void bellBtn?.offsetWidth;
+  bellBtn?.classList.add('ring');
+  if (fresh.length === 1) {
+    const [label, run] = reminderActions(fresh[0], () => {})[0] || ['Show', openBell];
+    toast(fresh[0].text, { action: label, run });
+  } else toast(`${fresh.length} reminders from Vora`, { action: 'Show', run: openBell });
+}
+
+// ----- the bell -----
+let bellBtn = null;
+function paintBell() {
+  if (!bellBtn) return;
+  const n = dueReminders().length;
+  const badge = bellBtn.querySelector('.bell-badge');
+  badge.textContent = n > 9 ? '9+' : String(n);
+  badge.hidden = !n;
+  bellBtn.setAttribute('aria-label', n ? `Reminders, ${n} due` : 'Reminders');
+  if (document.querySelector('.rem-panel')) drawBellPanel();
+}
+function mountBell() {
+  const actions = document.querySelector('.appbar-actions');
+  if (!actions || actions.querySelector('.bell-btn')) return;
+  bellBtn = h('button', { type: 'button', class: 'icon-link bell-btn', 'aria-haspopup': 'dialog', 'aria-label': 'Reminders', title: 'Reminders' }, h('span', { class: 'bell-badge', hidden: true }));
+  bellBtn.insertAdjacentHTML('afterbegin', ICON_BELL_LG);
+  bellBtn.addEventListener('click', () => (document.querySelector('.rem-panel') ? closeBell() : openBell()));
+  actions.insertBefore(bellBtn, document.getElementById('account-btn'));
+  paintBell();
+}
+
+let bellScrim = null;
+let remAutoOpen = false;
+function closeBell() {
+  document.querySelector('.rem-panel')?.remove();
+  bellScrim?.remove();
+  bellScrim = null;
+  bellBtn?.setAttribute('aria-expanded', 'false');
+}
+function openBell() {
+  closeBell();
+  bellScrim = h('div', { class: 'rem-scrim' });
+  bellScrim.addEventListener('click', closeBell);
+  const panel = h('section', { class: 'rem-panel', role: 'dialog', 'aria-label': 'Reminders' });
+  document.body.append(bellScrim, panel);
+  bellBtn?.setAttribute('aria-expanded', 'true');
+  drawBellPanel();
+  const r = bellBtn?.getBoundingClientRect();
+  if (r && innerWidth > 700) panel.style.cssText = `top:${r.bottom + 8}px;right:${Math.max(12, innerWidth - r.right - 8)}px`;
+  const esc = (e) => e.key === 'Escape' && (closeBell(), document.removeEventListener('keydown', esc));
+  document.addEventListener('keydown', esc);
+}
+function drawBellPanel() {
+  const panel = document.querySelector('.rem-panel');
+  if (!panel) return;
+  const all = allReminders();
+  const now = Date.now();
+  const due = all.filter((r) => r.at <= now);
+  const soon = all.filter((r) => r.at > now && r.at < now + 14 * DAY_MS);
+  const KIND_ICON = { follow: ICON_MAIL_SM, prep: ICON_SPARK_SM, interview: ICON_CAL, apply: ICON_SEND, offer: ICON_TROPHY, custom: ICON_BELL_LG };
+  const item = (r, isDue) => {
+    const job = r.jobId ? store.get().jobs[r.jobId] : null;
+    const acts = isDue ? reminderActions(r, closeBell) : [];
+    const done = h('button', { type: 'button', class: 'rem-check', 'aria-label': 'Mark as done', title: 'Done' });
+    done.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+    done.addEventListener('click', () => {
+      completeReminder(r);
+      toast('Reminder done', { action: 'Undo', run: () => setRemState(r.id, { done: 0 }) });
+    });
+    const snooze = h('details', { class: 'rem-snooze' }, h('summary', { title: 'Snooze', 'aria-label': 'Snooze' }, isDue ? 'Snooze' : 'Move'));
+    const snoozeMenu = h('div', { class: 'menu' });
+    for (const [label, until] of [
+      ['In 1 hour', now + 36e5],
+      ['This evening', atHour(now, 18)],
+      ['Tomorrow morning', atHour(now + DAY_MS, 9)],
+      ['Next week', atHour(now + 7 * DAY_MS, 9)],
+    ]) {
+      if (until <= now + 10 * 6e4) continue;
+      const b = h('button', { type: 'button', role: 'menuitem' }, label);
+      b.addEventListener('click', () => {
+        snoozeReminder(r, until);
+        toast(`Reminder moved to ${whenLabel(until)}`);
+      });
+      snoozeMenu.append(b);
+    }
+    snooze.append(snoozeMenu);
+    const cal = h('button', { type: 'button', class: 'rem-cal', title: 'Add to my phone calendar', 'aria-label': 'Add to my phone calendar' });
+    cal.innerHTML = ICON_CAL;
+    cal.addEventListener('click', () => download(`reminder-${slug(r.text).slice(0, 40)}.ics`, reminderICS(r), 'text/calendar'));
+    return h(
+      'li',
+      { class: `rem-item ${r.kind}${isDue ? ' due' : ''}` },
+      h('span', { class: 'rem-ico' }, svg(KIND_ICON[r.kind] || ICON_BELL_LG)),
+      h(
+        'div',
+        { class: 'rem-body' },
+        h('strong', {}, r.text),
+        r.sub ? h('small', {}, r.sub) : job && r.kind === 'custom' ? h('small', { translate: 'no' }, [job.title, job.company].filter(Boolean).join(' · ')) : '',
+        h('span', { class: 'rem-when' }, isDue ? (r.kind === 'custom' ? `Due ${whenLabel(r.at)}` : 'Now') : whenLabel(r.at), r.kind !== 'custom' ? h('em', {}, 'by Vora') : ''),
+        acts.length || isDue
+          ? h(
+              'div',
+              { class: 'rem-acts' },
+              ...acts.map(([label, run], i) => {
+                const b = h('button', { type: 'button', class: `btn small ${i ? 'ghost' : 'primary'}` }, label);
+                b.addEventListener('click', run);
+                return b;
+              }),
+              snooze,
+            )
+          : h('div', { class: 'rem-acts' }, snooze, cal),
+      ),
+      done,
+    );
+  };
+  const add = h('button', { type: 'button', class: 'btn small primary' }, '+ New reminder');
+  add.addEventListener('click', () => (closeBell(), reminderDialog()));
+  const close = h('button', { type: 'button', class: 'icon-btn rem-close', 'aria-label': 'Close' }, '×');
+  close.addEventListener('click', closeBell);
+  const toggles = h(
+    'details',
+    { class: 'rem-auto', open: remAutoOpen },
+    h('summary', {}, 'Reminders Vora sets for you'),
+    ...AUTO_KINDS.map(([k, label]) => {
+      const cb = h('input', { type: 'checkbox', checked: autoOn(k) });
+      cb.addEventListener('change', () => {
+        store.update((s) => (s.profile.prefs = { ...(s.profile.prefs || {}), autoRemind: { ...(s.profile.prefs?.autoRemind || {}), [k]: cb.checked } }));
+        paintBell();
+      });
+      return h('label', { class: 'rem-toggle' }, cb, h('span', {}, label));
+    }),
+  );
+  toggles.addEventListener('toggle', () => (remAutoOpen = toggles.open));
+  let notifyRow = '';
+  if (canNotify() && Notification.permission !== 'granted') {
+    const on = h('button', { type: 'button', class: 'btn small' }, 'Turn on');
+    on.addEventListener('click', async () => {
+      const res = await Notification.requestPermission();
+      toast(res === 'granted' ? 'Notifications on. Vora alerts you while it is open or in the background.' : 'Notifications are blocked in your browser settings.');
+      drawBellPanel();
+    });
+    notifyRow = h('div', { class: 'rem-note' }, h('span', {}, 'Get reminders as notifications on this device.'), Notification.permission === 'denied' ? '' : on);
+  } else if (!canNotify()) notifyRow = h('p', { class: 'rem-note small' }, 'Vora alerts you here when a reminder is due. For an alert while Vora is closed, tap the calendar icon to put a reminder on your phone.');
+  panel.replaceChildren(
+    h('header', { class: 'rem-head' }, h('div', {}, h('h2', {}, 'Reminders'), h('p', { class: 'muted small' }, due.length ? `${due.length} due now` : soon.length ? 'Nothing due right now' : 'All clear')), add, close),
+    h(
+      'div',
+      { class: 'rem-scroll' },
+      due.length ? h('p', { class: 'rem-label' }, 'Due now') : '',
+      due.length ? h('ul', { class: 'rem-list' }, ...due.map((r) => item(r, true))) : '',
+      soon.length ? h('p', { class: 'rem-label' }, 'Coming up') : '',
+      soon.length ? h('ul', { class: 'rem-list' }, ...soon.slice(0, 12).map((r) => item(r, false))) : '',
+      !due.length && !soon.length ? h('div', { class: 'rem-empty' }, svg(ICON_BELL_LG), h('p', {}, 'No reminders yet. Vora adds them as your applications move, or set your own.')) : '',
+      notifyRow,
+      toggles,
+    ),
+  );
+}
+
+/** A calendar file for one reminder, with the alert at its time. */
+function reminderICS(r) {
+  const utc = (ts) => new Date(ts).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  return (
+    ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Vora//Reminders//EN', 'BEGIN:VEVENT', `UID:${String(r.id).replace(/[^\w:-]/g, '')}@vora.app`, `DTSTAMP:${utc(Date.now())}`, `DTSTART:${utc(r.at)}`, `DTEND:${utc(r.at + 15 * 6e4)}`, `SUMMARY:${esc(r.text)}`, r.sub ? `DESCRIPTION:${esc(r.sub)}` : '', 'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', `DESCRIPTION:${esc(r.text)}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR']
+      .filter(Boolean)
+      .join('\r\n') + '\r\n'
+  );
+}
+
+/** "Remind me…": your own reminder, optionally for a job. */
+function reminderDialog({ job = null, text = '' } = {}) {
+  document.querySelector('dialog.ap-dialog')?.remove();
+  const now = Date.now();
+  const dlg = h('dialog', { class: 'ap-dialog', 'aria-labelledby': 'rem-dlg-title' });
+  const close = () => (dlg.close(), dlg.remove());
+  dlg.addEventListener('cancel', (e) => (e.preventDefault(), close()));
+  dlg.addEventListener('click', (e) => e.target === dlg && close());
+  const co = job ? job.company || job.title : '';
+  const ideas = job ? [`Follow up with ${co}`, `Apply to ${co}`, `Prepare for the ${co} interview`, `Call the recruiter at ${co}`] : ['Check new jobs', 'Update my CV', 'Send two applications'];
+  const input = h('input', { type: 'text', class: 'ap-date-input', value: text, placeholder: job ? `e.g. Follow up with ${co}` : 'e.g. Call Anna from Roche', 'aria-label': 'Remind me to', maxlength: 120 });
+  const ideaRow = h(
+    'div',
+    { class: 'rm-chips' },
+    ...ideas.map((t) => {
+      const b = h('button', { type: 'button', class: 'chip rm-idea' }, t);
+      b.addEventListener('click', () => ((input.value = t), input.focus()));
+      return b;
+    }),
+  );
+  let when = atHour(now + DAY_MS, 9);
+  const toLocal = (ts) => new Date(ts - new Date(ts).getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+  const dt = h('input', { type: 'datetime-local', class: 'ap-date-input', value: toLocal(when), 'aria-label': 'Date and time' });
+  const quick = [
+    ['In 1 hour', now + 36e5],
+    ['This evening', atHour(now, 18)],
+    ['Tomorrow morning', atHour(now + DAY_MS, 9)],
+    ['In 3 days', atHour(now + 3 * DAY_MS, 9)],
+    ['Next week', atHour(now + 7 * DAY_MS, 9)],
+  ].filter(([, t]) => t > now + 10 * 6e4);
+  const quickRow = h('div', { class: 'rm-chips', role: 'radiogroup', 'aria-label': 'When' });
+  const paintQuick = () =>
+    quickRow.replaceChildren(
+      ...quick.map(([label, t]) => {
+        const b = h('button', { type: 'button', role: 'radio', class: 'chip rm-chip', 'aria-checked': String(Math.abs(t - when) < 6e4), 'aria-pressed': String(Math.abs(t - when) < 6e4) }, label);
+        b.addEventListener('click', () => {
+          when = t;
+          dt.value = toLocal(t);
+          paintQuick();
+        });
+        return b;
+      }),
+    );
+  paintQuick();
+  dt.addEventListener('change', () => {
+    when = dt.value ? new Date(dt.value).getTime() : when;
+    paintQuick();
+  });
+  const alsoCal = h('input', { type: 'checkbox' });
+  const save = h('button', { type: 'button', class: 'btn primary' }, 'Set reminder');
+  save.addEventListener('click', async () => {
+    const t = input.value.trim();
+    if (!t) return input.focus();
+    if (when <= Date.now()) return toast('Pick a time in the future');
+    const r = addReminder({ text: t, at: when, jobId: job?.id });
+    close();
+    if (alsoCal.checked) await download(`reminder-${slug(t).slice(0, 40)}.ics`, reminderICS(r), 'text/calendar');
+    toast(`Vora will remind you ${whenLabel(when)}`);
+  });
+  const cancel = h('button', { type: 'button', class: 'btn' }, 'Cancel');
+  cancel.addEventListener('click', close);
+  dlg.append(
+    h(
+      'div',
+      { class: 'ap-dialog-box' },
+      h('div', { class: 'ap-dialog-icon' }, svg(ICON_BELL_LG)),
+      h('h2', { id: 'rem-dlg-title' }, 'Remind me'),
+      job ? h('p', { class: 'muted' }, h('span', { translate: 'no' }, job.title), job.company ? [' · ', h('span', { translate: 'no' }, job.company)] : '') : '',
+      h('label', { class: 'rm-field' }, h('span', {}, 'To'), input),
+      ideaRow,
+      h('div', { class: 'rm-field' }, h('span', {}, 'When'), quickRow, dt),
+      h('label', { class: 'rem-toggle' }, alsoCal, h('span', {}, 'Also add it to my phone calendar (alerts even when Vora is closed)')),
+      h('div', { class: 'ap-dialog-actions' }, h('span', { class: 'grow' }), cancel, save),
+    ),
+  );
+  document.body.append(dlg);
+  dlg.showModal();
+  requestAnimationFrame(() => input.focus());
+}
+
+mountBell();
+store.subscribe(() => paintBell());
+setTimeout(deliverReminders, 3500);
+setInterval(deliverReminders, 60e3);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && deliverReminders());
+
 
 
 function renderTracker() {
@@ -2271,6 +2618,7 @@ function renderTracker() {
     }
     list.append(h('hr'), item(job.interviewAt ? 'Change interview date' : 'Add interview date', () => dateDialog(job)));
     if (job.interviewAt && job.interviewAt > Date.now()) list.append(item('Add reminder to my phone', () => dateDialog(job, 'calendar')));
+    list.append(item('Remind me…', () => reminderDialog({ job })));
     if (job.status === 'applied') list.append(item('Copy follow-up email', () => copy(followUpText(job))));
     list.append(
       h('a', { role: 'menuitem', href: `#/job/${encodeURIComponent(job.id)}` }, 'Open job'),
@@ -4772,6 +5120,8 @@ function renderJob(id) {
       };
       drawInterview();
       pills.addEventListener('click', () => setTimeout(drawInterview));
+      const remindBtn = h('button', { type: 'button', class: 'btn small jd-remind' }, svgIcon(ICON_BELL), 'Remind me…');
+      remindBtn.addEventListener('click', () => reminderDialog({ job: store.get().jobs[id] }));
       const notes = h('textarea', { rows: 5, placeholder: 'Contacts, salary notes, next steps…' }, current.notes || '');
       notes.addEventListener('input', debounce(() => store.update((s) => (s.jobs[id].notes = notes.value)), 400));
       const history = h('ol', { class: 'jd-timeline' });
@@ -4787,7 +5137,7 @@ function renderJob(id) {
         go('/tracker');
       }, 'link-btn danger-link');
       side.append(
-        h('section', { class: 'card jd-card' }, h('h2', {}, 'Your application'), pills, interviewRow, h('label', { class: 'jd-label', for: 'jd-notes' }, 'Notes'), Object.assign(notes, { id: 'jd-notes' }), h('h3', { class: 'jd-label' }, 'Timeline'), history, remove),
+        h('section', { class: 'card jd-card' }, h('h2', {}, 'Your application'), pills, interviewRow, remindBtn, h('label', { class: 'jd-label', for: 'jd-notes' }, 'Notes'), Object.assign(notes, { id: 'jd-notes' }), h('h3', { class: 'jd-label' }, 'Timeline'), history, remove),
       );
     } else {
       const save = h('button', { class: 'btn primary' }, svgIcon(ICON_BOOKMARK), 'Save to applications');
