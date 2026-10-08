@@ -71,9 +71,24 @@ export const LAYOUT_OPTIONS = {
   spacing: [['compact', 'Compact'], ['normal', 'Normal'], ['roomy', 'Roomy']],
   margins: [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']],
 };
-function applyLayoutPage(page, layout) {
+// Font sizes in points, like Word's size box. The number is the body text size in the PDF.
+export const PT_SIZES = [8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 13, 14];
+const PT_MIN = 7, PT_MAX = 16;
+/** The body text size (pt) a template uses by default. */
+export function basePt(templateId, kind = 'cv') {
+  const t = getTemplate(templateId);
+  const base = t.id === 'jakes' || t.id === 'tech' ? 9.5 : t.font === 'serif' ? 10.5 : 10;
+  return kind === 'letter' ? base + 0.5 : base;
+}
+/** The body text size (pt) of a layout: the picked size, or the template's size scaled by Small/Large. */
+export function textPt(layout, templateId, kind = 'cv') {
+  const base = basePt(templateId, kind);
+  if (typeof layout?.pt === 'number') return Math.min(PT_MAX, Math.max(PT_MIN, layout.pt));
+  return Math.round(base * (SIZE[layout?.size] ?? 1) * 2) / 2;
+}
+function applyLayoutPage(page, layout, base = 10) {
   if (!layout) return;
-  const z = SIZE[layout.size] ?? 1;
+  const z = typeof layout.pt === 'number' ? Math.min(PT_MAX, Math.max(PT_MIN, layout.pt)) / base : SIZE[layout.size] ?? 1;
   const sp = SPACE[layout.spacing] ?? 1;
   if (z !== 1) page.style.setProperty('--cv-zoom', String(z));
   if (sp !== 1) page.style.lineHeight = String(+(1.5 * sp).toFixed(3));
@@ -84,7 +99,8 @@ function applyLayoutPage(page, layout) {
 /** The same layout for a PDF definition: font sizes, vertical spacing and page margins. */
 export function applyLayout(def, layout) {
   if (!layout) return def;
-  const z = SIZE[layout.size] ?? 1;
+  const body = def.defaultStyle?.fontSize;
+  const z = typeof layout.pt === 'number' && body ? Math.min(PT_MAX, Math.max(PT_MIN, layout.pt)) / body : SIZE[layout.size] ?? 1;
   const sp = SPACE[layout.spacing] ?? 1;
   const m = def.background ? 1 : MARGIN[layout.margins] ?? 1; // the sidebar paints its own column
   if (z === 1 && sp === 1 && m === 1) return def;
@@ -285,7 +301,7 @@ export function renderCV(cv, templateId = 'harvard', pickedAccent, { editable = 
   const accent = accentFor(t, pickedAccent);
   const page = h('article', { class: `cv-page tpl-${t.id} lay-${t.layout}${editable ? ' editing' : ''}`, style: `--cv-accent:${accent}` });
   applyFont(page, font);
-  applyLayoutPage(page, layout);
+  applyLayoutPage(page, layout, basePt(t.id));
   EDIT = editable;
   try {
     if (t.layout === 'sidebar') {
@@ -804,7 +820,7 @@ export function renderLetter(cv, letterText, templateId = 'harvard', pickedAccen
   const parts = letterParts(cv, letterText, meta);
   const page = h('article', { class: `cv-page letter-page tpl-${t.id} lay-${t.layout}${editable ? ' editing' : ''}`, style: `--cv-accent:${accent}` });
   applyFont(page, font);
-  applyLayoutPage(page, layout);
+  applyLayoutPage(page, layout, basePt(t.id, 'letter'));
   EDIT = editable;
   try {
     if (t.layout === 'sidebar') {

@@ -14,7 +14,7 @@ import { attachSuggest, rememberSearch, recentSearches } from './suggest.js';
 import { PROVIDERS, providerById } from './providers.js';
 import { readCVFile, ACCEPT } from './files.js';
 import { cvToText, cvFromProfile } from './cvdoc.js';
-import { TEMPLATES, FONT_CHOICES, LAYOUT_OPTIONS, applyLayout, fontChoice, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
+import { TEMPLATES, FONT_CHOICES, LAYOUT_OPTIONS, PT_SIZES, basePt, textPt, applyLayout, fontChoice, getTemplate, accentFor, renderCV, renderLetter, cvPDFDefinition, letterPDFDefinition, makePDF } from './templates.js';
 
 const view = document.getElementById('view');
 
@@ -2003,6 +2003,158 @@ function renderTracker() {
 // Documents: the main CV and a general cover letter, edited like a Word page
 // ---------------------------------------------------------------------------
 
+// ----- page zoom: fit the A4 page to the screen, pinch to zoom, double-tap, zoom in on the text you edit -----
+// Like Word or PicsArt on a phone: the whole page stays a page; you zoom and pan instead of a long reflowed scroll.
+function pageZoom({ scroller, paperFit, paperScale, margin = () => (window.innerWidth < 760 ? 16 : 64), active = () => true, onChange, onZoomIn }) {
+  let mode = 'fit';
+  const MAX = 3;
+  const pageEl = () => paperScale.firstElementChild;
+  const fitScale = () => {
+    const pg = pageEl();
+    if (!pg) return 1;
+    return Math.min(1, Math.max(0.1, (scroller.clientWidth - margin()) / pg.offsetWidth));
+  };
+  const scale = () => (mode === 'fit' || !active() ? fitScale() : mode);
+  const minScale = () => Math.min(fitScale() * 0.6, 1);
+  function paint(s) {
+    const pg = pageEl();
+    paperScale.style.transform = `scale(${s})`;
+    if (!pg) return;
+    paperFit.style.width = `${pg.offsetWidth * s}px`;
+    paperFit.style.height = `${pg.offsetHeight * s}px`;
+  }
+  function layout() {
+    paint(scale());
+    onChange?.(scale(), mode === 'fit');
+  }
+  // Zoom so the point under (cx, cy) on screen stays where it is.
+  function zoomTo(target, cx, cy, quiet = false) {
+    const s0 = scale();
+    const r0 = paperFit.getBoundingClientRect();
+    if (cx == null) {
+      const sr = scroller.getBoundingClientRect();
+      cx = sr.left + sr.width / 2;
+      cy = sr.top + sr.height / 3;
+    }
+    const px = (cx - r0.left) / s0, py = (cy - r0.top) / s0;
+    const f = fitScale();
+    const s = Math.min(MAX, Math.max(minScale(), target));
+    mode = Math.abs(s - f) < 0.015 ? 'fit' : s;
+    paint(scale());
+    const r1 = paperFit.getBoundingClientRect();
+    scroller.scrollLeft += r1.left + px * scale() - cx;
+    scroller.scrollTop += r1.top + py * scale() - cy;
+    if (!quiet) onChange?.(scale(), mode === 'fit');
+  }
+  const set = (v) => (v === 'fit' || !active() ? ((mode = 'fit'), layout()) : zoomTo(Number(v)));
+  const step = (dir) => {
+    const s = scale();
+    const stops = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.25, 1.5, 2, 2.5, 3];
+    const next = dir > 0 ? stops.find((x) => x > s + 0.01) ?? MAX : [...stops].reverse().find((x) => x < s - 0.01) ?? minScale();
+    zoomTo(next);
+  };
+
+  // Two fingers: pinch to zoom, the page follows the fingers.
+  let pinch = null;
+  let frame = 0;
+  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  scroller.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches.length !== 2 || !pageEl() || !active()) return;
+      const [a, b] = e.touches;
+      pinch = { d: dist(a, b), s: scale(), x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+      e.preventDefault();
+    },
+    { passive: false },
+  );
+  scroller.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const [a, b] = e.touches;
+      const d = dist(a, b), x = (a.clientX + b.clientX) / 2, y = (a.clientY + b.clientY) / 2;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        // pan with the fingers, then zoom around them
+        scroller.scrollLeft -= x - pinch.x;
+        scroller.scrollTop -= y - pinch.y;
+        pinch.x = x;
+        pinch.y = y;
+        zoomTo(pinch.s * (d / pinch.d), x, y, true);
+      });
+    },
+    { passive: false },
+  );
+  let pinchEnded = 0;
+  const endPinch = (e) => {
+    if (!pinch || e.touches.length >= 2) return;
+    pinch = null;
+    pinchEnded = Date.now();
+    onChange?.(scale(), mode === 'fit');
+  };
+  scroller.addEventListener('touchend', endPinch);
+  scroller.addEventListener('touchcancel', endPinch);
+  // Safari's own page zoom would fight ours.
+  for (const ev of ['gesturestart', 'gesturechange']) scroller.addEventListener(ev, (e) => e.preventDefault());
+
+  // Double-tap outside the text: zoom in there, or back to the whole page.
+  let lastTap = 0, lastX = 0, lastY = 0;
+  scroller.addEventListener('touchend', (e) => {
+    if (e.touches.length || e.changedTouches.length !== 1 || !active()) return;
+    const t = e.changedTouches[0];
+    const now = Date.now();
+    if (now - pinchEnded < 400) return void (lastTap = 0);
+    const onText = e.target.closest?.('[contenteditable]:not([contenteditable="false"]), button, a, input, select, textarea');
+    if (!onText && now - lastTap < 320 && Math.hypot(t.clientX - lastX, t.clientY - lastY) < 30) {
+      e.preventDefault();
+      zoomTo(mode === 'fit' ? Math.max(1, fitScale() * 2) : fitScale(), t.clientX, t.clientY);
+      lastTap = 0;
+      return;
+    }
+    lastTap = now;
+    lastX = t.clientX;
+    lastY = t.clientY;
+  });
+
+  // Ctrl + wheel / trackpad pinch on a computer.
+  scroller.addEventListener(
+    'wheel',
+    (e) => {
+      if (!e.ctrlKey || !pageEl() || !active()) return;
+      e.preventDefault();
+      zoomTo(scale() * Math.exp(-e.deltaY / 300), e.clientX, e.clientY);
+    },
+    { passive: false },
+  );
+
+  // On a phone, tapping into tiny text zooms in so it is readable while typing.
+  scroller.addEventListener('focusin', (e) => {
+    if (window.innerWidth >= 760 || pinch || !active()) return;
+    const el = e.target.closest?.('[contenteditable]:not([contenteditable="false"])');
+    if (!el) return;
+    const fs = parseFloat(getComputedStyle(el).fontSize) || 14;
+    if (fs * scale() >= 12) return;
+    const r = el.getBoundingClientRect();
+    zoomTo(Math.min(MAX, 14 / fs), r.left, r.top);
+    // Bring the spot you tapped (the caret) into view, a little above the keyboard.
+    requestAnimationFrame(() => {
+      const sel = getSelection();
+      const caret = sel.rangeCount && el.contains(sel.anchorNode) ? sel.getRangeAt(0).getBoundingClientRect() : null;
+      const box = caret && (caret.width || caret.height) ? caret : el.getBoundingClientRect();
+      const sr = scroller.getBoundingClientRect();
+      const fieldLeft = el.getBoundingClientRect().left;
+      const wantLeft = box.left - fieldLeft < sr.width * 0.6 ? fieldLeft - sr.left - 14 : box.left - sr.left - sr.width * 0.5;
+      scroller.scrollLeft += wantLeft;
+      scroller.scrollTop += box.top - sr.top - sr.height * 0.28;
+    });
+    onZoomIn?.();
+  });
+
+  return { layout, set, step, scale, isFit: () => mode === 'fit', fitScale };
+}
+
 // ----- template preview: the whole page in a template before you switch to it -----
 // render(id, accent) draws the user's own document in that template; onUse(id, accent) applies it.
 function templatePreview({ start, current, currentAccent, render, onUse, list = TEMPLATES }) {
@@ -2296,7 +2448,6 @@ function renderDocuments(initialKind) {
   try {
     sessionStorage.setItem('ajh:doc', kind);
   } catch {}
-  let zoom = 'fit';
   let designOpen = window.innerWidth >= 1100;
   let chatOpen = false;
   let checkOpen = false;
@@ -2356,10 +2507,7 @@ function renderDocuments(initialKind) {
   undoBtn.addEventListener('click', () => travel(-1));
   redoBtn.addEventListener('click', () => travel(1));
   const zoomSel = h('select', { class: 'docs-zoom', 'aria-label': 'Zoom' }, ...[['fit', 'Fit'], ['0.75', '75%'], ['1', '100%'], ['1.25', '125%']].map(([v, l]) => h('option', { value: v }, l)));
-  zoomSel.addEventListener('change', () => {
-    zoom = zoomSel.value;
-    fit();
-  });
+  zoomSel.addEventListener('change', () => zoomSel.value !== 'custom' && pz.set(zoomSel.value));
   const pdfBtn = h('button', { type: 'button', class: 'btn primary small docs-pdf' }, svgIcon(ICON_DOWNLOAD), h('span', {}, 'Download PDF'));
   pdfBtn.addEventListener('click', downloadPDF);
   const moreMenu = h('details', { class: 'tb-menu docs-more' });
@@ -2394,6 +2542,78 @@ function renderDocuments(initialKind) {
   const paperFit = h('div', { class: 'paper-fit' }, paperScale);
   const busy = h('div', { class: 'studio-busy', hidden: true }, h('div', { class: 'studio-busy-msg', role: 'status' }));
   const canvas = h('main', { class: 'docs-canvas' }, paperFit, busy);
+  // Phones: the A4 page fitted to the screen, pinch to zoom (Word / PicsArt style), or Word's
+  // "Mobile view" where the text reflows to the screen width.
+  let docView = 'page';
+  try {
+    docView = localStorage.getItem('ajh:docView') === 'mobile' ? 'mobile' : 'page';
+  } catch {}
+  const reflowing = () => window.innerWidth < 760 && docView === 'mobile';
+  const zoomPill = h('div', { class: 'zoom-pill', role: 'toolbar', 'aria-label': 'Zoom' });
+  const pz = pageZoom({
+    scroller: canvas,
+    paperFit,
+    paperScale,
+    active: () => !reflowing(),
+    onChange: (s, isFit) => {
+      drawStatus(s);
+      drawZoomPill(s, isFit);
+      const match = [...zoomSel.options].find((o) => o.value !== 'custom' && Math.abs(Number(o.value) - s) < 0.005);
+      let custom = zoomSel.querySelector('option[value="custom"]');
+      if (isFit || match) {
+        custom?.remove();
+        zoomSel.value = isFit ? 'fit' : match.value;
+      } else {
+        if (!custom) zoomSel.append((custom = h('option', { value: 'custom' })));
+        custom.textContent = `${Math.round(s * 100)}%`;
+        zoomSel.value = 'custom';
+      }
+    },
+    onZoomIn: () => {
+      try {
+        if (localStorage.getItem('ajh:zoomTip')) return;
+        localStorage.setItem('ajh:zoomTip', '1');
+      } catch {
+        return;
+      }
+      toast('Zoomed in to type. Pinch or tap the % to see the whole page. For long text, try Mobile view.');
+    },
+  });
+  function drawZoomPill(s = pz.scale(), isFit = pz.isFit()) {
+    zoomPill.hidden = !hasDoc();
+    if (!hasDoc()) return;
+    const icon = (html, label, run, cls = '') => {
+      const b = h('button', { type: 'button', class: `zp-btn ${cls}`, 'aria-label': label, title: label });
+      b.innerHTML = html;
+      b.addEventListener('click', run);
+      return b;
+    };
+    const pageIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>';
+    const phoneIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10 6h4M10 10h4M10 14h4"/></svg>';
+    const view = icon(
+      reflowing() ? pageIcon : phoneIcon,
+      reflowing() ? 'Page view' : 'Mobile view',
+      () => {
+        docView = docView === 'mobile' ? 'page' : 'mobile';
+        try {
+          localStorage.setItem('ajh:docView', docView);
+        } catch {}
+        renderPaper();
+        toast(docView === 'mobile' ? 'Mobile view: the text fits your screen. The PDF stays A4.' : 'Page view: pinch to zoom, double-tap to zoom in.');
+      },
+      'zp-view',
+    );
+    if (reflowing()) return zoomPill.replaceChildren(view);
+    const pct = h('button', { type: 'button', class: 'zp-pct', title: isFit ? 'Zoom to 100%' : 'Fit page to screen', 'aria-label': isFit ? 'Zoom to 100%' : 'Fit page to screen' }, `${Math.round(s * 100)}%`);
+    pct.addEventListener('click', () => (isFit ? pz.set(1) : pz.set('fit')));
+    zoomPill.replaceChildren(
+      icon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>', 'Zoom out', () => pz.step(-1)),
+      pct,
+      icon('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>', 'Zoom in', () => pz.step(1)),
+      h('span', { class: 'zp-sep' }),
+      view,
+    );
+  }
   const outline = h('nav', { class: 'docs-outline', 'aria-label': 'Outline' });
   const design = h('aside', { class: 'docs-design', 'aria-label': 'Design' });
   const chat = h('aside', { class: 'docs-chat', 'aria-label': 'Vora AI chat' });
@@ -2415,7 +2635,7 @@ function renderDocuments(initialKind) {
       h('div', { class: 'docs-top-actions' }, undoBtn, redoBtn, h('span', { class: 'tb-sep' }), zoomSel, moreMenu, pdfBtn),
     ),
     ribbon,
-    h('div', { class: 'docs-body' }, outline, canvas, scrim, design, chat, check, sheet),
+    h('div', { class: 'docs-body' }, outline, canvas, zoomPill, scrim, design, chat, check, sheet),
     status,
     dock,
   );
@@ -2464,14 +2684,8 @@ function renderDocuments(initialKind) {
 
   // ----- the page -----
   function fit() {
-    const pageEl = paperScale.firstElementChild;
-    if (!pageEl) return;
-    const avail = canvas.clientWidth - (window.innerWidth < 760 ? 16 : 64);
-    const scale = zoom === 'fit' ? Math.min(1, avail / pageEl.offsetWidth) : Number(zoom);
-    paperScale.style.transform = `scale(${scale})`;
-    paperFit.style.width = `${pageEl.offsetWidth * scale}px`;
-    paperFit.style.height = `${pageEl.offsetHeight * scale}px`;
-    drawStatus(scale);
+    if (!paperScale.firstElementChild) return;
+    pz.layout();
   }
   const ro = new ResizeObserver(() => fit());
   ro.observe(canvas);
@@ -2490,7 +2704,9 @@ function renderDocuments(initialKind) {
   }
 
   function renderPaper(focus) {
-    appEl.classList.toggle('docs-reflow', window.innerWidth < 760 && hasDoc());
+    appEl.classList.toggle('docs-reflow', reflowing() && hasDoc());
+    appEl.classList.toggle('docs-pageview', window.innerWidth < 760 && !reflowing() && hasDoc());
+    drawZoomPill();
     if (!hasDoc()) {
       paperScale.replaceChildren();
       paperFit.style.width = paperFit.style.height = '';
@@ -2694,9 +2910,31 @@ function renderDocuments(initialKind) {
   }
 
   // ----- page layout: text size, spacing, margins, fit to one page -----
+  // Font size box, like Word: the body text size in points, with smaller / bigger buttons.
+  const currentPt = () => textPt(layoutOf(), tplId(), kind);
+  const setPt = (pt) => setLayout({ pt: Math.min(16, Math.max(7, Math.round(pt * 2) / 2)) });
+  function sizeBox(cls = '') {
+    const pt = currentPt();
+    const sizes = [...new Set([...PT_SIZES, pt])].sort((a, b) => a - b);
+    const sel = h('select', { class: 'fs-select', 'aria-label': 'Font size', title: 'Font size (pt)' }, ...sizes.map((v) => h('option', { value: String(v), selected: v === pt ? '' : null }, String(v))));
+    sel.value = String(pt);
+    sel.addEventListener('change', () => setPt(Number(sel.value)));
+    const bump = (dir, label, glyph) => {
+      const b = h('button', { type: 'button', class: 'fs-step', 'aria-label': label, title: label, disabled: (dir < 0 ? pt <= 7 : pt >= 16) || null }, h('span', { 'aria-hidden': 'true' }, 'A', h('small', {}, glyph)));
+      b.addEventListener('click', () => {
+        const list = PT_SIZES;
+        const next = dir > 0 ? list.find((v) => v > pt) ?? pt + 1 : [...list].reverse().find((v) => v < pt) ?? pt - 0.5;
+        setPt(next);
+      });
+      return b;
+    };
+    return h('div', { class: `fs-box ${cls}`, role: 'group', 'aria-label': 'Font size' }, bump(-1, 'Smaller text', '−'), h('label', { class: 'fs-field' }, sel, h('span', { class: 'fs-unit', 'aria-hidden': 'true' }, 'pt')), bump(1, 'Bigger text', '+'));
+  }
   function setLayout(patch) {
     record();
     const next = { size: 'm', spacing: 'normal', margins: 'normal', ...(layoutOf() || {}), ...patch };
+    if (typeof next.pt === 'number') delete next.size;
+    else delete next.pt;
     if (kind === 'cv') saveMaster({ layout: next });
     else saveLetter({ layout: next });
     refresh();
@@ -2714,12 +2952,14 @@ function renderDocuments(initialKind) {
     return pages;
   }
   function fitToPages(target) {
+    const b = basePt(tplId(), kind);
     const tries = [
-      { size: 'm', spacing: 'normal', margins: 'normal' },
-      { size: 'm', spacing: 'compact', margins: 'normal' },
-      { size: 'm', spacing: 'compact', margins: 'narrow' },
-      { size: 's', spacing: 'compact', margins: 'normal' },
-      { size: 's', spacing: 'compact', margins: 'narrow' },
+      { pt: b, spacing: 'normal', margins: 'normal' },
+      { pt: b, spacing: 'compact', margins: 'normal' },
+      { pt: b, spacing: 'compact', margins: 'narrow' },
+      { pt: b - 0.5, spacing: 'compact', margins: 'normal' },
+      { pt: b - 0.5, spacing: 'compact', margins: 'narrow' },
+      { pt: b - 1, spacing: 'compact', margins: 'narrow' },
     ];
     const ok = tries.find((l) => measurePages(l) <= target);
     if (!ok) {
@@ -2753,12 +2993,12 @@ function renderDocuments(initialKind) {
     const fit2 = kind === 'cv' ? h('button', { type: 'button', class: 'btn small' }, 'Fit to two pages') : '';
     if (fit2) fit2.addEventListener('click', () => fitToPages(2));
     const reset = h('button', { type: 'button', class: 'link-btn small' }, 'Reset');
-    reset.addEventListener('click', () => setLayout({ size: 'm', spacing: 'normal', margins: 'normal' }));
+    reset.addEventListener('click', () => setLayout({ pt: undefined, size: 'm', spacing: 'normal', margins: 'normal' }));
     return h(
       'section',
       { class: 'pg' },
       h('div', { class: 'pg-head' }, h('p', { class: 'panel-label' }, 'Page'), h('span', { class: `pg-count${pages > (kind === 'cv' ? 2 : 1) ? ' warn' : ''}` }, `${pages} ${pages === 1 ? 'page' : 'pages'}`)),
-      seg('size', 'Text size'),
+      h('div', { class: 'pg-row' }, h('span', { class: 'pg-label' }, 'Font size'), sizeBox('pg-size')),
       seg('spacing', 'Spacing'),
       seg('margins', 'Margins'),
       h('div', { class: 'pg-actions' }, pages > 1 ? fit1 : '', pages > 2 && fit2 ? fit2 : '', reset),
@@ -2976,7 +3216,8 @@ function renderDocuments(initialKind) {
         refresh();
       };
       sheet.replaceChildren(
-        ...sheetHead('Font', 'The PDF uses the same font'),
+        ...sheetHead('Font', 'The PDF uses the same font and size'),
+        h('div', { class: 'sheet-size' }, h('span', { class: 'sheet-size-label' }, 'Size'), sizeBox('sheet-fs')),
         h(
           'div',
           { class: 'sheet-body' },
@@ -3035,7 +3276,7 @@ function renderDocuments(initialKind) {
     checkBtn.addEventListener('click', () => openPanel(checkOpen ? '' : 'check'));
     ribbon.replaceChildren(
       h('div', { class: 'rb-group' }, outlineBtn),
-      h('div', { class: 'rb-group' }, h('span', { class: 'rb-label' }, 'Design'), designBtn, fontMenu(), swatches),
+      h('div', { class: 'rb-group' }, h('span', { class: 'rb-label' }, 'Design'), designBtn, fontMenu(), sizeBox('rb-size'), swatches),
       h('div', { class: 'rb-group' }, insertMenu()),
       h('div', { class: 'rb-group' }, checkBtn),
       h('div', { class: 'rb-group rb-end' }, chatButton()),
@@ -4111,13 +4352,8 @@ function renderJob(id) {
     const panel = h('aside', { class: 'studio-panel' }, tabs, pane);
     const sheetOpen = () => panel.classList.contains('open');
 
-    let zoom = 'fit';
     const zoomBtn = h('button', { type: 'button', class: 'btn small studio-zoom' }, 'Actual size');
-    zoomBtn.addEventListener('click', () => {
-      zoom = zoom === 'fit' ? 'actual' : 'fit';
-      zoomBtn.textContent = zoom === 'fit' ? 'Actual size' : 'Fit to screen';
-      fit();
-    });
+    zoomBtn.addEventListener('click', () => pz.set(pz.isFit() ? 1 : 'fit'));
 
     const pdf = h('button', { type: 'button', class: 'btn primary small' });
     pdf.addEventListener('click', () => cfg.download(pdf));
@@ -4134,9 +4370,6 @@ function renderJob(id) {
       editBtn.classList.toggle('primary', on);
       editBtn.lastChild.textContent = on ? 'Done editing' : 'Edit on page';
       hint.hidden = !on;
-      // Small screens: like Word's mobile view, the page reflows to the screen width while editing
-      // (same template, readable text, no sideways scrolling). The PDF stays A4.
-      studio.classList.toggle('reflow', on && window.innerWidth < 760);
       if (on && window.innerWidth < 900) panel.classList.remove('open');
       renderPaper();
       drawTabs();
@@ -4156,15 +4389,16 @@ function renderJob(id) {
       h('div', { class: 'studio-body' }, stage, panel),
     );
 
-    // Fit the A4 page to the available width.
+    // The A4 page fitted to the screen; pinch, double-tap or the button to zoom (the page stays a page).
+    const pz = pageZoom({
+      scroller: stage,
+      paperFit,
+      paperScale,
+      margin: () => (window.innerWidth < 760 ? 24 : 64),
+      onChange: (s, isFit) => (zoomBtn.textContent = isFit ? 'Actual size' : 'Fit to screen'),
+    });
     function fit() {
-      const page = paperScale.firstElementChild;
-      if (!page) return;
-      const avail = stage.clientWidth - (window.innerWidth < 760 ? 24 : 64);
-      const scale = zoom === 'fit' ? Math.min(1, avail / page.offsetWidth) : 1;
-      paperScale.style.transform = `scale(${scale})`;
-      paperFit.style.width = `${page.offsetWidth * scale}px`;
-      paperFit.style.height = `${page.offsetHeight * scale}px`;
+      if (paperScale.firstElementChild) pz.layout();
     }
     const ro = new ResizeObserver(fit);
     ro.observe(stage);
