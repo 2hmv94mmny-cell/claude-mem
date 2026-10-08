@@ -1741,6 +1741,228 @@ const everReached = (job, id) => job.status === id || (job.history || []).some((
 const hasApplied = (job) => Boolean(job.appliedAt) || ['applied', 'interview', 'offer', 'rejected'].includes(job.status) && job.status !== 'saved';
 const followDue = (job) => job.status === 'applied' && Date.now() - Math.max(job.appliedAt || lastActivity(job), job.followedUpAt || 0) > 7 * DAY_MS;
 
+const ICON_BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>';
+// ---------------------------------------------------------------------------
+// Interview reminders on the person's own device: a calendar event with alarms
+// (.ics for iPhone, Android, Outlook), Google / Outlook links, and in-app
+// notifications while Vora is open.
+// ---------------------------------------------------------------------------
+
+const REMIND_OPTIONS = [
+  [1440, '1 day before'],
+  [180, '3 hours before'],
+  [60, '1 hour before'],
+  [15, '15 minutes before'],
+];
+const DEFAULT_REMINDERS = [1440, 60];
+const INTERVIEW_MINUTES = 60;
+
+function interviewEvent(job) {
+  const start = job.interviewAt;
+  const end = start + INTERVIEW_MINUTES * 6e4;
+  const title = `Interview: ${job.title}${job.company ? ` at ${job.company}` : ''}`;
+  const lines = [`Job interview for ${job.title}${job.company ? ` at ${job.company}` : ''}.`, job.interviewWhere ? `Where: ${job.interviewWhere}` : '', job.url ? `Posting: ${job.url}` : '', 'Practise first with the interview deck in Vora.'].filter(Boolean);
+  return { start, end, title, details: lines.join('\n'), where: job.interviewWhere || '' };
+}
+
+/** A calendar file with one event and an alarm per reminder. */
+function interviewICS(job) {
+  const ev = interviewEvent(job);
+  const utc = (ts) => new Date(ts).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  // Lines longer than 75 bytes are folded (RFC 5545), without splitting a character.
+  const fold = (line) => {
+    const out = [];
+    let cur = '';
+    let bytes = 0;
+    for (const ch of line) {
+      const b = new TextEncoder().encode(ch).length;
+      if (bytes + b > (out.length ? 74 : 75)) {
+        out.push(cur);
+        cur = '';
+        bytes = 0;
+      }
+      cur += ch;
+      bytes += b;
+    }
+    out.push(cur);
+    return out.join('\r\n ');
+  };
+  const alarms = (job.reminders?.length ? job.reminders : DEFAULT_REMINDERS).flatMap((m) => ['BEGIN:VALARM', `TRIGGER:-PT${m}M`, 'ACTION:DISPLAY', `DESCRIPTION:${esc(ev.title)}`, 'END:VALARM']);
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Vora//Job applications//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:interview-${String(job.id).replace(/[^\w-]/g, '')}@vora.app`,
+    `DTSTAMP:${utc(Date.now())}`,
+    `DTSTART:${utc(ev.start)}`,
+    `DTEND:${utc(ev.end)}`,
+    `SUMMARY:${esc(ev.title)}`,
+    `DESCRIPTION:${esc(ev.details)}`,
+    ev.where ? `LOCATION:${esc(ev.where)}` : '',
+    job.url ? `URL:${job.url}` : '',
+    ...alarms,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean);
+  return lines.map(fold).join('\r\n') + '\r\n';
+}
+
+function googleCalendarUrl(job) {
+  const ev = interviewEvent(job);
+  const utc = (ts) => new Date(ts).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const q = new URLSearchParams({ action: 'TEMPLATE', text: ev.title, dates: `${utc(ev.start)}/${utc(ev.end)}`, details: ev.details, location: ev.where });
+  return `https://calendar.google.com/calendar/render?${q}`;
+}
+function outlookCalendarUrl(job) {
+  const ev = interviewEvent(job);
+  const q = new URLSearchParams({ path: '/calendar/action/compose', rru: 'addevent', subject: ev.title, startdt: new Date(ev.start).toISOString(), enddt: new Date(ev.end).toISOString(), body: ev.details, location: ev.where });
+  return `https://outlook.live.com/calendar/0/deeplink/compose?${q}`;
+}
+
+const canNotify = () => !inArtifact && 'Notification' in window;
+const remindLabel = (m) => REMIND_OPTIONS.find(([v]) => v === m)?.[1] || `${m} minutes before`;
+
+/**
+ * The interview dialog: date and time, where, reminders, then the step that
+ * puts it on the person's phone.
+ */
+function interviewDialog(job, { onDone, step } = {}) {
+  document.querySelector('dialog.ap-dialog')?.remove();
+  const toLocal = (ts) => new Date(ts - new Date(ts).getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+  let picked = new Set(job.reminders?.length ? job.reminders : DEFAULT_REMINDERS);
+  const dlg = h('dialog', { class: 'ap-dialog', 'aria-labelledby': 'ap-dlg-title' });
+  const box = h('div', { class: 'ap-dialog-box' });
+  dlg.append(box);
+  const close = () => {
+    dlg.close();
+    dlg.remove();
+    onDone?.();
+  };
+  dlg.addEventListener('cancel', (e) => (e.preventDefault(), close()));
+  dlg.addEventListener('click', (e) => e.target === dlg && close());
+  const head = (icon, title, sub) => [h('div', { class: 'ap-dialog-icon' }, svg(icon)), h('h2', { id: 'ap-dlg-title' }, title), sub];
+  const who = () => h('p', { class: 'muted' }, h('span', { translate: 'no' }, job.title), job.company ? [' · ', h('span', { translate: 'no' }, job.company)] : '');
+
+  function stepDate() {
+    const input = h('input', { type: 'datetime-local', value: job.interviewAt ? toLocal(job.interviewAt) : '', class: 'ap-date-input', 'aria-label': 'Interview date and time' });
+    const where = h('input', { type: 'text', value: job.interviewWhere || '', class: 'ap-date-input', placeholder: 'Address or video link (optional)', 'aria-label': 'Where' });
+    const chips = h(
+      'div',
+      { class: 'rm-chips', role: 'group', 'aria-label': 'Reminders' },
+      ...REMIND_OPTIONS.map(([m, label]) => {
+        const b = h('button', { type: 'button', class: 'chip rm-chip', 'aria-pressed': String(picked.has(m)) }, label);
+        b.addEventListener('click', () => {
+          picked.has(m) ? picked.delete(m) : picked.add(m);
+          b.setAttribute('aria-pressed', String(picked.has(m)));
+        });
+        return b;
+      }),
+    );
+    const save = h('button', { type: 'button', class: 'btn primary' }, 'Save');
+    save.addEventListener('click', () => {
+      const ts = input.value ? new Date(input.value).getTime() : null;
+      const reminders = [...picked].sort((a, b) => b - a);
+      store.patchJob(job.id, { interviewAt: ts || null, interviewWhere: where.value.trim(), reminders, remindersFired: {} });
+      if (ts && !['interview', 'offer'].includes(store.get().jobs[job.id]?.status)) store.setStatus(job.id, 'interview');
+      job = store.get().jobs[job.id];
+      if (!ts) {
+        toast('Interview date removed');
+        return close();
+      }
+      stepCalendar();
+    });
+    const clear = h('button', { type: 'button', class: 'btn ghost' }, 'Remove date');
+    clear.addEventListener('click', () => ((input.value = ''), save.click()));
+    const cancel = h('button', { type: 'button', class: 'btn' }, 'Cancel');
+    cancel.addEventListener('click', close);
+    box.replaceChildren(
+      ...head(ICON_CAL, 'When is the interview?', who()),
+      h('label', { class: 'rm-field' }, h('span', {}, 'Date and time'), input),
+      h('label', { class: 'rm-field' }, h('span', {}, 'Where'), where),
+      h('div', { class: 'rm-field' }, h('span', {}, 'Remind me'), chips),
+      h('div', { class: 'ap-dialog-actions' }, job.interviewAt ? clear : '', h('span', { class: 'grow' }), cancel, save),
+    );
+    requestAnimationFrame(() => input.focus());
+  }
+
+  function stepCalendar() {
+    const ics = h('button', { type: 'button', class: 'rm-opt primary' }, svg(ICON_CAL), h('span', {}, h('strong', {}, 'Phone calendar'), h('small', {}, 'iPhone, Android, Outlook: a calendar file with the reminders')));
+    ics.addEventListener('click', async () => {
+      await download(`interview-${slug(job.company || job.title || 'vora')}.ics`, interviewICS(job), 'text/calendar');
+      store.patchJob(job.id, { reminderAdded: Date.now() });
+      ics.classList.add('done');
+    });
+    const link = (cls, title, sub, url) => {
+      const a = h('a', { class: `rm-opt ${cls}`, href: url, target: '_blank', rel: 'noopener noreferrer' }, h('span', { class: 'rm-logo', 'aria-hidden': 'true' }, cls === 'google' ? 'G' : 'O'), h('span', {}, h('strong', {}, title), h('small', {}, sub)));
+      a.addEventListener('click', () => store.patchJob(job.id, { reminderAdded: Date.now() }));
+      return a;
+    };
+    const inApp = canNotify()
+      ? (() => {
+          const b = h('button', { type: 'button', class: 'rm-opt' }, svg(ICON_BELL), h('span', {}, h('strong', {}, 'Notifications from Vora'), h('small', {}, Notification.permission === 'granted' ? 'On. Vora notifies you while it is open.' : 'While Vora is open on this device')));
+          b.addEventListener('click', async () => {
+            const res = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+            b.querySelector('small').textContent = res === 'granted' ? 'On. Vora notifies you while it is open.' : 'Blocked in your browser settings.';
+            if (res === 'granted') b.classList.add('done');
+          });
+          return b;
+        })()
+      : '';
+    const done = h('button', { type: 'button', class: 'btn primary' }, 'Done');
+    done.addEventListener('click', () => {
+      toast(`Interview saved for ${whenLabel(job.interviewAt)}`);
+      close();
+    });
+    const back = h('button', { type: 'button', class: 'btn ghost' }, 'Change');
+    back.addEventListener('click', stepDate);
+    box.replaceChildren(
+      ...head(ICON_BELL, 'Get a reminder on your phone', h('p', { class: 'muted' }, h('span', {}, whenLabel(job.interviewAt)), ' · ', ...((job.reminders || []).length ? job.reminders.flatMap((m, i) => [i ? ', ' : '', h('span', {}, remindLabel(m))]) : [h('span', {}, 'no reminders')]))),
+      h('div', { class: 'rm-opts' }, ics, link('google', 'Google Calendar', 'Opens Google Calendar with the interview filled in', googleCalendarUrl(job)), link('outlook', 'Outlook', 'Outlook.com or Microsoft 365', outlookCalendarUrl(job)), inApp),
+      h('p', { class: 'small muted rm-note' }, 'Your calendar app sends the reminders, even when Vora is closed.'),
+      h('div', { class: 'ap-dialog-actions' }, back, h('span', { class: 'grow' }), done),
+    );
+  }
+
+  document.body.append(dlg);
+  dlg.showModal();
+  if (job.interviewAt && step === 'calendar') stepCalendar();
+  else stepDate();
+}
+
+/** Reminders while Vora is open: a system notification when allowed, else a toast. */
+function checkReminders() {
+  const now = Date.now();
+  const due = [];
+  for (const job of Object.values(store.get().jobs)) {
+    if (job.status !== 'interview' || !job.interviewAt || job.interviewAt < now) continue;
+    for (const m of job.reminders?.length ? job.reminders : DEFAULT_REMINDERS) {
+      const at = job.interviewAt - m * 6e4;
+      const key = `${job.interviewAt}:${m}`;
+      // Fire when due, but not for reminders long past (the app was closed then).
+      if (now >= at && now - at < 30 * 6e4 && !job.remindersFired?.[key]) due.push([job, key]);
+    }
+  }
+  if (!due.length) return;
+  store.update((s) => {
+    for (const [job, key] of due) if (s.jobs[job.id]) s.jobs[job.id].remindersFired = { ...(s.jobs[job.id].remindersFired || {}), [key]: now };
+  });
+  for (const job of new Set(due.map(([j]) => j))) {
+    const text = `Interview ${whenLabel(job.interviewAt)}: ${job.title}${job.company ? ` · ${job.company}` : ''}`;
+    if (canNotify() && Notification.permission === 'granted') {
+      const opts = { body: text, tag: `interview-${job.id}`, icon: './icons/icon-192.png', data: { url: `#/job/${encodeURIComponent(job.id)}` } };
+      navigator.serviceWorker?.ready.then((r) => r.showNotification('Vora', opts)).catch(() => new Notification('Vora', opts));
+    } else if (document.visibilityState === 'visible') toast(text, { action: 'Practise', run: () => (sessionStorage.setItem('ajh:tab', 'prep'), go(`/job/${encodeURIComponent(job.id)}`)) });
+  }
+}
+setTimeout(checkReminders, 4000);
+setInterval(checkReminders, 60e3);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && checkReminders());
+
+
 function renderTracker() {
   let mode = 'board';
   let tabStage = '';
@@ -1836,45 +2058,7 @@ function renderTracker() {
   }
   const NEXT_STAGE = { saved: ['applied', 'Mark applied'], applied: ['interview', 'Got an interview'], interview: ['offer', 'Got an offer'] };
 
-  // ----- small dialog for the interview date -----
-  function dateDialog(job) {
-    const toLocal = (ts) => {
-      const d = new Date(ts - new Date(ts).getTimezoneOffset() * 6e4);
-      return d.toISOString().slice(0, 16);
-    };
-    const input = h('input', { type: 'datetime-local', value: job.interviewAt ? toLocal(job.interviewAt) : '', class: 'ap-date-input', 'aria-label': 'Interview date and time' });
-    const dlg = h('dialog', { class: 'ap-dialog', 'aria-labelledby': 'ap-dlg-title' });
-    const close = () => (dlg.close(), dlg.remove());
-    const save = h('button', { type: 'button', class: 'btn primary' }, 'Save');
-    save.addEventListener('click', () => {
-      const ts = input.value ? new Date(input.value).getTime() : null;
-      store.patchJob(job.id, { interviewAt: ts || null });
-      if (ts && job.status !== 'interview' && job.status !== 'offer') store.setStatus(job.id, 'interview');
-      close();
-      toast(ts ? `Interview saved for ${whenLabel(ts)}` : 'Interview date removed');
-      draw();
-    });
-    const clear = h('button', { type: 'button', class: 'btn ghost' }, 'Remove date');
-    clear.addEventListener('click', () => ((input.value = ''), save.click()));
-    const cancel = h('button', { type: 'button', class: 'btn' }, 'Cancel');
-    cancel.addEventListener('click', close);
-    dlg.addEventListener('cancel', (e) => (e.preventDefault(), close()));
-    dlg.addEventListener('click', (e) => e.target === dlg && close());
-    dlg.append(
-      h(
-        'div',
-        { class: 'ap-dialog-box' },
-        h('div', { class: 'ap-dialog-icon' }, svg(ICON_CAL)),
-        h('h2', { id: 'ap-dlg-title' }, 'When is the interview?'),
-        h('p', { class: 'muted' }, h('span', { translate: 'no' }, job.title), ' · ', h('span', { translate: 'no' }, job.company || '')),
-        input,
-        h('div', { class: 'ap-dialog-actions' }, job.interviewAt ? clear : '', h('span', { class: 'grow' }), cancel, save),
-      ),
-    );
-    document.body.append(dlg);
-    dlg.showModal();
-    input.focus();
-  }
+  const dateDialog = (job, step) => interviewDialog(job, { onDone: () => draw(), step });
 
   function followUpText(job) {
     const name = store.get().profile.name || '';
@@ -1891,7 +2075,7 @@ function renderTracker() {
       const at = (s) => [...(job.history || [])].reverse().find((e) => e.status === s)?.at || lastActivity(job);
       if (job.status === 'offer') items.push({ job, rank: 0, tone: 'ok', icon: ICON_TROPHY, title: `Decide on the offer from ${job.company || 'the company'}`, text: `${job.title} · offer ${daysAgo(at('offer'))}`, actions: [['Open', () => openJob(job), true]] });
       else if (job.status === 'interview' && job.interviewAt && job.interviewAt > now - 6 * 36e5)
-        items.push({ job, rank: job.interviewAt - now < 3 * DAY_MS ? 1 : 3, tone: 'accent', icon: ICON_CAL, title: `Interview at ${job.company || 'the company'}, ${whenLabel(job.interviewAt)}`, text: 'Practise with the interview deck: 8 questions with feedback.', actions: [['Practise', () => openJob(job, 'prep'), true], ['Change date', () => dateDialog(job)]] });
+        items.push({ job, rank: job.interviewAt - now < 3 * DAY_MS ? 1 : 3, tone: 'accent', icon: ICON_CAL, title: `Interview at ${job.company || 'the company'}, ${whenLabel(job.interviewAt)}`, text: 'Practise with the interview deck: 8 questions with feedback.', actions: [['Practise', () => openJob(job, 'prep'), true], job.reminderAdded ? ['Change date', () => dateDialog(job)] : ['Remind me', () => dateDialog(job, 'calendar')]] });
       else if (job.status === 'interview' && job.interviewAt)
         items.push({ job, rank: 2, tone: 'accent', icon: ICON_CAL, title: `How did the ${job.company || ''} interview go?`.replace('  ', ' '), text: `${job.title} · ${whenLabel(job.interviewAt)}`, actions: [['Got an offer', (el) => move(job, 'offer', el), true], ['Not this time', () => move(job, 'rejected')]] });
       else if (job.status === 'interview') items.push({ job, rank: 2, tone: 'accent', icon: ICON_CAL, title: `Add the date of your ${job.company || ''} interview`.replace('  ', ' '), text: 'Vora reminds you and helps you practise before it.', actions: [['Add date', () => dateDialog(job), true], ['Practise', () => openJob(job, 'prep')]] });
@@ -2086,6 +2270,7 @@ function renderTracker() {
       list.append(b);
     }
     list.append(h('hr'), item(job.interviewAt ? 'Change interview date' : 'Add interview date', () => dateDialog(job)));
+    if (job.interviewAt && job.interviewAt > Date.now()) list.append(item('Add reminder to my phone', () => dateDialog(job, 'calendar')));
     if (job.status === 'applied') list.append(item('Copy follow-up email', () => copy(followUpText(job))));
     list.append(
       h('a', { role: 'menuitem', href: `#/job/${encodeURIComponent(job.id)}` }, 'Open job'),
@@ -2115,7 +2300,7 @@ function renderTracker() {
   function whenChip(job) {
     if (job.status === 'interview' && job.interviewAt) {
       const soon = job.interviewAt - Date.now() < 2 * DAY_MS && job.interviewAt > Date.now() - 6 * 36e5;
-      return h('span', { class: `ap-chip ${soon ? 'hot' : 'accent'}` }, svg(ICON_CAL), whenLabel(job.interviewAt));
+      return h('span', { class: `ap-chip ${soon ? 'hot' : 'accent'}`, title: job.reminderAdded ? 'Reminder in your calendar' : '' }, svg(job.reminderAdded ? ICON_BELL : ICON_CAL), whenLabel(job.interviewAt));
     }
     if (followDue(job)) return h('span', { class: 'ap-chip warn' }, svg(ICON_MAIL_SM), 'Follow up due');
     return h('span', { class: 'ap-when' }, activityText(job));
@@ -4569,6 +4754,24 @@ function renderJob(id) {
           }),
         );
       paintPills();
+      // The interview date and a reminder on the phone.
+      const interviewRow = h('div', { class: 'jd-interview' });
+      const drawInterview = () => {
+        const j = store.get().jobs[id];
+        interviewRow.hidden = !j || !['interview', 'offer'].includes(j.status) && !j.interviewAt;
+        if (interviewRow.hidden) return;
+        const set = h('button', { type: 'button', class: 'btn small' }, j.interviewAt ? 'Change' : 'Add date');
+        set.addEventListener('click', () => interviewDialog(j, { onDone: drawInterview }));
+        const remind = j.interviewAt && j.interviewAt > Date.now() ? h('button', { type: 'button', class: 'btn small primary' }, svgIcon(ICON_BELL), j.reminderAdded ? 'Reminder added' : 'Remind me') : '';
+        if (remind) remind.addEventListener('click', () => interviewDialog(j, { onDone: drawInterview, step: 'calendar' }));
+        interviewRow.replaceChildren(
+          h('span', { class: 'jd-interview-ico' }, svgIcon(ICON_CAL)),
+          h('div', { class: 'jd-interview-text' }, h('strong', {}, j.interviewAt ? `Interview ${whenLabel(j.interviewAt)}` : 'Interview date not set'), h('small', {}, j.interviewWhere || (j.interviewAt ? 'Add it to your calendar to get a reminder' : 'Add it and Vora reminds you'))),
+          h('div', { class: 'jd-interview-actions' }, set, remind),
+        );
+      };
+      drawInterview();
+      pills.addEventListener('click', () => setTimeout(drawInterview));
       const notes = h('textarea', { rows: 5, placeholder: 'Contacts, salary notes, next steps…' }, current.notes || '');
       notes.addEventListener('input', debounce(() => store.update((s) => (s.jobs[id].notes = notes.value)), 400));
       const history = h('ol', { class: 'jd-timeline' });
@@ -4584,7 +4787,7 @@ function renderJob(id) {
         go('/tracker');
       }, 'link-btn danger-link');
       side.append(
-        h('section', { class: 'card jd-card' }, h('h2', {}, 'Your application'), pills, h('label', { class: 'jd-label', for: 'jd-notes' }, 'Notes'), Object.assign(notes, { id: 'jd-notes' }), h('h3', { class: 'jd-label' }, 'Timeline'), history, remove),
+        h('section', { class: 'card jd-card' }, h('h2', {}, 'Your application'), pills, interviewRow, h('label', { class: 'jd-label', for: 'jd-notes' }, 'Notes'), Object.assign(notes, { id: 'jd-notes' }), h('h3', { class: 'jd-label' }, 'Timeline'), history, remove),
       );
     } else {
       const save = h('button', { class: 'btn primary' }, svgIcon(ICON_BOOKMARK), 'Save to applications');

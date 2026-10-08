@@ -1,7 +1,7 @@
 // Offline support: the app shell is cached so the app opens without a
 // connection. Job boards and the Anthropic API are always fetched live.
 
-const CACHE = 'ajh-shell-v43';
+const CACHE = 'ajh-shell-v44';
 const SHELL = [
   './',
   './index.html',
@@ -83,5 +83,18 @@ self.addEventListener('fetch', (event) => {
         return res;
       })
       .catch(() => caches.match(request).then((hit) => hit || caches.match('./index.html'))),
+  );
+});
+
+// Tapping an interview reminder opens Vora on that job.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || './', self.registration.scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const open = list.find((c) => c.url.startsWith(self.registration.scope));
+      if (open) return open.navigate(target).then((c) => c?.focus());
+      return self.clients.openWindow(target);
+    }),
   );
 });
